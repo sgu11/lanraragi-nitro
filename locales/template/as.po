@@ -374,6 +374,12 @@ msgstr ""
 msgid "Clean Database"
 msgstr ""
 
+msgid "Enable Metrics"
+msgstr ""
+
+msgid "Enable metrics collection and serve them through the metrics endpoint in the Prometheus exposition format."
+msgstr ""
+
 msgid "Cleaning the database will remove entries that aren't on your filesystem."
 msgstr ""
 
@@ -601,6 +607,9 @@ msgid "Save Metadata"
 msgstr ""
 
 msgid "Delete Archive"
+msgstr ""
+
+msgid "Read Archive"
 msgstr ""
 
 msgid "Return to Library"
@@ -979,6 +988,21 @@ msgstr ""
 msgid "Apply"
 msgstr ""
 
+msgid "Image Quality"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "High Quality"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Pixelated"
+msgstr ""
+
 msgid "Page Rendering"
 msgstr ""
 
@@ -1034,6 +1058,12 @@ msgid "Infinite Scrolling"
 msgstr ""
 
 msgid "Display all images in a vertical view in the same page."
+msgstr ""
+
+msgid "Auto Fullscreen"
+msgstr ""
+
+msgid "Automatically enter fullscreen on your first click or tap when reading."
 msgstr ""
 
 msgid "Reader Settings"
