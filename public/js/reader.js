@@ -836,12 +836,9 @@ Reader.goToPage = async function (page) {
     if (Reader.infiniteScroll) {
         $("#display img").get(Reader.currentPage).scrollIntoView({ block: "nearest" });
     } else {
-        $("#img_doublepage").attr("src", "");
-        $("#img_doublepage").attr("data-filename", "");
-        $("#display").removeClass("double-mode");
         if (Reader.doublePageMode && (Reader.currentPage > 0 || Reader.doublePageOffset)
             && Reader.currentPage < Reader.maxPage) {
-            // Composite an image and use that as the source
+            // Load images while still showing the previous page (no teardown yet)
             const img1 = await Reader.loadImage(Reader.currentPage);
             const img1Filename = Reader.getFilename(Reader.currentPage);
             const img2 = await Reader.loadImage(Reader.currentPage + 1);
@@ -853,10 +850,18 @@ Reader.goToPage = async function (page) {
                 // Depending on whether we were going forward or backward, display img1 or img2
                 const wideSrc = Reader.previousPage > Reader.currentPage ? img2 : img1;
                 const wideFilename = Reader.previousPage > Reader.currentPage ? img2Filename : img1Filename;
+                // Pre-decode before DOM update to prevent flash
+                await Reader.decodeImage(wideSrc);
                 $("#img").attr("src", wideSrc);
                 $("#img").attr("data-filename", wideFilename);
+                $("#img_doublepage").attr("src", "");
+                $("#img_doublepage").attr("data-filename", "");
+                $("#display").removeClass("double-mode");
                 Reader.showingSinglePage = true;
             } else {
+                // Pre-decode both images so they render on the same paint frame
+                await Promise.all([Reader.decodeImage(img1), Reader.decodeImage(img2)]);
+                // Batch all DOM updates together — no intermediate state visible
                 if (Reader.mangaMode) {
                     $("#img").attr("src", img2);
                     $("#img").attr("data-filename", img2Filename);
@@ -873,8 +878,13 @@ Reader.goToPage = async function (page) {
         } else {
             const img = await Reader.loadImage(Reader.currentPage);
             const imgFilename = Reader.getFilename(Reader.currentPage);
+            // Pre-decode before DOM update
+            await Reader.decodeImage(img);
             $("#img").attr("src", img);
             $("#img").attr("data-filename", imgFilename);
+            $("#img_doublepage").attr("src", "");
+            $("#img_doublepage").attr("data-filename", "");
+            $("#display").removeClass("double-mode");
             Reader.showingSinglePage = true;
         }
 
@@ -946,6 +956,14 @@ Reader.loadImage = async function (index) {
     }
 
     return Reader.preloadedImg[src];
+};
+
+// Pre-decode an image so the browser can render it immediately when assigned to a DOM element.
+// This prevents visible flickering when switching pages, especially in double page mode.
+Reader.decodeImage = function (src) {
+    const img = new Image();
+    img.src = src;
+    return img.decode().catch(() => {}); // resolve silently on error — display will handle it
 };
 
 Reader.toggleFitMode = function (e) {
