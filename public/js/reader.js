@@ -14,6 +14,7 @@ Reader.showingSinglePage = true;
 Reader.pageThumbnails = [];
 Reader.preloadedImg = {};
 Reader.preloadedSizes = {};
+Reader.preloadedDimensions = {};
 Reader.spaceScroll = { timeout: null, animationId: null };
 //Spacebar Scroll Config
 Reader.scrollConfig = {
@@ -438,6 +439,8 @@ Reader.initializeSettings = function () {
 
     Reader.containerWidth = localStorage.containerWidth;
     if (Reader.containerWidth) { $("#container-width-input").val(Reader.containerWidth); }
+
+    Reader.doublePageOffset = localStorage.doublePageOffset === "true" || false;
 };
 
 Reader.initInfiniteScrollView = function () {
@@ -540,6 +543,9 @@ Reader.handleShortcuts = function (e) {
             break;
         case 72: // h
             Reader.toggleHelp();
+            break;
+        case 74: // j
+            Reader.toggleDoublePageOffset();
             break;
         case 77: // m
             Reader.toggleMangaMode();
@@ -833,15 +839,17 @@ Reader.goToPage = async function (page) {
         $("#img_doublepage").attr("src", "");
         $("#img_doublepage").attr("data-filename", "");
         $("#display").removeClass("double-mode");
-        if (Reader.doublePageMode && Reader.currentPage > 0
+        if (Reader.doublePageMode && (Reader.currentPage > 0 || Reader.doublePageOffset)
             && Reader.currentPage < Reader.maxPage) {
             // Composite an image and use that as the source
             const img1 = await Reader.loadImage(Reader.currentPage);
             const img1Filename = Reader.getFilename(Reader.currentPage);
             const img2 = await Reader.loadImage(Reader.currentPage + 1);
             const img2Filename = Reader.getFilename(Reader.currentPage + 1);
-            // If w > h on one of the images(widespread), set canvasdata to the first image only
-            if (img1.naturalWidth > img1.naturalHeight || img2.naturalWidth > img2.naturalHeight) {
+            // If w > h on one of the images (pre-fabricated double page), show as single page
+            const dims1 = Reader.preloadedDimensions[Reader.currentPage];
+            const dims2 = Reader.preloadedDimensions[Reader.currentPage + 1];
+            if ((dims1 && dims1.width > dims1.height) || (dims2 && dims2.width > dims2.height)) {
                 // Depending on whether we were going forward or backward, display img1 or img2
                 const wideSrc = Reader.previousPage > Reader.currentPage ? img2 : img1;
                 const wideFilename = Reader.previousPage > Reader.currentPage ? img2Filename : img1Filename;
@@ -927,6 +935,16 @@ Reader.loadImage = async function (index) {
         Reader.preloadedImg[src] = URL.createObjectURL(blob);
     }
 
+    if (!Reader.preloadedDimensions[index]) {
+        const blobUrl = Reader.preloadedImg[src];
+        const dims = await new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+            img.src = blobUrl;
+        });
+        Reader.preloadedDimensions[index] = dims;
+    }
+
     return Reader.preloadedImg[src];
 };
 
@@ -1004,6 +1022,15 @@ Reader.toggleDoublePageMode = function () {
     Reader.doublePageMode = localStorage.doublePageMode = !Reader.doublePageMode;
     $("#toggle-double-mode input").toggleClass("toggled");
     Reader.goToPage(Reader.currentPage);
+};
+
+Reader.toggleDoublePageOffset = function () {
+    if (!Reader.doublePageMode || Reader.infiniteScroll) { return; }
+    Reader.doublePageOffset = localStorage.doublePageOffset = !Reader.doublePageOffset;
+    
+    let dest = Reader.currentPage + (Reader.doublePageOffset ? 1 : -1);
+    dest = Math.max(0, Math.min(dest, Reader.maxPage));
+    Reader.goToPage(dest);
 };
 
 Reader.toggleMangaMode = function () {
@@ -1310,7 +1337,7 @@ Reader.changePage = function (targetPage, resetAuto = false) {
         destination = Reader.mangaMode ? 0 : Reader.maxPage;
     } else {
         let offset = targetPage;
-        if (Reader.doublePageMode && !Reader.showingSinglePage && Reader.currentPage > 0) {
+        if (Reader.doublePageMode && !Reader.showingSinglePage && (Reader.currentPage > 0 || Reader.doublePageOffset)) {
             offset *= 2;
         }
         destination = Reader.currentPage + (Reader.mangaMode ? -offset : offset);
