@@ -1070,10 +1070,15 @@ Reader.applyContainerWidth = function () {
     }
 
     // Apply image quality / interpolation setting
+    // Note: CSS image-rendering only reliably supports "auto", "crisp-edges", and "pixelated".
+    // "high-quality" maps to "auto" (browsers already use bilinear/bicubic by default).
     const quality = Reader.imageQuality || "auto";
     if (quality === "smooth-sharp") {
-        $(".reader-image").css("image-rendering", "high-quality");
+        $(".reader-image").css("image-rendering", "auto");
         $(".reader-image").css("filter", "url(#sharpen)");
+    } else if (quality === "high-quality") {
+        $(".reader-image").css("image-rendering", "auto");
+        $(".reader-image").css("filter", "");
     } else {
         $(".reader-image").css("image-rendering", quality);
         $(".reader-image").css("filter", "");
@@ -1207,13 +1212,13 @@ Reader.toggleMobileFullscreen = function () {
     $("#toggle-mobile-fullscreen input").toggleClass("toggled");
 };
 
-Reader.setImageQuality = function () {
-    const id = this.id;
+Reader.setImageQuality = function (e) {
+    const id = e.target.id;
     const map = { "quality-auto": "auto", "quality-high": "high-quality", "quality-sharp": "smooth-sharp", "quality-pixelated": "pixelated" };
     Reader.imageQuality = map[id] || "auto";
     localStorage.imageQuality = Reader.imageQuality;
     $("#image-quality input").removeClass("toggled");
-    $(this).addClass("toggled");
+    $(e.target).addClass("toggled");
     Reader.applyContainerWidth();
 };
 
