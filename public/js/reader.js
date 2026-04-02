@@ -49,7 +49,7 @@ Reader.initializeAll = function () {
     $(document).on("click.toggle-infinite-scroll", "#toggle-infinite-scroll input", Reader.toggleInfiniteScroll);
     $(document).on("click.toggle-overlay", "#toggle-overlay input", Reader.toggleOverlayByDefault);
     $(document).on("click.toggle-mobile-fullscreen", "#toggle-mobile-fullscreen input", Reader.toggleMobileFullscreen);
-    $(document).on("click.image-quality", "#image-quality input", Reader.setImageQuality);
+    $("#image-quality input").on("click.image-quality", Reader.setImageQuality);
     $(document).on("submit.container-width", "#container-width-input", Reader.registerContainerWidth);
     $(document).on("click.container-width", "#container-width-apply", Reader.registerContainerWidth);
     $(document).on("submit.preload", "#preload-input", Reader.registerPreload);
@@ -1215,13 +1215,13 @@ Reader.toggleMobileFullscreen = function () {
     $("#toggle-mobile-fullscreen input").toggleClass("toggled");
 };
 
-Reader.setImageQuality = function (e) {
-    const id = e.target.id;
+Reader.setImageQuality = function () {
+    const id = this.id;
     const map = { "quality-auto": "auto", "quality-high": "high-quality", "quality-sharp": "smooth-sharp", "quality-pixelated": "pixelated" };
     Reader.imageQuality = map[id] || "auto";
     localStorage.imageQuality = Reader.imageQuality;
     $("#image-quality input").removeClass("toggled");
-    $(e.target).addClass("toggled");
+    $(`#${id}`).addClass("toggled");
     Reader.applyContainerWidth();
 };
 
