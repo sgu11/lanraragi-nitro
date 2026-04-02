@@ -48,6 +48,8 @@ Reader.initializeAll = function () {
     $(document).on("click.toggle-progress", "#toggle-progress input", Reader.toggleProgressTracking);
     $(document).on("click.toggle-infinite-scroll", "#toggle-infinite-scroll input", Reader.toggleInfiniteScroll);
     $(document).on("click.toggle-overlay", "#toggle-overlay input", Reader.toggleOverlayByDefault);
+    $(document).on("click.toggle-mobile-fullscreen", "#toggle-mobile-fullscreen input", Reader.toggleMobileFullscreen);
+    $(document).on("click.image-quality", "#image-quality input", Reader.setImageQuality);
     $(document).on("submit.container-width", "#container-width-input", Reader.registerContainerWidth);
     $(document).on("click.container-width", "#container-width-apply", Reader.registerContainerWidth);
     $(document).on("submit.preload", "#preload-input", Reader.registerPreload);
@@ -143,6 +145,11 @@ Reader.initializeAll = function () {
         // Fullscreen mode is unsupported; use attribute selector to hide all instances
         $("[id='toggle-full-screen']").hide();
     }
+    window.fscreen.addEventListener("fullscreenchange", () => {
+        if (!window.fscreen.inFullscreen()) {
+            $("div#i3").removeClass("fullscreen fullscreen-infinite");
+        }
+    });
 
     // Infer initial information from the URL
     const params = new URLSearchParams(window.location.search);
@@ -369,6 +376,7 @@ Reader.loadImages = function () {
 
                 // when click left or right img area change page
                 $(document).on("click", (event) => {
+                    if (Reader._skipNextNavigation) return;
                     // check click Y position is in img Y area
                     if ($(event.target).closest("#i3").length && !$("#overlay-shade").is(":visible")) {
                         // is click X position is left on screen or right
@@ -385,6 +393,37 @@ Reader.loadImages = function () {
             }
 
             if (Reader.showOverlayByDefault) { Reader.toggleArchiveOverlay(); }
+
+            // Enter fullscreen on the first click/tap in the reading area.
+            // Uses native capture-phase listener so it fires before any jQuery
+            // bubble-phase handlers (page navigation, infinite-scroll click, etc.)
+            // and can suppress them with stopPropagation.
+            if (Reader.mobileFullscreen && window.fscreen.fullscreenEnabled) {
+                const i3 = document.getElementById("i3");
+                function autoFullscreen(e) {
+                    i3.removeEventListener("click", autoFullscreen, true);
+                    if (!window.fscreen.inFullscreen()) {
+                        e.stopPropagation();
+                        Reader._skipNextNavigation = true;
+                        setTimeout(() => { Reader._skipNextNavigation = false; }, 0);
+                        Reader.handleFullScreen(true);
+
+                        // Temporarily block delayed/synthetic events that could
+                        // trigger page navigation right after fullscreen entry
+                        function blockEvent(ev) {
+                            ev.stopPropagation();
+                            ev.preventDefault();
+                        }
+                        document.addEventListener("click", blockEvent, true);
+                        document.addEventListener("wheel", blockEvent, { capture: true, passive: false });
+                        setTimeout(() => {
+                            document.removeEventListener("click", blockEvent, true);
+                            document.removeEventListener("wheel", blockEvent, { capture: true });
+                        }, 500);
+                    }
+                }
+                i3.addEventListener("click", autoFullscreen, true);
+            }
         },
     ).finally(() => {
         if (Reader.pages === undefined) {
@@ -423,6 +462,14 @@ Reader.initializeSettings = function () {
 
     Reader.showOverlayByDefault = localStorage.showOverlayByDefault === "true" || false;
     $(Reader.showOverlayByDefault ? "#show-overlay" : "#hide-overlay").addClass("toggled");
+
+    Reader.mobileFullscreen = localStorage.mobileFullscreen !== "false"; // default true
+    $(Reader.mobileFullscreen ? "#mobile-fullscreen-on" : "#mobile-fullscreen-off").addClass("toggled");
+
+    Reader.imageQuality = localStorage.imageQuality || "auto";
+    $(`#image-quality input`).removeClass("toggled");
+    const qualityMap = { "auto": "#quality-auto", "high-quality": "#quality-high", "smooth-sharp": "#quality-sharp", "pixelated": "#quality-pixelated" };
+    $(qualityMap[Reader.imageQuality] || "#quality-auto").addClass("toggled");
 
     if (localStorage.fitMode === "fit-width") {
         Reader.fitMode = "fit-width";
@@ -482,6 +529,7 @@ Reader.initInfiniteScrollView = function () {
 
     $("#i3").removeClass("loading");
     $(document).on("click.infinite-scroll-map", "#display .reader-image", (event) => {
+        if (Reader._skipNextNavigation) return;
         // is click X position is left on screen or right
         if (event.pageX < $(window).width() / 2) {
             Reader.changePage(-1, true);
@@ -1007,7 +1055,7 @@ Reader.applyContainerWidth = function () {
         // If the header is hidden, or if we're in infinite scrolling, then the image
         // can take up to 98% of visible screen height because there's more free space
         const height = localStorage.hideHeader === "true" || Reader.infiniteScroll ? 98 : 90;
-        $(".reader-image").attr("style", `max-height: ${height}vh;`);
+        $(".reader-image").attr("style", `height: ${height}vh;`);
         $(".sni").attr("style", "width: fit-content; width: -moz-fit-content");
     } else if (Reader.fitMode === "fit-width") {
         $(".reader-image").attr("style", "width: 100%;");
@@ -1022,6 +1070,16 @@ Reader.applyContainerWidth = function () {
     } else {
         // Finally, fall back to 1200px width if none of the above matches
         $(".sni").attr("style", "max-width: 1200px");
+    }
+
+    // Apply image quality / interpolation setting
+    const quality = Reader.imageQuality || "auto";
+    if (quality === "smooth-sharp") {
+        $(".reader-image").css("image-rendering", "high-quality");
+        $(".reader-image").css("filter", "url(#sharpen)");
+    } else {
+        $(".reader-image").css("image-rendering", quality);
+        $(".reader-image").css("filter", "");
     }
 };
 
@@ -1144,6 +1202,22 @@ Reader.toggleAutoNextPage = function () {
 Reader.toggleOverlayByDefault = function () {
     Reader.overlayByDefault = localStorage.showOverlayByDefault = !Reader.showOverlayByDefault;
     $("#toggle-overlay input").toggleClass("toggled");
+};
+
+Reader.toggleMobileFullscreen = function () {
+    Reader.mobileFullscreen = !Reader.mobileFullscreen;
+    localStorage.mobileFullscreen = Reader.mobileFullscreen;
+    $("#toggle-mobile-fullscreen input").toggleClass("toggled");
+};
+
+Reader.setImageQuality = function () {
+    const id = this.id;
+    const map = { "quality-auto": "auto", "quality-high": "high-quality", "quality-sharp": "smooth-sharp", "quality-pixelated": "pixelated" };
+    Reader.imageQuality = map[id] || "auto";
+    localStorage.imageQuality = Reader.imageQuality;
+    $("#image-quality input").removeClass("toggled");
+    $(this).addClass("toggled");
+    Reader.applyContainerWidth();
 };
 
 Reader.toggleSettingsOverlay = function () {

@@ -170,6 +170,12 @@
 
     <canvas id="dpcanvas" style="display:none" width="100" height="100"></canvas>
 
+    <svg style="display:none; position:absolute; width:0; height:0">
+        <filter id="sharpen">
+            <feConvolveMatrix order="3" kernelMatrix="0 -0.5 0 -0.5 3 -0.5 0 -0.5 0" preserveAlpha="true"/>
+        </filter>
+    </svg>
+
     <div id="reader-help" style="display: none;">
         <div class="navigation-help-toast">
             [% c.lh("You can navigate between pages using:") %]
@@ -225,6 +231,14 @@
     <input id="container-width-apply" class="favtag-btn config-btn" type="button" style="display:inline;" value="[% c.lh('Apply') %]">
 </div>
 
+<div id="image-quality">
+    <h2 class="config-panel"> [% c.lh("Image Quality") %] </h2>
+    <input id="quality-auto" class="favtag-btn config-btn" type="button" value="[% c.lh('Auto') %]">
+    <input id="quality-high" class="favtag-btn config-btn" type="button" value="[% c.lh('High Quality') %]">
+    <input id="quality-sharp" class="favtag-btn config-btn" type="button" value="[% c.lh('Sharp') %]">
+    <input id="quality-pixelated" class="favtag-btn config-btn" type="button" value="[% c.lh('Pixelated') %]">
+</div>
+
 <div id="toggle-double-mode">
     <h2 class="config-panel"> [% c.lh("Page Rendering") %] </h2>
     <input id="single-page" class="favtag-btn config-btn" type="button" value="[% c.lh('Single') %]">
@@ -273,6 +287,14 @@
     </span>
     <input id="infinite-scroll-on" class="favtag-btn config-btn" type="button" value="[% c.lh('Enabled') %]">
     <input id="infinite-scroll-off" class="favtag-btn config-btn" type="button" value="[% c.lh('Disabled') %]">
+</div>
+
+<div id="toggle-mobile-fullscreen">
+    <h2 class="config-panel"> [% c.lh("Auto Fullscreen") %] </h2>
+    <span class="config-panel">[% c.lh("Automatically enter fullscreen on your first click or tap when reading.") %]
+    </span>
+    <input id="mobile-fullscreen-on" class="favtag-btn config-btn" type="button" value="[% c.lh('Enabled') %]">
+    <input id="mobile-fullscreen-off" class="favtag-btn config-btn" type="button" value="[% c.lh('Disabled') %]">
 </div>
 
 <div id="auto-next-page">
