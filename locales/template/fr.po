@@ -1112,6 +1112,21 @@ msgstr "La valeur par défaut est 1200px, ou 90% en mode double page."
 msgid "Apply"
 msgstr "Appliquer"
 
+msgid "Image Quality"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "High Quality"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Pixelated"
+msgstr ""
+
 msgid "Page Rendering"
 msgstr "Rendu de la page"
 
@@ -1887,6 +1902,12 @@ msgstr "Échec de la copie."
 
 msgid "N: toggle auto next page"
 msgstr "N : Activer/désactiver le changement de page automatique"
+
+msgid "Auto Fullscreen"
+msgstr ""
+
+msgid "Automatically enter fullscreen on your first click or tap when reading."
+msgstr ""
 
 msgid "Auto next page interval in seconds"
 msgstr "Laps de temps entre changements de page automatique"

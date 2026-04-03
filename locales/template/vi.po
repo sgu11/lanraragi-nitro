@@ -1095,6 +1095,21 @@ msgstr "Giá trị mặc định là 1200px, hoặc 90% trong Chế độ Hai tr
 msgid "Apply"
 msgstr "Áp dụng"
 
+msgid "Image Quality"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "High Quality"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Pixelated"
+msgstr ""
+
 msgid "Page Rendering"
 msgstr "Hiển thị trang"
 
@@ -1865,6 +1880,12 @@ msgstr " -- Chọn Đánh giá -- "
 
 msgid "N: toggle auto next page"
 msgstr "N: bật/tắt tự động sang trang"
+
+msgid "Auto Fullscreen"
+msgstr ""
+
+msgid "Automatically enter fullscreen on your first click or tap when reading."
+msgstr ""
 
 msgid "Auto next page interval in seconds"
 msgstr "Thời gian tự động sang trang tiếp theo (giây)"
