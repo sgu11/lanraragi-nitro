@@ -1027,6 +1027,21 @@ msgstr "기본값은 1200px이며, 이중 페이지 모드에서는 90%입니다
 msgid "Apply"
 msgstr "적용"
 
+msgid "Image Quality"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "High Quality"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Pixelated"
+msgstr ""
+
 msgid "Page Rendering"
 msgstr "페이지 렌더링"
 
@@ -1727,6 +1742,12 @@ msgstr "링크 복사"
 
 msgid "N: toggle auto next page"
 msgstr "N: 자동으로 다음 장으로 넘기기 토글"
+
+msgid "Auto Fullscreen"
+msgstr ""
+
+msgid "Automatically enter fullscreen on your first click or tap when reading."
+msgstr ""
 
 msgid "Auto next page interval in seconds"
 msgstr "다음 장으로 넘길 시간(초)"

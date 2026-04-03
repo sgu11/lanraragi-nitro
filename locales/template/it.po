@@ -1060,6 +1060,21 @@ msgstr ""
 msgid "Apply"
 msgstr ""
 
+msgid "Image Quality"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "High Quality"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Pixelated"
+msgstr ""
+
 msgid "Page Rendering"
 msgstr ""
 
@@ -1115,6 +1130,12 @@ msgid "Infinite Scrolling"
 msgstr "Scrolling Infinito"
 
 msgid "Display all images in a vertical view in the same page."
+msgstr ""
+
+msgid "Auto Fullscreen"
+msgstr ""
+
+msgid "Automatically enter fullscreen on your first click or tap when reading."
 msgstr ""
 
 msgid "Auto next page interval in seconds"

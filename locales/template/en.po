@@ -1043,6 +1043,21 @@ msgstr "The default value is 1200px, or 90% in Double Page Mode."
 msgid "Apply"
 msgstr "Apply"
 
+msgid "Image Quality"
+msgstr "Image Quality"
+
+msgid "Auto"
+msgstr "Auto"
+
+msgid "High Quality"
+msgstr "High Quality"
+
+msgid "Sharp"
+msgstr "Sharp"
+
+msgid "Pixelated"
+msgstr "Pixelated"
+
 msgid "Page Rendering"
 msgstr "Page Rendering"
 
@@ -1099,6 +1114,12 @@ msgstr "Infinite Scrolling"
 
 msgid "Display all images in a vertical view in the same page."
 msgstr "Display all images in a vertical view in the same page."
+
+msgid "Auto Fullscreen"
+msgstr "Auto Fullscreen"
+
+msgid "Automatically enter fullscreen on your first click or tap when reading."
+msgstr "Automatically enter fullscreen on your first click or tap when reading."
 
 msgid "Auto next page interval in seconds"
 msgstr "Auto next page interval in seconds"

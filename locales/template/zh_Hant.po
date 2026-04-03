@@ -985,6 +985,21 @@ msgstr "預設值為 1200px，雙頁模式下為 90%。"
 msgid "Apply"
 msgstr "套用"
 
+msgid "Image Quality"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "High Quality"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Pixelated"
+msgstr ""
+
 msgid "Page Rendering"
 msgstr "頁面渲染"
 
@@ -1673,6 +1688,12 @@ msgstr "沒有找到重複項目!"
 
 msgid "Copy link"
 msgstr "複製連結"
+
+msgid "Auto Fullscreen"
+msgstr ""
+
+msgid "Automatically enter fullscreen on your first click or tap when reading."
+msgstr ""
 
 msgid "Auto next page interval in seconds"
 msgstr "自動下一頁間隔（以秒為單位）"

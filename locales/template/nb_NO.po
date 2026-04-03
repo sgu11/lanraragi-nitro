@@ -1107,6 +1107,21 @@ msgstr "Standardverdien er 1200 piksler, eller 90 % i dobbelsidemodus."
 msgid "Apply"
 msgstr "Bruk"
 
+msgid "Image Quality"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "High Quality"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Pixelated"
+msgstr ""
+
 msgid "Page Rendering"
 msgstr "Sidegjengivelse"
 
@@ -1874,6 +1889,12 @@ msgstr " -- Velg vurdering -- "
 
 msgid "N: toggle auto next page"
 msgstr "N: veksle mellom automatisk neste side"
+
+msgid "Auto Fullscreen"
+msgstr ""
+
+msgid "Automatically enter fullscreen on your first click or tap when reading."
+msgstr ""
 
 msgid "Auto next page interval in seconds"
 msgstr "Automatisk neste sideintervall i sekunder"

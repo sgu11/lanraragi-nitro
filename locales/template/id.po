@@ -1113,6 +1113,21 @@ msgstr "Nilai asali adalah 1200px, atau 90% dalam Mode Halaman Ganda."
 msgid "Apply"
 msgstr "Terapkan"
 
+msgid "Image Quality"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "High Quality"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Pixelated"
+msgstr ""
+
 msgid "Page Rendering"
 msgstr "Pembuatan Halaman"
 
@@ -1857,6 +1872,12 @@ msgstr "Gagal menyalin."
 
 msgid "N: toggle auto next page"
 msgstr "N: aktifkan halaman berikutnya otomatis"
+
+msgid "Auto Fullscreen"
+msgstr ""
+
+msgid "Automatically enter fullscreen on your first click or tap when reading."
+msgstr ""
 
 msgid "Auto next page interval in seconds"
 msgstr "Jeda halaman berikutnya otomatis dalam detik"

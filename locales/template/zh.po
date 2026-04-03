@@ -970,6 +970,21 @@ msgstr "默认值为1200像素，或双页模式下为90%。"
 msgid "Apply"
 msgstr "应用"
 
+msgid "Image Quality"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "High Quality"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Pixelated"
+msgstr ""
+
 msgid "Page Rendering"
 msgstr "页面渲染"
 
@@ -1684,6 +1699,12 @@ msgstr "复制链接成功。"
 
 msgid "Copy failed."
 msgstr "复制失败。"
+
+msgid "Auto Fullscreen"
+msgstr ""
+
+msgid "Automatically enter fullscreen on your first click or tap when reading."
+msgstr ""
 
 msgid "Auto next page interval in seconds"
 msgstr "自动翻页间隔（秒）"
