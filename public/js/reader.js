@@ -149,6 +149,7 @@ Reader.initializeAll = function () {
         if (!window.fscreen.inFullscreen()) {
             $("div#i3").removeClass("fullscreen fullscreen-infinite");
         }
+        Reader.applyContainerWidth();
     });
 
     // Infer initial information from the URL
@@ -1057,10 +1058,12 @@ Reader.applyContainerWidth = function () {
     $(".reader-image, .sni").attr("style", "");
 
     if (Reader.fitMode === "fit-height") {
-        // Fit to height forces the image to 90% of visible screen height.
-        // If the header is hidden, or if we're in infinite scrolling, then the image
-        // can take up to 98% of visible screen height because there's more free space
-        const height = localStorage.hideHeader === "true" || Reader.infiniteScroll ? 98 : 90;
+        // Fit to height forces the image to a percentage of visible screen height.
+        // Use 100vh in fullscreen (no header/chrome), 98vh if header is hidden or
+        // infinite scrolling, and 90vh otherwise.
+        const inFullscreen = window.fscreen && window.fscreen.inFullscreen();
+        const height = inFullscreen ? 100
+            : (localStorage.hideHeader === "true" || Reader.infiniteScroll ? 98 : 90);
         $(".reader-image").attr("style", `height: ${height}vh;`);
         $(".sni").attr("style", "width: fit-content; width: -moz-fit-content");
     } else if (Reader.fitMode === "fit-width") {
