@@ -321,7 +321,7 @@ LRR.buildThumbnailDiv = function (data, tagTooltip = true) {
                     <a href="${reader_url}" title="${LRR.encodeHTML(data.title)}">
                         <img style="position:relative;" id="${id}_thumb" src="${new LRR.apiURL("/img/wait_warmly.jpg")}"/>
                         <i id="${id}_spinner" class="fa fa-4x fa-cog fa-spin ttspinner"></i>
-                        <img src="${new LRR.apiURL(`/api/archives/${id}/thumbnail`)}"
+                        <img loading="lazy" src="${new LRR.apiURL(`/api/archives/${id}/thumbnail`)}"
                                 onload="$('#${id}_thumb').remove(); $('#${id}_spinner').remove();"
                                 onerror="this.src='${new LRR.apiURL("/img/noThumb.png")}'"/>
                     </a>

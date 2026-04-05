@@ -229,7 +229,8 @@ sub serve_thumbnail {
         return;
     } else {
 
-        # Simply serve the thumbnail.
+        # Thumbnails are immutable once generated — cache aggressively.
+        $self->res->headers->cache_control('public, max-age=2592000, immutable');
         $self->render_file( filepath => $thumbname );
     }
 }
