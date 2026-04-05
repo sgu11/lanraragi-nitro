@@ -138,13 +138,12 @@ sub update_filemap {
     );
 
     # Cross-check with filemap to get recorded files that aren't on the FS, and new files that aren't recorded.
-    my @filemapfiles = $redis->exists("LRR_FILEMAP") ? $redis->hkeys("LRR_FILEMAP") : ();
+    my %filemap = $redis->exists("LRR_FILEMAP") ? $redis->hgetall("LRR_FILEMAP") : ();
 
-    my %filemaphash = map { $_ => 1 } @filemapfiles;
-    my %fshash      = map { $_ => 1 } @files;
+    my %fshash = map { $_ => 1 } @files;
 
-    my @newfiles     = grep { !$filemaphash{$_} } @files;
-    my @deletedfiles = grep { !$fshash{$_} } @filemapfiles;
+    my @newfiles     = grep { !exists $filemap{$_} } @files;
+    my @deletedfiles = grep { !$fshash{$_} } keys %filemap;
 
     $logger->info( "Found " . scalar @newfiles . " new files." );
     $logger->info( scalar @deletedfiles . " files were found on the filemap but not on the filesystem." );
@@ -153,6 +152,37 @@ sub update_filemap {
     foreach my $deletedfile (@deletedfiles) {
         $logger->debug("Removing $deletedfile from filemap.");
         $redis->hdel( "LRR_FILEMAP", $deletedfile ) || $logger->warn("Couldn't delete previous filemap data.");
+    }
+
+    # Verify arcsize for existing files — detect files replaced on disk with same first 512KB
+    my @existingfiles = grep { exists $filemap{$_} } @files;
+
+    if (@existingfiles) {
+        my $redis_arc = LANraragi::Model::Config->get_redis;
+
+        # Batch-fetch all arcsize values in one pipeline round-trip
+        my @ids = map { $filemap{$_} } @existingfiles;
+        my @cached_sizes;
+        for my $id (@ids) {
+            $redis_arc->hget( $id, "arcsize", sub { push @cached_sizes, $_[1] } );
+        }
+        $redis_arc->wait_all_responses;
+
+        for my $i ( 0 .. $#existingfiles ) {
+            my $file            = $existingfiles[$i];
+            my $id              = $ids[$i];
+            my $current_arcsize = $cached_sizes[$i];
+            my $actual_size     = -s $file;
+
+            if ( $actual_size && ( !$current_arcsize || $current_arcsize != $actual_size ) ) {
+                $logger->info("arcsize mismatch for $id (cached: $current_arcsize, actual: $actual_size), updating!");
+                add_arcsize( $redis_arc, $id );
+                $logger->debug("Recalculating pagecount for $id");
+                add_pagecount( $redis_arc, $id );
+            }
+        }
+
+        $redis_arc->quit;
     }
 
     $redis->quit();
@@ -267,6 +297,22 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
             invalidate_cache();
         }
 
+        # Even for files already in the filemap, verify arcsize is still accurate
+        if ( $redis_arc->exists($id) ) {
+            my $current_arcsize = get_arcsize( $redis_arc, $id );
+            my $actual_size     = -s $file;
+
+            if ( !$current_arcsize || $current_arcsize != $actual_size ) {
+                $logger->info("arcsize mismatch for $id (cached: $current_arcsize, actual: $actual_size), updating!");
+                add_arcsize( $redis_arc, $id );
+                $logger->debug("Recalculating pagecount for $id");
+                add_pagecount( $redis_arc, $id );
+            } elsif ( !$redis_arc->hget( $id, "pagecount" ) ) {
+                $logger->debug("Pagecount not calculated for $id, doing it now!");
+                add_pagecount( $redis_arc, $id );
+            }
+        }
+
         return;
 
     } else {
@@ -291,13 +337,17 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
             invalidate_cache();
         }
 
-        unless ( get_arcsize( $redis_arc, $id ) ) {
-            $logger->debug("arcsize is not set for $id, storing now!");
-            add_arcsize( $redis_arc, $id );
-        }
+        my $current_arcsize = get_arcsize( $redis_arc, $id );
+        my $actual_size     = -s $file;
 
-        # Set pagecount in case it's not already there
-        unless ( $redis_arc->hget( $id, "pagecount" ) ) {
+        if ( !$current_arcsize || $current_arcsize != $actual_size ) {
+            $logger->debug("arcsize mismatch or unset for $id, updating!");
+            add_arcsize( $redis_arc, $id );
+
+            # File changed on disk, recalculate pagecount too
+            $logger->debug("Recalculating pagecount for $id");
+            add_pagecount( $redis_arc, $id );
+        } elsif ( !$redis_arc->hget( $id, "pagecount" ) ) {
             $logger->debug("Pagecount not calculated for $id, doing it now!");
             add_pagecount( $redis_arc, $id );
         }
