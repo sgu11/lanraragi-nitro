@@ -26,6 +26,8 @@ use LANraragi::Model::Category;
 # Performs a search on the database.
 sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $untaggedonly, $grouptanks, $hidecompleted ) {
 
+    $filter //= "";
+
     my $redis  = LANraragi::Model::Config->get_redis_search;
     my $logger = get_logger( "Search Engine", "lanraragi" );
 

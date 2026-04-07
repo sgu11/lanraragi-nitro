@@ -171,11 +171,11 @@ sub update_filemap {
         for my $i ( 0 .. $#existingfiles ) {
             my $file            = $existingfiles[$i];
             my $id              = $ids[$i];
-            my $current_arcsize = $cached_sizes[$i];
+            my $current_arcsize = $cached_sizes[$i] // 0;
             my $actual_size     = -s $file;
 
-            if ( $actual_size && ( !$current_arcsize || $current_arcsize != $actual_size ) ) {
-                $logger->info("arcsize mismatch for $id (cached: $current_arcsize, actual: $actual_size), updating!");
+            if ( $actual_size && $current_arcsize != $actual_size ) {
+                $logger->info("arcsize mismatch for $id (cached: " . ($current_arcsize || "none") . ", actual: $actual_size), updating!");
                 add_arcsize( $redis_arc, $id );
                 $logger->debug("Recalculating pagecount for $id");
                 add_pagecount( $redis_arc, $id );
@@ -303,7 +303,7 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
             my $actual_size     = -s $file;
 
             if ( !$current_arcsize || $current_arcsize != $actual_size ) {
-                $logger->info("arcsize mismatch for $id (cached: $current_arcsize, actual: $actual_size), updating!");
+                $logger->info("arcsize mismatch for $id (cached: " . ($current_arcsize // "none") . ", actual: $actual_size), updating!");
                 add_arcsize( $redis_arc, $id );
                 $logger->debug("Recalculating pagecount for $id");
                 add_pagecount( $redis_arc, $id );

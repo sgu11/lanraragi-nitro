@@ -30,6 +30,10 @@ Reader.autoNextPageCountdown = 0;
 
 Reader.initializeAll = function () {
     Reader.initializeSettings();
+
+    // Define fscreen.inFullscreen polyfill before it's used by applyContainerWidth
+    window.fscreen.inFullscreen = () => !!window.fscreen.fullscreenElement;
+
     Reader.applyContainerWidth();
     Reader.registerPreload();
     Reader.registerAutoNextPage();
