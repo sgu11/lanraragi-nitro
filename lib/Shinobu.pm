@@ -86,11 +86,17 @@ sub initialize_from_new_process {
     my $class = ref($contentwatcher);
     $logger->debug("Watcher class is $class");
 
+    # Track the content directory inode to detect filesystem dataset changes
+    # (inotify watches are inode-based and become stale if the inode changes)
+    my $watched_ino = (stat $userdir)[1];
+    $logger->debug("Content directory inode: $watched_ino");
+
     # manual event loop
     $logger->info("All done! Now dutifully watching your files. ");
 
     my $running = 1;
     my $metrics_counter = 0;
+    my $inode_check_counter = 0;
 
     while ($running) {
         local $SIG{INT} = sub { $running = 0 };
@@ -98,6 +104,25 @@ sub initialize_from_new_process {
         # Check events on files
         for my $event ( $contentwatcher->new_events ) {
             $inotifysub->($event);
+        }
+
+        # Every 60 seconds, verify the content directory inode hasn't changed
+        # (filesystem receive/rollback/rename can change inodes, silently breaking inotify)
+        if ( ++$inode_check_counter >= 60 ) {
+            $inode_check_counter = 0;
+            my $current_ino = (stat $userdir)[1];
+            if ( defined $current_ino && $current_ino != $watched_ino ) {
+                $logger->warn("Content directory inode changed ($watched_ino -> $current_ino), re-creating watcher.");
+                $contentwatcher = File::ChangeNotify->instantiate_watcher(
+                    directories     => [$userdir],
+                    filter          => qr/\.(?:zip|rar|7z|tar|tar\.gz|lzma|xz|cbz|cbr|cb7|cbt|pdf|epub|tar\.zst|zst)$/i,
+                    follow_symlinks => 1,
+                    exclude         => [ 'thumb', '.' ],
+                );
+                $watched_ino = $current_ino;
+                $logger->info("Watcher re-created. Running filemap update to catch any missed files.");
+                update_filemap();
+            }
         }
 
         # Collect metrics every 30 seconds (30 * 1 second intervals)
