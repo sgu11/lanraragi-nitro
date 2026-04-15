@@ -33,6 +33,11 @@ use constant IS_UNIX => ( $Config{osname} ne 'MSWin32' );
 sub startup {
     my $self = shift;
 
+    if ( !IS_UNIX ) {
+        # Enable autoflush
+        $| = 1;
+    }
+
     say "";
     say "";
     say "ｷﾀ━━━━━━(ﾟ∀ﾟ)━━━━━━!!!!!";
@@ -203,7 +208,7 @@ sub startup {
 
             my $prefix = $self->LRR_BASEURL;
             if ($prefix) {
-                if ( !$prefix =~ m|^/[^"]*[^/"]$| ) {
+                if ( !($prefix =~ m|^/[^"]*[^/"]$|) ) {
                     say "Warning: configured URL prefix '$prefix' invalid, ignoring";
 
                     # if prefix is invalid, then set it to empty for the cookie

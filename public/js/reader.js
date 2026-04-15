@@ -1251,8 +1251,8 @@ Reader.toggleArchiveOverlay = function () {
 Reader.toggleFullScreen = function () {
     if (window.fscreen.inFullscreen()) {
         // if already full screen; exit
-        window.fscreen.exitFullscreen();
-        Reader.handleFullScreen();
+        window.fscreen.exitFullscreen().then(() =>
+            Reader.handleFullScreen());
     } else {
         // else go fullscreen
         Reader.handleFullScreen(true);
