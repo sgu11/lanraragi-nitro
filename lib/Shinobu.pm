@@ -46,6 +46,15 @@ use constant IS_UNIX => ( $Config{osname} ne 'MSWin32' );
 # Logger and Database objects
 my $logger = get_logger( "Shinobu", "shinobu" );
 
+sub _watcher_args ($userdir) {
+    return (
+        directories     => [$userdir],
+        filter          => qr/\.(?:zip|rar|7z|tar|tar\.gz|lzma|xz|cbz|cbr|cb7|cbt|pdf|epub|tar\.zst|zst)$/i,
+        follow_symlinks => 1,
+        exclude         => [ 'thumb', '.' ],
+    );
+}
+
 #Subroutine for new and deleted files that takes inotify events
 my $inotifysub = sub {
     my $e    = shift;
@@ -81,12 +90,7 @@ sub initialize_from_new_process {
     $logger->info("Initial scan complete! Adding watcher to content folder to monitor for further file edits.");
 
     # Add watcher to content directory
-    my $contentwatcher = File::ChangeNotify->instantiate_watcher(
-        directories     => [$userdir],
-        filter          => qr/\.(?:zip|rar|7z|tar|tar\.gz|lzma|xz|cbz|cbr|cb7|cbt|pdf|epub|tar\.zst|zst)$/i,
-        follow_symlinks => 1,
-        exclude         => [ 'thumb', '.' ],                                                                   #excluded subdirs
-    );
+    my $contentwatcher = File::ChangeNotify->instantiate_watcher( _watcher_args($userdir) );
 
     my $class = ref($contentwatcher);
     $logger->debug("Watcher class is $class");
@@ -118,12 +122,7 @@ sub initialize_from_new_process {
             my $current_ino = (stat $userdir)[1];
             if ( defined $current_ino && $current_ino != $watched_ino ) {
                 $logger->warn("Content directory inode changed ($watched_ino -> $current_ino), re-creating watcher.");
-                $contentwatcher = File::ChangeNotify->instantiate_watcher(
-                    directories     => [$userdir],
-                    filter          => qr/\.(?:zip|rar|7z|tar|tar\.gz|lzma|xz|cbz|cbr|cb7|cbt|pdf|epub|tar\.zst|zst)$/i,
-                    follow_symlinks => 1,
-                    exclude         => [ 'thumb', '.' ],
-                );
+                $contentwatcher = File::ChangeNotify->instantiate_watcher( _watcher_args($userdir) );
                 $watched_ino = $current_ino;
                 $logger->info("Watcher re-created. Running filemap update to catch any missed files.");
                 update_filemap();
