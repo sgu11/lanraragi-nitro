@@ -6,8 +6,6 @@ use URI::Escape;
 use Redis;
 use Encode;
 use File::Basename;
-use Authen::Passphrase;
-
 use LANraragi::Utils::Generic qw(generate_themes_header);
 use LANraragi::Utils::Path    qw(get_archive_path);
 
@@ -49,8 +47,7 @@ sub index {
     my $self = shift;
 
     #Checking if the user still has the default password enabled
-    my $ppr = Authen::Passphrase->from_rfc2307( $self->LRR_CONF->get_password );
-    my $passcheck = ( $ppr->match("kamimamita") && $self->LRR_CONF->enable_pass );
+    my $passcheck = ( $self->LRR_CONF->is_default_password && $self->LRR_CONF->enable_pass );
 
     my $userlogged = $self->LRR_CONF->enable_pass == 0 || $self->session('is_logged');
 

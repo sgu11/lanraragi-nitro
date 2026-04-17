@@ -69,6 +69,7 @@ if ($morbo) {
     print "Server PID will be at " . $hypno_pid . "\n";
 
     $backend = Mojo::Server::Prefork->new( keep_alive_timeout => 30 );
+    $backend->workers( $ENV{LRR_WORKERS} ) if $ENV{LRR_WORKERS};
     $backend->pid_file($hypno_pid);
     $backend->listen(@listen);
 

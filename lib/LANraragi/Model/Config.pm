@@ -12,6 +12,8 @@ use Mojolicious;
 use Mojolicious::Plugin::Config;
 use Mojo::Home;
 use Mojo::JSON qw(decode_json);
+use MIME::Base64 qw(encode_base64);
+use Authen::Passphrase;
 
 # Be very careful about importing LANraragi stuff; this file is used almost everywhere and it's easy to introduce dependency cycles!
 use LANraragi::Utils::Redis qw(redis_decode);
@@ -219,5 +221,43 @@ sub get_replacedupe      { return &get_redis_conf( "replacedupe",     "0" ) }
 sub can_replacetitles    { return &get_redis_conf( "replacetitles",   "1" ) }
 sub get_language         { return &get_redis_conf( "language",        "auto" ) }
 sub get_excludednamespaces { return &get_redis_conf( "excludednamespaces", "source, date_added" ) }
+
+# DPI used by GhostScript when rendering PDF pages. Env var LRR_PDF_DPI overrides the Redis config.
+# Default 200 matches the previous hardcoded value.
+sub get_pdfdpi {
+    if ( $ENV{LRR_PDF_DPI} ) {
+        return $ENV{LRR_PDF_DPI};
+    }
+    return &get_redis_conf( "pdfdpi", "200" );
+}
+
+# Cached check for whether the default "kamimamita" password is still active.
+# bcrypt is ~50-100ms; cache per-worker for 30s. Trade-off: prefork workers may serve stale
+# state for up to 30s after a password change.
+sub is_default_password {
+    state ( $cached, $expiry );
+    my $now = time;
+    if ( !defined $expiry || $now >= $expiry ) {
+        my $pw = &get_password;
+        $cached = ( $pw && Authen::Passphrase->from_rfc2307($pw)->match("kamimamita") ) ? 1 : 0;
+        $expiry = $now + 30;
+    }
+    return $cached;
+}
+
+# Returns ($apikey, $bearer_header) cached for 30s per worker. Avoids the
+# Redis round-trip + base64 encode on every authenticated API request.
+# Trade-off: rotated keys may take up to 30s to propagate across workers.
+sub get_apikey_and_bearer {
+    state ( $cached_key, $cached_bearer, $expiry );
+    my $now = time;
+    if ( !defined $expiry || $now >= $expiry ) {
+        my $key = &get_apikey;
+        $cached_key    = $key;
+        $cached_bearer = $key ne "" ? "Bearer " . encode_base64( $key, "" ) : "";
+        $expiry        = $now + 30;
+    }
+    return ( $cached_key, $cached_bearer );
+}
 
 1;

@@ -183,7 +183,7 @@ IndexTable.renderTitle = function (data, type) {
                     ${LRR.encodeHTML(data.title)}
                 </a>
                 <div class="caption" style="display: none;">
-                    <img style="height:300px" src="${new LRR.apiURL(`/api/archives/${data.arcid}/thumbnail?no_fallback=true`)}"
+                    <img style="height:300px" loading="lazy" decoding="async" src="${new LRR.apiURL(`/api/archives/${data.arcid}/thumbnail?no_fallback=true`)}"
                          onerror="this.src='${new LRR.apiURL("/img/noThumb.png")}'">
                 </div>`;
     }

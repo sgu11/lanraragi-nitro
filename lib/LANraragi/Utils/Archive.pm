@@ -78,7 +78,8 @@ sub extract_pdf ( $destination, $to_extract ) {
 
     make_path($destination);
 
-    my $gscmd = "gs -dNOPAUSE -sDEVICE=jpeg -r200 -o \"$destination/\%d.jpg\" \"$to_extract\"";
+    my $dpi   = LANraragi::Model::Config->get_pdfdpi;
+    my $gscmd = "gs -dNOPAUSE -sDEVICE=jpeg -r$dpi -o \"$destination/\%d.jpg\" \"$to_extract\"";
     $logger->debug("Sending PDF $to_extract to GhostScript...");
     $logger->debug($gscmd);
 
@@ -191,6 +192,12 @@ sub get_filelist ($archive, $arcid) {
         }
 
         my $e = Archive::Libarchive::Entry->new;
+
+        # Lazily constructed only when the first Apple-signature-like path is encountered.
+        # Avoids opening the archive a second time for archives with no such entries,
+        # and avoids re-opening per matching entry for archives that have many.
+        my $peek;
+
         while ( $r->next_header($e) == ARCHIVE_OK ) {
 
             my $filesize = ( $e->size_is_set eq 64 ) ? $e->size : 0;
@@ -202,7 +209,7 @@ sub get_filelist ($archive, $arcid) {
             }
 
             if ( is_apple_signature_like_path($filename) ) {
-                my $peek = Archive::Libarchive::Peek->new( filename => $archive );
+                $peek //= Archive::Libarchive::Peek->new( filename => $archive );
                 if ( is_apple_signature( $peek, $filename ) ) {
                     $r->read_data_skip;
                     next;
@@ -355,7 +362,8 @@ sub extract_single_file ( $archive, $filepath ) {
         $archive = decode_utf8($archive);
         $outfile = decode_utf8($outfile);
 
-        my $gscmd = "gs -dNOPAUSE -dFirstPage=$page -dLastPage=$page -sDEVICE=jpeg -r200 -o \"$outfile\" \"$archive\"";
+        my $dpi   = LANraragi::Model::Config->get_pdfdpi;
+        my $gscmd = "gs -dNOPAUSE -dFirstPage=$page -dLastPage=$page -sDEVICE=jpeg -r$dpi -o \"$outfile\" \"$archive\"";
         $logger->debug("Extracting page $filepath from PDF $archive");
         $logger->debug($gscmd);
 

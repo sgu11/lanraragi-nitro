@@ -3,8 +3,6 @@ package LANraragi::Utils::Login;
 use strict;
 use warnings;
 
-use MIME::Base64 qw(encode_base64);
-
 use Exporter 'import';
 our @EXPORT_OK = qw(is_logged_in_api);
 
@@ -12,9 +10,8 @@ our @EXPORT_OK = qw(is_logged_in_api);
 sub is_logged_in_api {
     my $c = shift;
 
-    # The API key is in the Authentication header.
-    my $expected_key = $c->LRR_CONF->get_apikey;
-    my $expected_header = "Bearer " . encode_base64( $expected_key, "" );
+    # The API key and its precomputed Bearer header are cached together (30s TTL per worker).
+    my ( $expected_key, $expected_header ) = $c->LRR_CONF->get_apikey_and_bearer;
 
     my $auth_header = $c->req->headers->authorization || "";
 
