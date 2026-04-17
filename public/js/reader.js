@@ -29,6 +29,12 @@ Reader.autoNextPageCountdownTaskId = undefined;
 Reader.autoNextPageCountdown = 0;
 
 Reader.initializeAll = function () {
+    // Pull bootstrap flags set inline in the template before scripts deferred.
+    if (window.__lrrReaderBootstrap) {
+        Reader.trackProgressLocally = window.__lrrReaderBootstrap.trackProgressLocally;
+        Reader.authenticateProgress = window.__lrrReaderBootstrap.authenticateProgress;
+    }
+
     Reader.initializeSettings();
 
     // Define fscreen.inFullscreen polyfill before it's used by applyContainerWidth
@@ -850,31 +856,41 @@ Reader.updateMetadata = function () {
     const heightDoublePage = imgDoublePage.naturalHeight;
     const widthView = width + widthDoublePage;
 
+    // Render with whatever size info we have now ("—" if unknown); refresh via async HEAD
+    // on the cold path instead of blocking the UI thread with a sync XHR.
+    const renderSingle = function (s) {
+        const text = `${filename} :: ${width} x ${height} :: ${s === undefined ? "—" : s} KB`;
+        $(".file-info").text(text).attr("title", text);
+    };
+    const renderDouble = function (s1, s2) {
+        const sizeView = (s1 === undefined || s2 === undefined) ? "—" : (s1 + s2);
+        $(".file-info").text(`${filename} - ${filenameDoublePage} :: ${widthView} x ${height} :: ${sizeView} KB`);
+        $(".file-info").attr("title", `${filename} :: ${width} x ${height} :: ${s1 ?? "—"} KB - ${filenameDoublePage} :: ${widthDoublePage} x ${heightDoublePage} :: ${s2 ?? "—"} KB`);
+    };
+    const fetchAndStore = function (idx) {
+        return LRR.getImgSizeAsync(Reader.pages[idx]).then((s) => {
+            Reader.preloadedSizes[idx] = s;
+            return s;
+        });
+    };
+
     if (Reader.showingSinglePage) {
-        let size = Reader.preloadedSizes[Reader.currentPage];
-        if (!size) {
-            size = LRR.getImgSize(Reader.pages[Reader.currentPage]);
-            Reader.preloadedSizes[Reader.currentPage] = size;
-            $(".file-info").text(`${filename} :: ${width} x ${height} :: ${size} KB`);
-            $(".file-info").attr("title", `${filename} :: ${width} x ${height} :: ${size} KB`);
-        } else {
-            $(".file-info").text(`${filename} :: ${width} x ${height} :: ${size} KB`);
-            $(".file-info").attr("title", `${filename} :: ${width} x ${height} :: ${size} KB`);
+        const size = Reader.preloadedSizes[Reader.currentPage];
+        renderSingle(size);
+        if (size === undefined) {
+            const idx = Reader.currentPage;
+            fetchAndStore(idx).then((s) => { if (Reader.currentPage === idx) renderSingle(s); });
         }
     } else {
-        let size = Reader.preloadedSizes[Reader.currentPage];
-        let sizePre = Reader.preloadedSizes[Reader.currentPage + 1];
-
-        if (!size || !sizePre) {
-            size = LRR.getImgSize(Reader.pages[Reader.currentPage]);
-            sizePre = LRR.getImgSize(Reader.pages[Reader.currentPage + 1]);
-            Reader.preloadedSizes[Reader.currentPage] = size;
-            Reader.preloadedSizes[Reader.currentPage + 1] = sizePre;
+        const size = Reader.preloadedSizes[Reader.currentPage];
+        const sizePre = Reader.preloadedSizes[Reader.currentPage + 1];
+        renderDouble(size, sizePre);
+        if (size === undefined || sizePre === undefined) {
+            const idx = Reader.currentPage;
+            Promise.all([fetchAndStore(idx), fetchAndStore(idx + 1)]).then(([s1, s2]) => {
+                if (Reader.currentPage === idx) renderDouble(s1, s2);
+            });
         }
-
-        const sizeView = size + sizePre;
-        $(".file-info").text(`${filename} - ${filenameDoublePage} :: ${widthView} x ${height} :: ${sizeView} KB`);
-        $(".file-info").attr("title", `${filename} :: ${width} x ${height} :: ${size} KB - ${filenameDoublePage} :: ${widthDoublePage} x ${heightDoublePage} :: ${sizePre} KB`);
     }
 
     // Update page numbers in the paginator
