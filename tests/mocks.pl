@@ -186,12 +186,40 @@ sub setup_redis_mock {
         'hget',    # $redis->hget => get value of key in datamodel
         sub {
             my $self = shift;
+            # Real Redis supports an optional callback as the last arg for pipelining.
+            # Fire it synchronously so pipelined code paths work under the mock.
+            my $cb;
+            $cb = pop @_ if @_ && ref( $_[-1] ) eq 'CODE';
             my ( $key, $hashkey ) = @_;
 
             my $value = $datamodel{$key}{$hashkey};
+            if ($cb) {
+                $cb->( $self, $value );
+                return;
+            }
             return $value;
         }
     );
+
+    $redis->mock(
+        'hmget',    # $redis->hmget(key, @fields[, cb]) => arrayref of values (or fires cb)
+        sub {
+            my $self = shift;
+            my $cb;
+            $cb = pop @_ if @_ && ref( $_[-1] ) eq 'CODE';
+            my ( $key, @fields ) = @_;
+
+            my @values = map { $datamodel{$key}{$_} } @fields;
+            if ($cb) {
+                $cb->( $self, \@values );
+                return;
+            }
+            return \@values;
+        }
+    );
+
+    # Sync mock fires callbacks immediately inside hget/hmget, so this is a no-op.
+    $redis->mock( 'wait_all_responses', sub { return; } );
 
     $redis->mock(
         'sadd',    # $redis->sadd => add value to list named by key in datamodel
