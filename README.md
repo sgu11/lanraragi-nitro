@@ -15,10 +15,29 @@ This fork is maintained by AI agents (Claude Code) under human direction. Change
 - **Fit-height fix in fullscreen** — recomputes correct height on enter/exit instead of leaving stale layout.
 - **Double-page rendering** no longer flickers between page transitions.
 
-### Library / Performance
+### Library / Thumbnails
 
 - **Thumbnail loading and caching** on the library page reworked for fewer requests and faster scroll.
 - **Stale `arcsize` and `pagecount` recovery** for archives that were replaced on disk under the same path — Shinobu now reconciles cached values against actual file size.
+
+### Performance
+
+A two-tier sweep against the request hot path, based on [`docs/performance-audit.md`](docs/performance-audit.md):
+
+**Tier 0** — trivia wins:
+- Cache `is_default_password` (bcrypt ~50–100 ms) and the `(apikey, bearer)` tuple per-worker with 30s TTL, eliminating the bcrypt round and a Redis connection on every index / authenticated API request.
+- Hoist `Archive::Libarchive::Peek` out of the `get_filelist` inner loop — lazily constructed once per archive instead of once per `__MACOSX/` entry.
+- `decoding="async"` on library thumbnails and index tooltips.
+- Configurable GhostScript PDF DPI via `LRR_PDF_DPI` (default 200).
+- Configurable Mojo prefork worker count via `LRR_WORKERS` (default 4).
+
+**Tier A** — request hot path:
+- **Process-level config cache** — `get_redis_conf` results cached per-worker with a 30s TTL and explicit invalidation on config write. Removes 6–8 Redis TCP setup/teardown cycles per request.
+- **Plugin namespace lookup hash** — `get_plugin` was an O(N) scan over every loaded plugin calling `plugin_info()`; now a one-shot `%by_namespace` hash. ~200× speedup on Auto-Plugin per-archive runs.
+- **Static asset caching** — `Cache-Control: public, max-age=86400` on `/css|js|themes|img/*` responses; `Set-Cookie` skipped on those paths so shared HTTP caches can reuse them.
+- **Async page-size lookup** — `LRR.getImgSizeAsync` replaces the sync `$.ajax({ async: false, HEAD })` that blocked the UI thread on every page turn.
+- **Deferred script loading** — `defer` applied to all `<script src>` tags across 13 templates; the inline React alias moved to `react-alias.js`; inline scripts that depend on libs wrapped in `DOMContentLoaded`. Unblocks the initial HTML parse on slow networks.
+- **Pipelined Redis bulk fetches** — duplicate-finder `thumbhash` reads, backup metadata, and plugin metadata use `HMGET` + `wait_all_responses` instead of N sequential round-trips; `clean_database` downgraded from `HGETALL` to `EXISTS` for existence checks.
 
 ### Server reliability
 
