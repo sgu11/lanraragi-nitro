@@ -2,6 +2,7 @@ package LANraragi::Model::Config;
 
 use strict;
 use warnings;
+use feature 'state';
 use utf8;
 use Cwd 'abs_path';
 use URI::Escape;
