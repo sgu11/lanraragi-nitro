@@ -1,68 +1,59 @@
-[<img src="https://img.shields.io/docker/pulls/difegue/lanraragi.svg">](https://hub.docker.com/r/difegue/lanraragi/)
-[<img src="https://img.shields.io/github/downloads/difegue/lanraragi/total.svg">](https://github.com/Difegue/LANraragi/releases)
-[<img src="https://img.shields.io/github/release/difegue/lanraragi.svg?label=latest%20release">](https://github.com/Difegue/LANraragi/releases/latest)
-[<img src="https://img.shields.io/homebrew/v/lanraragi.svg">](https://formulae.brew.sh/formula/lanraragi)  
-[<img src="https://img.shields.io/website/https/lrr.tvc-16.science.svg?label=demo%20website&up_message=online">](https://lrr.tvc-16.science/)
-[<img src="https://github.com/Difegue/LANraragi/actions/workflows/push-continuous-integration.yml/badge.svg">](https://github.com/Difegue/LANraragi/actions)
-[<img src="https://img.shields.io/discord/612709831744290847">](https://discord.gg/aRQxtbg)
+# Customized LANraragi
 
+A personal fork of [LANraragi](https://github.com/Difegue/LANraragi) with reader, theming, and reliability enhancements focused on a deployed library running on filesystem.
 
-<img src="public/favicon.ico" width="128">  
-  
-LANraragi
-===========
+This fork is maintained by AI agents (Claude Code) under human direction. Changes are **not** submitted as pull requests to the upstream project, as the code is AI-generated. This repository periodically merges upstream updates from the official LANraragi.
 
-Open source server for archival of comics/manga, running on Mojolicious + Redis.
+---
 
-#### 💬 Talk with other fellow LANraragi Users on [Discord](https://discord.gg/aRQxtbg) or [GitHub Discussions](https://github.com/Difegue/LANraragi/discussions)  
+## Patch Notes (vs. upstream)
 
-####  [📄 Documentation](https://sugoi.gitbook.io/lanraragi/v/dev) | [⏬ Download](https://github.com/Difegue/LANraragi/releases/latest) | [🎞 Demo](https://lrr.tvc-16.science) | [🪟🌃 Windows Nightlies](https://nightly.link/Difegue/LANraragi/workflows/push-continous-delivery/dev) | [💵 Sponsor Development](https://ko-fi.com/T6T2UP5N)  | [🉐 Buy Stickers!](https://ko-fi.com/s/9e8cf6a479)
+### Reader
 
-<a href="https://hosted.weblate.org/engage/lanraragi/">
-<img src="https://hosted.weblate.org/widget/lanraragi/multi-auto.svg" alt="Translation status" />
-</a>  
+- **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
+- **Image quality** options exposed in settings, with a working mobile toggle.
+- **Fit-height fix in fullscreen** — recomputes correct height on enter/exit instead of leaving stale layout.
+- **Double-page rendering** no longer flickers between page transitions.
 
-<sub>LANraragi uses Weblate for translation hosting.</sub>  
+### Library / Performance
 
-## Screenshots  
- 
-|Main Page, Thumbnail View | Main Page, List View |
-|---|---|
-| [![archive_thumb](./tools/Documentation/.gitbook/assets/archive_thumb.png)](https://raw.githubusercontent.com/Difegue/LANraragi/dev/tools/Documentation/.gitbook/assets/archive_thumb.png) | [![archive_list](./tools/Documentation/.gitbook/assets/archive_list.png)](https://raw.githubusercontent.com/Difegue/LANraragi/dev/tools/Documentation/.gitbook/assets/archive_list.png) |
+- **Thumbnail loading and caching** on the library page reworked for fewer requests and faster scroll.
+- **Stale `arcsize` and `pagecount` recovery** for archives that were replaced on disk under the same path — Shinobu now reconciles cached values against actual file size.
 
-|Archive Reader | Reader with overlay |
-|---|---|
-| [![reader](./tools/Documentation/.gitbook/assets/reader.jpg)](https://raw.githubusercontent.com/Difegue/LANraragi/dev/tools/Documentation/.gitbook/assets/reader.jpg) | [![reader_overlay](./tools/Documentation/.gitbook/assets/reader_overlay.jpg)](https://raw.githubusercontent.com/Difegue/LANraragi/dev/tools/Documentation/.gitbook/assets/reader_overlay.jpg) |
+### Server reliability
 
+- **filesystem-aware Shinobu file watcher** — detects inode-number changes after a `filesystem receive` / dataset-swap and re-creates the watcher instead of silently losing events.
+- **Undef handling** hardened in search and Shinobu paths to avoid log spam on edge-case archives.
 
-|Configuration | Plugin Configuration |
-|---|---|
-| [![cfg](./tools/Documentation/.gitbook/assets/cfg.png)](https://raw.githubusercontent.com/Difegue/LANraragi/dev/tools/Documentation/.gitbook/assets/cfg.png) | [![cfg_plugin](./tools/Documentation/.gitbook/assets/cfg_plugin.png)](https://raw.githubusercontent.com/Difegue/LANraragi/dev/tools/Documentation/.gitbook/assets/cfg_plugin.png) |
+### Themes
 
-## Features  
+- New **Catppuccin Mocha** theme.
 
-* Stores your comics in archive format. (zip/rar/targz/lzma/7z/xz/cbz/cbr/pdf supported, barebones support for epub)  
+### Plugins
 
-* Read archives directly from your web browser: the server reads from within compressed files using temporary folders.
+- New **metadata sidecar plugin** metadata plugin — parses `info.txt` files produced by [metadata sidecar plugin](https://github.com/KurtBestor/metadata sidecar plugin) (distinct format from upstream's `EHDLInfo` plugin).
 
-* Read your archives in dedicated reader software using the built-in OPDS Catalog (now with PSE support!)
+### i18n
 
-* Use the Client API to interact with LANraragi from other programs (Available for [many platforms!](https://sugoi.gitbook.io/lanraragi/v/dev/advanced-usage/external-readers))
+- Korean translations for new reader settings (Image Quality, Auto Fullscreen).
+- Translation template entries propagated across all locale `.po` files.
 
-* Two different user interfaces : compact archive list with thumbnails-on-hover, or thumbnail view.
+### Docs / Ops
 
-* Localized interface with English, Chinese, and more to come.  
+- [`CLAUDE.md`](CLAUDE.md) documents the architecture, build, plugin contract, and code style for AI agents working in this repo.
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) documents the three-tier deployment procedure to the production instance on `deployment target` (hot code-swap, compose edit, image rebuild) with pre-flight, verification, and rollback steps.
 
-* Choose from 5 preinstalled responsive library styles, or add your own with CSS.  
+---
 
-* Full Tag support with Namespaces: Add your own or import them from other sources using Plugins.  
+## Upstream Features
 
-* Store archives in either arbitrary or dynamic Categories to sort your Library easily
+For the full upstream feature list, screenshots, OPDS catalog, plugin system overview, and client API, see the [official LANraragi repository](https://github.com/Difegue/LANraragi) and [LANraragi documentation](https://sugoi.gitbook.io/lanraragi/).
 
-* Import metadata using Plugins automatically when archives are added to LANraragi.
+## License
 
-* Download archives from the Internet directly to the server, while using the aforementioned automatic metadata import
+    MIT License
 
-* Scan for duplicates within your saved archives 
+    Copyright (c) 2018 Difegue
+    Copyright (c) Contributors to the LANraragi project
 
-* Backup your database as JSON to carry your tags over to another LANraragi instance.
+    Licensed under the MIT License. See COPYING for the full license text.
