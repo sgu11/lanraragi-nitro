@@ -156,6 +156,10 @@ sub save_config {
         }
 
         $redis->exec;
+
+        # Purge this worker's config cache so the admin immediately sees the saved values.
+        # Other prefork workers pick up the change within 30s via TTL.
+        LANraragi::Model::Config::invalidate_config_cache();
     }
 
     $redis->quit;

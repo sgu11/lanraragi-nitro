@@ -108,24 +108,41 @@ sub get_redis_internal {
 
 #get_redis_conf(parameter, default)
 #Gets a parameter from the Redis database. If it doesn't exist, we return the default given as a second parameter.
+#
+# Values are cached per-worker with a 30s TTL. The dominant cost here is not the Redis op itself
+# but the fresh Redis connection (`get_redis_config` → `Redis->new` + AUTH + SELECT + quit) on
+# every hit — a single index render fires 6–8 of these. At 10 RPS that's 60–80 TCP cycles/sec.
+# Worker config writes (see Controller/Config.pm) explicitly call invalidate_config_cache();
+# other workers pick up changes within 30s via TTL expiry.
+my %CONFIG_CACHE;
+
 sub get_redis_conf {
-    my $param   = $_[0];
-    my $default = $_[1];
+    my ( $param, $default ) = @_;
+    my $now = time;
+
+    if ( my $entry = $CONFIG_CACHE{$param} ) {
+        return $entry->{value} if $entry->{expiry} > $now;
+    }
 
     my $redis = get_redis_config();
+    my $result = $default;
 
     if ( $redis->hexists( "LRR_CONFIG", $param ) ) {
-
         my $value = redis_decode( $redis->hget( "LRR_CONFIG", $param ) );
 
         # Failsafe against blank config values
-        unless ( $value =~ /^\s*$/ ) {
-            $redis->quit();
-            return $value;
-        }
+        $result = $value unless $value =~ /^\s*$/;
     }
     $redis->quit();
-    return $default;
+
+    $CONFIG_CACHE{$param} = { value => $result, expiry => $now + 30 };
+    return $result;
+}
+
+# Clear the per-worker config cache. Call after writing to LRR_CONFIG so the same worker
+# sees fresh values immediately; other workers refresh on their next TTL expiry (<= 30s).
+sub invalidate_config_cache {
+    %CONFIG_CACHE = ();
 }
 
 # Functions that return the config variables stored in Redis, or default values if they don't exist.

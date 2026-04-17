@@ -173,6 +173,7 @@ sub delete_category {
     if ( $redis->exists($cat_id) ) {
         if ( $redis->hget( 'LRR_CONFIG', 'bookmark_link' ) eq $cat_id ) {
             $redis->hdel( 'LRR_CONFIG', 'bookmark_link' );
+            LANraragi::Model::Config::invalidate_config_cache();
             $logger->info("Removed link from bookmark to category $cat_id.");
         }
         $redis->del($cat_id);
@@ -325,6 +326,7 @@ sub update_bookmark_link {
     }
     $redis->hset( 'LRR_CONFIG', 'bookmark_link', $cat_id );
     $redis->quit();
+    LANraragi::Model::Config::invalidate_config_cache();
     return ( 200, $cat_id, "success" );
 
 }
@@ -336,6 +338,7 @@ sub remove_bookmark_link() {
     my $cat_id = $redis->hget( 'LRR_CONFIG', 'bookmark_link' ) || "";
     $redis->hdel( 'LRR_CONFIG', 'bookmark_link' );
     $redis->quit();
+    LANraragi::Model::Config::invalidate_config_cache();
     return $cat_id;
 }
 

@@ -100,6 +100,7 @@ sub save_config {
         # Save title preference first
         my $replacetitles = ( scalar $self->req->param('replacetitles') ? '1' : '0' );
         $redis->hset( "LRR_CONFIG", "replacetitles", $replacetitles );
+        LANraragi::Model::Config::invalidate_config_cache();
 
         # Save each plugin's settings
         foreach my $pluginfo (@plugins) {
