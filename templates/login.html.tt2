@@ -16,7 +16,7 @@
 	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/fontawesome-all.min.css") %]" />
 	[% csshead %]
 
-	<script src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script defer src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/JAVASCRIPT"></script>
 </head>
 
 <body>
