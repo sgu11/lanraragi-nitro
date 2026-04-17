@@ -372,8 +372,8 @@ sub clean_database {
 
     foreach my $id (@keys) {
 
-        # Check if the DB entry is correct
-        eval { $redis->hgetall($id); };
+        # Existence test only — EXISTS is O(1) and transfers no hash values.
+        eval { $redis->exists($id); };
 
         if ($@) {
             LANraragi::Model::Archive::delete_archive($id);

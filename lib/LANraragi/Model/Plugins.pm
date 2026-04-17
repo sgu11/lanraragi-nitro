@@ -210,9 +210,7 @@ sub exec_metadata_plugin ( $plugin, $id, %args ) {
     }
 
     my $redis = LANraragi::Model::Config->get_redis;
-    my %hash  = $redis->hgetall($id);
-
-    my ( $name, $title, $tags, $file, $thumbhash ) = @hash{qw(name title tags file thumbhash)};
+    my ( $name, $title, $tags, $file, $thumbhash ) = @{ $redis->hmget( $id, qw(name title tags file thumbhash) ) };
 
     ( $_ = redis_decode($_) ) for ( $name, $title, $tags );
 

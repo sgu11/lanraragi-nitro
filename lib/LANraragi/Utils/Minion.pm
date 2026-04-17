@@ -198,11 +198,15 @@ sub add_tasks {
 
             $logger->info("Starting find duplicate job (threshold = $threshold)");
 
-            # Gather thumbhashes
+            # Gather thumbhashes via pipelined HGET — one round-trip instead of N sequential ones.
             my %thumbhashes;
-            foreach my $id (@keys) {
-                my $thumbhash = $redis->hget( $id, "thumbhash" );
-                $thumbhashes{$id} = $thumbhash if $thumbhash;
+            my @thumbresults;
+            for my $id (@keys) {
+                $redis->hget( $id, "thumbhash", sub { push @thumbresults, [ $id, $_[1] ] } );
+            }
+            $redis->wait_all_responses;
+            for my $r (@thumbresults) {
+                $thumbhashes{ $r->[0] } = $r->[1] if $r->[1];
             }
             $redis->quit();
 

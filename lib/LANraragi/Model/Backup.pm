@@ -75,12 +75,18 @@ sub build_backup_JSON {
     # Backup archives themselves next
     my @keys = $redis->keys('????????????????????????????????????????');    #40-character long keys only => Archive IDs
 
-    # Parse the archive list and add them to JSON.
-    foreach my $id (@keys) {
+    # Pipelined HMGET — fetch only the 5 fields we need for backup, one round-trip instead of N.
+    my @hmget_results;
+    my @fields = qw(name title tags summary thumbhash);
+    for my $id (@keys) {
+        $redis->hmget( $id, @fields, sub { push @hmget_results, [ $id, $_[1] ] } );
+    }
+    $redis->wait_all_responses;
 
+    for my $pair (@hmget_results) {
+        my ( $id, $values ) = @$pair;
         eval {
-            my %hash = $redis->hgetall($id);
-            my ( $name, $title, $tags, $summary, $thumbhash ) = @hash{qw(name title tags summary thumbhash)};
+            my ( $name, $title, $tags, $summary, $thumbhash ) = @$values;
 
             ( $_ = redis_decode($_) ) for ( $name, $title, $tags, $summary );
             ( $_ = trim_CRLF($_) )    for ( $name, $title, $tags, $summary );
