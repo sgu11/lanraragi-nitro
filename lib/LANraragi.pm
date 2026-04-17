@@ -218,9 +218,27 @@ sub startup {
                 }
             }
 
-            # SameSite=Lax is the default behavior here; I set it
-            # explicitly to get rid of a warning in the browser
-            $c->cookie( "lrr_baseurl" => $prefix, { samesite => "lax", path => "/" } );
+            # Skip cookie write on static asset requests so shared HTTP caches can reuse them.
+            # The lrr_baseurl cookie is only consumed by page-level JS, not by /css|js|themes|img/*.
+            # Match the tail of the path so this works with or without a base_url_path prefix.
+            my $path = $c->req->url->path->to_string;
+            unless ( $path =~ m{(?:^|/)(?:css|js|themes|img)/} || $path =~ m{/(?:favicon\.ico|robots\.txt|app\.webappmanifest)$} ) {
+                # SameSite=Lax is the default behavior here; I set it
+                # explicitly to get rid of a warning in the browser
+                $c->cookie( "lrr_baseurl" => $prefix, { samesite => "lax", path => "/" } );
+            }
+        }
+    );
+
+    # Long-cache static assets. Templates already append ?v=$version for cache-busting,
+    # so a 1-day max-age is safe across releases.
+    $self->hook(
+        after_static => sub {
+            my $c    = shift;
+            my $path = $c->req->url->path->to_string;
+            if ( $path =~ m{(?:^|/)(?:css|js|themes|img)/} ) {
+                $c->res->headers->cache_control("public, max-age=86400");
+            }
         }
     );
 
