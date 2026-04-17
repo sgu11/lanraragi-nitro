@@ -2,6 +2,7 @@ package LANraragi::Utils::Plugins;
 
 use strict;
 use warnings;
+use feature 'state';
 use utf8;
 
 use Mojo::JSON                 qw(decode_json);
@@ -79,26 +80,26 @@ sub get_enabled_plugins {
 }
 
 #Look for a plugin by namespace.
+# Uses a per-worker namespace → package hash, built lazily on first call.
+# Module::Pluggable loads plugins at compile time so the set is fixed for the process lifetime.
 sub get_plugin {
 
     my $name = shift;
 
-    #Go through plugins to find one with a matching namespace
-    my @plugins = plugins;
-
-    foreach my $plugin (@plugins) {
-        my $namespace = "";
-        eval {
-            my %pluginfo = $plugin->plugin_info();
-            $namespace = $pluginfo{namespace};
-        };
-
-        if ( $name eq $namespace ) {
-            return $plugin;
+    state %by_namespace;
+    if ( !%by_namespace ) {
+        for my $plugin ( plugins() ) {
+            next unless $plugin->can('plugin_info');
+            my $namespace;
+            eval {
+                my %pluginfo = $plugin->plugin_info();
+                $namespace = $pluginfo{namespace};
+            };
+            $by_namespace{$namespace} = $plugin if defined $namespace && $namespace ne '';
         }
     }
 
-    return 0;
+    return $by_namespace{$name} // 0;
 }
 
 # Get the parameters for the specified plugin, either default values or input by the user in the settings page.
