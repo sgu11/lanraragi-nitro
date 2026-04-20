@@ -897,7 +897,9 @@ body.infinite-scroll .fullscreen-infinite img {
 
 /* ==== Bulk selection ==== */
 
-.id1 {
+/* Scoped to archive cards (which always carry .context-menu) — avoids overriding
+ * position:fixed on overlays that share the .id1 class (e.g. #settingsOverlay). */
+.id1.context-menu {
     position: relative;
 }
 
