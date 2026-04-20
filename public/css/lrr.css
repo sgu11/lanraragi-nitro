@@ -963,3 +963,65 @@ body:not([data-user-logged="1"]) .card-select {
 tr.selected {
     background: rgba(33, 150, 243, 0.15) !important;
 }
+
+#bulk-selection-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    margin: 8px 0;
+    background: rgba(33, 150, 243, 0.12);
+    border: 1px solid rgba(33, 150, 243, 0.4);
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+#bulk-selection-banner .bulk-count {
+    font-weight: bold;
+    margin-right: auto;
+}
+
+#bulk-selection-banner .bulk-btn {
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    color: inherit;
+    cursor: pointer;
+}
+
+#bulk-selection-banner .bulk-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.bulk-actions-dropdown {
+    position: relative;
+}
+
+#bulk-actions-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin: 4px 0 0 0;
+    padding: 4px 0;
+    list-style: none;
+    background: #2a2a2a;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    min-width: 200px;
+    z-index: 20;
+}
+
+#bulk-actions-menu li {
+    padding: 8px 14px;
+    cursor: pointer;
+    color: #fff;
+}
+
+#bulk-actions-menu li:hover {
+    background: rgba(33, 150, 243, 0.3);
+}
+
+#bulk-actions-menu li i {
+    margin-right: 8px;
+}

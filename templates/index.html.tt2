@@ -162,6 +162,21 @@
 				</div>
 			</div>
 
+			[% IF userlogged %]
+			<div id="bulk-selection-banner" style="display:none">
+				<span class="bulk-count">0 [% c.lh('selected') %]</span>
+				<button type="button" id="bulk-select-page" class="bulk-btn">[% c.lh('Select page') %]</button>
+				<button type="button" id="bulk-clear" class="bulk-btn">[% c.lh('Clear') %]</button>
+				<div class="bulk-actions-dropdown">
+					<button type="button" id="bulk-actions-toggle" class="bulk-btn">[% c.lh('Actions') %] &#x25BE;</button>
+					<ul id="bulk-actions-menu" hidden>
+						<li data-action="delete"><i class="fas fa-trash-alt"></i> [% c.lh('Delete from library') %]</li>
+						<li data-action="addcat"><i class="fas fa-search-plus"></i> [% c.lh('Add to category') %]</li>
+					</ul>
+				</div>
+			</div>
+			[% END %]
+
 			<table class="itg datatables">
 				<thead class="list" style="display: none;">
 					<tr id="header-row">
