@@ -61,7 +61,7 @@ Index.initializeAll = function () {
         if (size === 0) {
             banner.style.display = "none";
         } else {
-            banner.style.display = "flex";
+            banner.style.display = "inline-flex";
             const countEl = banner.querySelector(".bulk-count");
             if (countEl) {
                 countEl.textContent = `${size} ${I18N.Selected || "selected"}`;
