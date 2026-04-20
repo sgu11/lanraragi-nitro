@@ -842,8 +842,73 @@ Index.handleBulkAction = function (action) {
     }
 };
 
-// Stubs replaced in Tasks 9 and 10.
-Index.bulkDelete = function () { alert("bulkDelete: not implemented yet"); };
+Index.bulkDelete = function () {
+    const ids = Selection.ids();
+    const count = ids.length;
+    LRR.showPopUp({
+        text: `Delete ${count} archive${count === 1 ? "" : "s"}? This cannot be undone.`,
+        icon: "warning",
+        showCancelButton: true,
+        focusConfirm: false,
+        confirmButtonText: I18N.ConfirmYes,
+        reverseButtons: true,
+        confirmButtonColor: "#d33",
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        Index._bulkDeleteExecute(ids);
+    });
+};
+
+Index._bulkDeleteExecute = function (ids) {
+    const failures = [];
+    const total = ids.length;
+
+    const runNext = (i) => {
+        if (i >= total) {
+            Index._bulkDeleteFinish(total, failures);
+            return;
+        }
+        const id = ids[i];
+        const endpoint = new LRR.apiURL(`/api/archives/${id}`);
+        fetch(endpoint, { method: "DELETE" })
+            .then((response) => (response.ok ? response.json() : { success: 0, error: "HTTP " + response.status }))
+            .then((data) => {
+                if (data.success) {
+                    Selection.remove(id);
+                } else {
+                    failures.push({ id, error: data.error || "unknown" });
+                }
+            })
+            .catch((err) => {
+                failures.push({ id, error: err.message });
+            })
+            .finally(() => {
+                runNext(i + 1);
+            });
+    };
+    runNext(0);
+};
+
+Index._bulkDeleteFinish = function (total, failures) {
+    const succeeded = total - failures.length;
+    if (failures.length === 0) {
+        LRR.toast({
+            heading: `Deleted ${succeeded} archive${succeeded === 1 ? "" : "s"}`,
+            icon: "success",
+            hideAfter: 4000,
+        });
+    } else {
+        LRR.showPopUp({
+            text: `Deleted ${succeeded} of ${total}. Failed: ${failures.map(f => f.id).join(", ")}`,
+            icon: "warning",
+        });
+    }
+    Selection.clear();
+    if (typeof IndexTable !== "undefined" && IndexTable.dataTable) {
+        IndexTable.dataTable.ajax.reload(null, false);
+    }
+};
+
 Index.bulkAddToCategory = function () { alert("bulkAddToCategory: not implemented yet"); };
 
 /**
