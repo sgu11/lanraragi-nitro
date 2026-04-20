@@ -256,6 +256,23 @@ IndexTable.createdRow = function (row, data, dataIndex, cells) {
         // Build a thumb-like div with the data
         $("#thumbs_container").append(LRR.buildThumbnailDiv(data));
     }
+
+    // Re-apply persisted bulk-selection state for this archive.
+    // Both the <tr> and the .id1 card share the same id in thumbnail mode; querySelectorAll
+    // with a class scope reliably targets the card without colliding with the row.
+    const arcid = data.arcid || data.id;
+    if (Selection.has(arcid)) {
+        row.classList.add("selected");
+        const cards = document.querySelectorAll(`.id1#${CSS.escape(arcid)}`);
+        cards.forEach(card => {
+            card.classList.add("selected");
+            const glyph = card.querySelector(".card-select");
+            if (glyph) {
+                glyph.classList.add("checked");
+                glyph.setAttribute("aria-checked", "true");
+            }
+        });
+    }
 };
 
 // #endregion

@@ -38,6 +38,22 @@ Index.initializeAll = function () {
     $(document).on("keydown.quick-search", Index.handleQuickSearch);
     $(document).on("keydown.escape-overlay", Index.handleEscapeKey);
 
+    // Bulk-selection: toggle Selection when user clicks the card's checkbox glyph.
+    // Delegated so newly-rendered DataTables rows inherit the handler.
+    // Gated on logged-in state — bulk actions require auth, so no selection for guests.
+    $(document).on("click.card-select", ".card-select", function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        if (!LRR.isUserLogged()) return;
+        const id = $(this).attr("data-arcid") || $(this).closest(".context-menu").attr("id");
+        if (!id) return;
+        Selection.toggle(id);
+        const checked = Selection.has(id);
+        $(this).toggleClass("checked", checked);
+        $(this).attr("aria-checked", checked ? "true" : "false");
+        $(this).closest(".context-menu").toggleClass("selected", checked);
+    });
+
     // 0 = List view
     // 1 = Thumbnail view
     // List view is at 0 but became the non-default state later so here's some legacy weirdness
