@@ -69,6 +69,37 @@ Index.initializeAll = function () {
         }
     });
 
+    // Banner: add every rendered card/row on the current page to Selection.
+    $(document).on("click.bulk-select-page", "#bulk-select-page", function () {
+        const ids = (localStorage.indexViewMode === "1")
+            ? $("#thumbs_container .id1").map((_, el) => el.id).get()
+            : $(".itg.datatables tbody tr.context-menu").map((_, el) => el.id).get();
+        ids.forEach(id => Selection.add(id));
+        ids.forEach(id => {
+            const cards = document.querySelectorAll(`.id1#${CSS.escape(id)}, tr.context-menu#${CSS.escape(id)}`);
+            cards.forEach(el => {
+                el.classList.add("selected");
+                const glyph = el.querySelector(".card-select");
+                if (glyph) {
+                    glyph.classList.add("checked");
+                    glyph.setAttribute("aria-checked", "true");
+                }
+            });
+        });
+    });
+
+    // Banner: clear selection and visually reset every card/row on screen.
+    $(document).on("click.bulk-clear", "#bulk-clear", function () {
+        Selection.clear();
+        document.querySelectorAll(".id1.selected, tr.selected").forEach(el => {
+            el.classList.remove("selected");
+        });
+        document.querySelectorAll(".card-select.checked").forEach(el => {
+            el.classList.remove("checked");
+            el.setAttribute("aria-checked", "false");
+        });
+    });
+
     // 0 = List view
     // 1 = Thumbnail view
     // List view is at 0 but became the non-default state later so here's some legacy weirdness
