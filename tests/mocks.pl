@@ -220,6 +220,10 @@ sub setup_redis_mock {
                 $cb->( $self, \@values );
                 return;
             }
+            if ( $self->{ismulti} ) {
+                push @{ $self->{results} }, \@values;
+                return 1;
+            }
             return \@values;
         }
     );

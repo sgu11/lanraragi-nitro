@@ -197,6 +197,12 @@ sub get_archive ($id) {
     return %hash;
 }
 
+# Fields build_json needs from the archive hash. HGETALL used to be called here,
+# which dragged along heavyweight fields like the Storable-frozen `pagefiles`
+# cache and `thumbhash` on every search-result row. HMGET cuts that to only
+# the fields we serialize.
+my @ARCHIVE_JSON_FIELDS = qw(name title tags summary file isnew progress pagecount lastreadtime arcsize toc);
+
 # Builds a JSON object for an archive registered in the database and returns it.
 # If you need to get many JSONs at once, use the multi variant.
 sub get_archive_json ( $redis, $id ) {
@@ -211,7 +217,10 @@ sub get_archive_json ( $redis, $id ) {
 
             $arcdata = build_tank_json($id);
         } else {
-            my %hash = $redis->hgetall($id);
+            # HMGET just the serialized fields — avoids pulling the
+            # pagefiles Storable blob and other heavyweight hash fields.
+            my @vals = @{ $redis->hmget( $id, @ARCHIVE_JSON_FIELDS ) };
+            my %hash = map { ( $ARCHIVE_JSON_FIELDS[$_] => $vals[$_] ) } ( 0 .. $#ARCHIVE_JSON_FIELDS );
             $arcdata = build_json( $id, %hash );
         }
     };
@@ -237,7 +246,7 @@ sub get_archive_json_multi (@ids) {
                 # Just get the name -- We'll have to call the tank API afterwards to get full data anyway.
                 $redis->zrangebyscore( $id, 0, 0, qw{LIMIT 0 1} );
             } else {
-                $redis->hgetall($id);
+                $redis->hmget( $id, @ARCHIVE_JSON_FIELDS );
             }
         }
         @results = $redis->exec;
@@ -247,15 +256,17 @@ sub get_archive_json_multi (@ids) {
     # Build the archive JSONs.
     for my $i ( 0 .. $#results ) {
 
-        # If we got no results for one ID/hgetall, skip it.
+        # If we got no results for one ID/hmget, skip it.
         next unless ( $results[$i] );
-        my %hash = @{ $results[$i] };
-        my $id   = $ids[$i];
+        my $id = $ids[$i];
         my $arcdata;
 
         if ( $id =~ /^TANK/ ) {
             $arcdata = build_tank_json($id);
         } else {
+            # HMGET returns values in the requested field order; zip with field names.
+            my @vals = @{ $results[$i] };
+            my %hash = map { ( $ARCHIVE_JSON_FIELDS[$_] => $vals[$_] ) } ( 0 .. $#ARCHIVE_JSON_FIELDS );
             $arcdata = build_json( $id, %hash );
         }
 
