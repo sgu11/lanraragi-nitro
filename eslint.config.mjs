@@ -38,6 +38,7 @@ const config = {
             LRR: "readonly",
             Plugins: "readonly",
             Reader: "readonly",
+            Selection: "readonly",
             Server: "readonly",
             Stats: "readonly",
             // external packages
