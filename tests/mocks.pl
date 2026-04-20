@@ -156,6 +156,7 @@ sub setup_redis_mock {
     $redis->mock( 'hdel',    sub { 1 } );
     $redis->mock( 'get',     sub { undef } );
     $redis->mock( 'incr',    sub { 1 } );
+    $redis->mock( 'srem',    sub { 1 } );
     $redis->mock( 'quit',    sub { 1 } );
     $redis->mock( 'select',  sub { 1 } );
     $redis->mock( 'flushdb', sub { 1 } );

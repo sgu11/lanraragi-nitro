@@ -61,9 +61,8 @@ sub clear_new_all {
     my $redis        = $self->LRR_CONF->get_redis;
     my $redis_search = $self->LRR_CONF->get_redis_search;
 
-    # Get all archives thru redis
-    # 40-character long keys only => Archive IDs
-    my @keys = $redis->keys('????????????????????????????????????????');
+    # Archive IDs via maintained LRR_ALL_ARCHIVES set (B.3).
+    my @keys = LANraragi::Utils::Database::all_archive_ids($redis);
 
     foreach my $idall (@keys) {
         $redis->hset( $idall, "isnew", "false" );

@@ -27,8 +27,8 @@ sub get_tankoubon_list ( $page = 0 ) {
 
     $page //= 0;
 
-    # Tankoubons are represented by TANK_[timestamp] in DB. Can't wait for 2038!
-    my @tanks = $redis->keys('TANK_??????????');
+    # Tankoubons via the LRR_TANKS maintained set (B.3). Lazy backfill inside.
+    my @tanks = LANraragi::Utils::Database::all_tank_ids($redis);
 
     # Jam tanks into an array of hashes
     my @result;
@@ -78,6 +78,9 @@ sub create_tankoubon ( $name, $tank_id ) {
                 $isnewkey = 1;
             }
         }
+
+        # Track in the LRR_TANKS maintained set (B.3).
+        $redis->sadd( "LRR_TANKS", $tank_id );
     } else {
 
         # Get name
@@ -190,6 +193,7 @@ sub delete_tankoubon ($tank_id) {
     }
 
     if ( $redis->exists($tank_id) ) {
+        $redis->srem( "LRR_TANKS", $tank_id );
         $redis->del($tank_id);
 
         # The ID will remain in LRR_TITLES until the next stats compute, but this'll prevent it from appearing in search.
@@ -478,7 +482,7 @@ sub get_tankoubons_containing_archive ($arcid) {
         return ();
     }
 
-    my @tanks = $redis->keys('TANK_??????????');
+    my @tanks = LANraragi::Utils::Database::all_tank_ids($redis);
 
     foreach my $key ( sort @tanks ) {
 

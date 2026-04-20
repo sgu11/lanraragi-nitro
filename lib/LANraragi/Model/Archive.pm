@@ -48,7 +48,7 @@ sub get_title ($id) {
 sub generate_archive_list {
 
     my $redis = LANraragi::Model::Config->get_redis;
-    my @keys  = $redis->keys('????????????????????????????????????????');
+    my @keys  = LANraragi::Utils::Database::all_archive_ids($redis);
     $redis->quit;
 
     return get_archive_json_multi(@keys);
@@ -419,6 +419,7 @@ sub delete_archive ($id) {
         LANraragi::Model::Category::remove_from_category( $catid, $id );
     }
 
+    $redis->srem( "LRR_ALL_ARCHIVES", $id );
     $redis->del($id);
     $redis->quit();
 

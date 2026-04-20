@@ -17,8 +17,8 @@ sub get_category_list {
 
     my $redis = LANraragi::Model::Config->get_redis;
 
-    # Categories are represented by SET_[timestamp] in DB. Can't wait for 2038!
-    my @cats = $redis->keys('SET_??????????');
+    # Categories via the LRR_CATEGORIES maintained set (B.3). Lazy backfill inside.
+    my @cats = LANraragi::Utils::Database::all_category_ids($redis);
 
     # Jam categories into an array of hashes
     my @result;
@@ -124,8 +124,10 @@ sub create_category {
     my $redis = LANraragi::Model::Config->get_redis;
 
     # Set all fields of the category object
+    my $is_new = 0;
     unless ( length($cat_id) ) {
         $cat_id = "SET_" . time();
+        $is_new = 1;
 
         my $isnewkey = 0;
         until ($isnewkey) {
@@ -140,6 +142,9 @@ sub create_category {
 
         # Default values for new category
         $redis->hset( $cat_id, "archives", "[]" );
+
+        # Track in the LRR_CATEGORIES maintained set (B.3).
+        $redis->sadd( "LRR_CATEGORIES", $cat_id );
     }
 
     # Set/update name, pin status and favtag
@@ -176,10 +181,12 @@ sub delete_category {
             LANraragi::Model::Config::invalidate_config_cache();
             $logger->info("Removed link from bookmark to category $cat_id.");
         }
+        $redis->srem( "LRR_CATEGORIES", $cat_id );
         $redis->del($cat_id);
         $redis->quit;
         return 1;
     } else {
+        $redis->srem( "LRR_CATEGORIES", $cat_id );
         $logger->warn("$cat_id doesn't exist in the database!");
         $redis->quit;
         return 1;

@@ -40,8 +40,17 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
 
     my $tankcount = $redis->scard("LRR_TANKGROUPED") + 0;
 
-    # Get tank ids count
-    my $tankidscount = scalar( LANraragi::Model::Config->get_redis->keys('TANK_??????????') );
+    # Tank-id count via the LRR_TANKS maintained set (B.3). Falls back to a
+    # KEYS scan + backfill inside all_tank_ids on first run after upgrade.
+    my $tank_redis = LANraragi::Model::Config->get_redis;
+    my $tankidscount;
+    my $maintained = $tank_redis->scard("LRR_TANKS") + 0;
+    if ($maintained) {
+        $tankidscount = $maintained;
+    } else {
+        $tankidscount = scalar LANraragi::Utils::Database::all_tank_ids($tank_redis);
+    }
+    $tank_redis->quit;
 
     # Total number of archives (as int)
     my $total = $grouptanks ? $tankcount : $redis->zcard("LRR_TITLES") - $tankidscount;
@@ -146,7 +155,7 @@ sub search_uncached ( $category_id, $filter, $sortkey, $sortorder, $newonly, $un
     } else {
 
         # Start with all our archive IDs. Tank IDs won't be present in this search.
-        @filtered = $redis_db->keys('????????????????????????????????????????');
+        @filtered = LANraragi::Utils::Database::all_archive_ids($redis_db);
     }
 
     # If we're using a category, we'll need to get its source data first.
@@ -293,11 +302,10 @@ LUA
                 $logger->debug( "Found tag index for $tag, containing " . scalar @ids . " IDs" );
             } else {
 
-                # Get index keys that match this tag.
-                # If the tag has a namespace, We don't add a wildcard at the start of the tag to keep it intact.
-                # Otherwise, we add a wildcard at the start to match all namespaces.
-                my $indexkey = $tag =~ /:/ ? "INDEX_$tag*" : "INDEX_*$tag*";
-                my @keys     = $redis->keys($indexkey);
+                # Walk the LRR_TAG_INDEX_NAMES lex-sorted set (B.4) instead of
+                # KEYS 'INDEX_*'. Namespaced tag ("ns:val*") gets a prefix
+                # ZRANGEBYLEX; bare tag ("*val*") needs a full scan + regex.
+                my @keys = _index_keys_matching( $redis, $tag );
 
                 # Get the list of IDs for each key
                 foreach my $key (@keys) {
@@ -622,6 +630,34 @@ LUA
 
     # lastread: all returned archives are keyed (nil timestamps filtered out)
     return ( -1, @sorted );
+}
+
+# B.4 helper: return all INDEX_* key names that match the user's tag token.
+# Walks the LRR_TAG_INDEX_NAMES lex-sorted set instead of running a KEYS glob.
+# Namespaced tag (contains ":") uses ZRANGEBYLEX for a prefix match.
+# Bare tag falls back to a full scan with Perl regex, which is still cheaper
+# than Redis KEYS on a large keyspace because everything after the network
+# round-trip is in-process.
+#
+# First call after upgrade/flushdb backfills the set from KEYS once.
+sub _index_keys_matching ( $redis, $tag ) {
+    unless ( $redis->exists("LRR_TAG_INDEX_NAMES") ) {
+        my @all = $redis->keys("INDEX_*");
+        $redis->zadd( "LRR_TAG_INDEX_NAMES", map { ( 0, $_ ) } @all ) if @all;
+    }
+
+    if ( $tag =~ /:/ ) {
+
+        # Prefix match: "INDEX_$tag" up to "INDEX_$tag\xff".
+        my $prefix = "INDEX_$tag";
+        return $redis->zrangebylex( "LRR_TAG_INDEX_NAMES", "[$prefix", "[$prefix\x{ff}" );
+    }
+
+    # Substring match — pull everything and filter. Result set is the universe
+    # of distinct tag names (bounded by tag count, not archive count).
+    # Match anywhere past the "INDEX_" prefix (6 chars).
+    my @all = $redis->zrangebylex( "LRR_TAG_INDEX_NAMES", "-", "+" );
+    return grep { index( $_, $tag, 6 ) >= 0 } @all;
 }
 
 1;

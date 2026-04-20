@@ -27,7 +27,7 @@ sub build_backup_JSON {
     );
 
     # Backup categories first
-    my @cats = $redis->keys('SET_??????????');
+    my @cats = LANraragi::Utils::Database::all_category_ids($redis);
 
     # Parse the category list and add them to JSON.
     foreach my $key (@cats) {
@@ -73,7 +73,7 @@ sub build_backup_JSON {
     }
 
     # Backup archives themselves next
-    my @keys = $redis->keys('????????????????????????????????????????');    #40-character long keys only => Archive IDs
+    my @keys = LANraragi::Utils::Database::all_archive_ids($redis);
 
     # Pipelined HMGET — fetch only the 5 fields we need for backup, one round-trip instead of N.
     my @hmget_results;

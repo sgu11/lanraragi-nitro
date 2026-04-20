@@ -32,7 +32,41 @@ our @EXPORT_OK = qw(
   invalidate_cache compute_id change_archive_id set_tags set_title set_summary set_isnew get_computed_tagrules save_computed_tagrules get_tankoubons_by_file
   get_archive get_archive_json get_archive_json_multi get_tags get_arcsize add_arcsize add_pagecount add_timestamp_tag add_archive_to_redis
   redis_decode redis_encode
+  all_archive_ids all_category_ids all_tank_ids
 );
+
+# 40-character archive ID glob used by the backfill path for LRR_ALL_ARCHIVES.
+my $ARCHIVE_ID_GLOB = '?' x 40;
+
+# Returns the set of archive IDs. Backed by LRR_ALL_ARCHIVES (maintained by
+# add_archive_to_redis / delete_archive / change_archive_id). On an empty set
+# — first run after upgrade — falls back to a one-time KEYS scan and
+# populates the set so subsequent calls are O(1).
+sub all_archive_ids ($redis) {
+    my @ids = $redis->smembers("LRR_ALL_ARCHIVES");
+    return @ids if @ids;
+    @ids = $redis->keys($ARCHIVE_ID_GLOB);
+    $redis->sadd( "LRR_ALL_ARCHIVES", @ids ) if @ids;
+    return @ids;
+}
+
+# Category IDs. Backed by LRR_CATEGORIES. Same lazy-backfill pattern.
+sub all_category_ids ($redis) {
+    my @ids = $redis->smembers("LRR_CATEGORIES");
+    return @ids if @ids;
+    @ids = $redis->keys('SET_??????????');
+    $redis->sadd( "LRR_CATEGORIES", @ids ) if @ids;
+    return @ids;
+}
+
+# Tankoubon IDs. Backed by LRR_TANKS. Same lazy-backfill pattern.
+sub all_tank_ids ($redis) {
+    my @ids = $redis->smembers("LRR_TANKS");
+    return @ids if @ids;
+    @ids = $redis->keys('TANK_??????????');
+    $redis->sadd( "LRR_TANKS", @ids ) if @ids;
+    return @ids;
+}
 
 # Creates a DB entry for a file path with the given ID.
 # This function doesn't actually require the file to exist at its given location.
@@ -61,6 +95,10 @@ sub add_archive_to_redis ( $id, $file, $redis, $redis_search ) {
     # Throw a decode in there just in case the filename is already UTF8
     set_title( $id, LANraragi::Utils::Redis::redis_decode($name) );
 
+    # Track ID in the maintained set so every enumerator can use SMEMBERS
+    # instead of a KEYS glob.
+    $redis->sadd( "LRR_ALL_ARCHIVES", $id );
+
     # New archives can't be in a tank, so add them to the search set by default
     $redis_search->sadd( "LRR_TANKGROUPED", $id );
 
@@ -82,6 +120,10 @@ sub change_archive_id ( $old_id, $new_id ) {
     if ( $redis->exists($old_id) ) {
         $redis->rename( $old_id, $new_id );
     }
+
+    # Move membership in the maintained-IDs set along with the rename.
+    $redis->srem( "LRR_ALL_ARCHIVES", $old_id );
+    $redis->sadd( "LRR_ALL_ARCHIVES", $new_id );
 
     # The renamed hash still carries the previous pagefiles cache; drop it so the next
     # get_filelist call rebuilds from the new on-disk content.
@@ -368,8 +410,8 @@ sub clean_database {
     my @filemapids = $redis_config->exists("LRR_FILEMAP") ? $redis_config->hvals("LRR_FILEMAP") : ();
     my %filemap    = map { $_ => 1 } @filemapids;
 
-    #40-character long keys only => Archive IDs
-    my @keys = $redis->keys('????????????????????????????????????????');
+    # Archive IDs via maintained set (B.3). Lazy backfill inside.
+    my @keys = all_archive_ids($redis);
 
     my $deleted_arcs  = 0;
     my $unlinked_arcs = 0;
@@ -560,6 +602,10 @@ sub update_indexes ( $id, $oldtags, $newtags ) {
         # Update tag index and stats for the tag
         $redis->sadd( "INDEX_" . $tag, $id );
         $redis->zincrby( "LRR_STATS", 1, $tag );
+
+        # Maintain the lex-sorted set of index names (B.4) so Search.pm can
+        # ZRANGEBYLEX instead of KEYS 'INDEX_*'.
+        $redis->zadd( "LRR_TAG_INDEX_NAMES", 0, "INDEX_" . $tag );
     }
 
     # Add or remove the ID from the untagged list

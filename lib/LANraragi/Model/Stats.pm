@@ -52,8 +52,8 @@ sub build_stat_hashes {
     my $redistx = LANraragi::Model::Config->get_redis_search;
     my $logger  = get_logger( "Tag Stats", "lanraragi" );
 
-    # 40-character long keys only => Archive IDs
-    my @keys          = $redis->keys('????????????????????????????????????????');
+    # Archive IDs via maintained LRR_ALL_ARCHIVES set (B.3). Lazy backfill inside.
+    my @keys          = LANraragi::Utils::Database::all_archive_ids($redis);
     my $archive_count = scalar @keys;
     my ( $total, $filtered, @tanks ) = LANraragi::Model::Tankoubon::get_tankoubon_list(-1);
 
@@ -99,10 +99,19 @@ sub build_stat_hashes {
         $tank_title = redis_encode($tank_title);
     }
 
+    # Pipeline one HMGET per archive for the three fields we need — tags, title,
+    # isnew. One round-trip total instead of ~4×N sequential HGETs (B.5).
+    my %prefetch;
+    for my $id (@keys) {
+        $redis->hmget( $id, 'tags', 'title', 'isnew', sub { $prefetch{$id} = $_[1] } );
+    }
+    $redis->wait_all_responses;
+
     foreach my $id (@keys) {
 
         $redistx->sadd( "LRR_TANKGROUPED", $id );
-        my $has_tags = index_tags_for_id( $redis, $redistx, $id, $id );
+        my ( $rawtags, $title, $isnew ) = @{ $prefetch{$id} // [] };
+        my $has_tags = _index_prefetched_tags( $redistx, $id, $id, $rawtags, $title );
 
         # Flag the ID as untagged if it had no tags
         unless ($has_tags) {
@@ -110,8 +119,7 @@ sub build_stat_hashes {
             $redistx->sadd( "LRR_UNTAGGED", $id );
         }
 
-        my $isnew = $redis->hget( $id, "isnew" );
-        if ( $isnew && $isnew eq "true" ) {
+        if ( defined $isnew && $isnew eq "true" ) {
             $logger->trace("Adding $id to LRR_ISNEW");
             $redistx->sadd( "LRR_NEW", $id );
         }
@@ -125,6 +133,48 @@ sub build_stat_hashes {
     $logger->info("Stat indexes built! ($total_visible_archives archives, $total tankoubons)");
     $redis->quit;
     $redistx->quit;
+}
+
+# Same as index_tags_for_id but takes the (tags, title) strings prefetched in
+# bulk so the per-archive loop doesn't make two HGET round-trips each. Used by
+# build_stat_hashes on the non-tank path.
+sub _index_prefetched_tags ( $redistx, $index_id, $archive_id, $rawtags, $title ) {
+    my $logger   = get_logger( "Tag Stats", "lanraragi" );
+    my $has_tags = 0;
+
+    if ( defined $rawtags ) {
+        my @tags = split( /,\s?/, redis_decode($rawtags) );
+
+        foreach my $t (@tags) {
+            $t = trim($t);
+            $t = trim_CRLF($t);
+
+            $has_tags = 1 unless $t =~ /(artist|parody|series|language|event|group|date_added|timestamp|source):.*/;
+
+            if ( $t =~ /source:(.*)/i ) {
+                my $url = trim_url($1);
+                $redistx->hset( "LRR_URLMAP", $url, $archive_id );
+            }
+
+            my $redis_tag = redis_encode( lc($t) );
+            $redistx->zincrby( "LRR_STATS", 1, $redis_tag );
+            $redistx->sadd( "INDEX_" . $redis_tag, $index_id );
+            if ( $index_id ne $archive_id ) {
+                $redistx->sadd( "INDEX_" . $redis_tag, $archive_id );
+            }
+            $redistx->zadd( "LRR_TAG_INDEX_NAMES", 0, "INDEX_" . $redis_tag );
+        }
+    }
+
+    if ( defined $title && length $title ) {
+        my $t = lc( redis_decode($title) );
+        $t = trim($t);
+        $t = trim_CRLF($t);
+        $t = redis_encode($t);
+        $redistx->zadd( "LRR_TITLES", 0, "$t\0$archive_id" );
+    }
+
+    return $has_tags;
 }
 
 # Parse the tags of the given archive_id,
@@ -169,6 +219,11 @@ sub index_tags_for_id ( $redis, $redistx, $index_id, $archive_id ) {
             $logger->trace("Adding $archive_id to the index for tag $redis_tag");
             $redistx->sadd( "INDEX_" . $redis_tag, $archive_id );
         }
+
+        # Track the index name in LRR_TAG_INDEX_NAMES (B.4) — a lex-sorted set so
+        # Search.pm can ZRANGEBYLEX instead of KEYS 'INDEX_*'. Score 0 for all
+        # members; the set acts as an index of index names.
+        $redistx->zadd( "LRR_TAG_INDEX_NAMES", 0, "INDEX_" . $redis_tag );
     }
 
     if ( $redis->hexists( $archive_id, "title" ) ) {
@@ -243,7 +298,7 @@ sub build_tag_stats {
 sub compute_content_size {
     my $redis_db = LANraragi::Model::Config->get_redis;
 
-    my @keys = $redis_db->keys('????????????????????????????????????????');
+    my @keys = LANraragi::Utils::Database::all_archive_ids($redis_db);
 
     $redis_db->multi;
     foreach my $id (@keys) {
