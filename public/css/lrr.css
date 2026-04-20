@@ -60,7 +60,7 @@ div.id2 {
 }
 
 div.id3 img {
-  max-height: 275px;
+  max-height: 100%;
 }
 
 div.id3.nocrop img {
@@ -623,6 +623,19 @@ body.swal2-shown>[aria-hidden="true"] {
   .index-carousel {
     margin-bottom: 0px !important;
   }
+}
+
+@media all and (max-width: 900px) and (orientation: portrait) {
+
+  div.id1 {
+    width: 196px;
+    min-height: 296px;
+  }
+
+  div.id3 {
+    height: 236px;
+  }
+
 }
 
 @media all and (max-width: 560px) {
