@@ -634,10 +634,11 @@ LUA
 
 # B.4 helper: return all INDEX_* key names that match the user's tag token.
 # Walks the LRR_TAG_INDEX_NAMES lex-sorted set instead of running a KEYS glob.
-# Namespaced tag (contains ":") uses ZRANGEBYLEX for a prefix match.
-# Bare tag falls back to a full scan with Perl regex, which is still cheaper
-# than Redis KEYS on a large keyspace because everything after the network
-# round-trip is in-process.
+#
+# Namespaced tag (contains ":") → ZRANGEBYLEX prefix match, O(log N + M).
+# Bare tag → ZSCAN with MATCH so Redis filters server-side and only the
+# matching names cross the wire. Pulling the whole set and grepping in Perl
+# was 2-3× slower than the KEYS version it replaced for common substrings.
 #
 # First call after upgrade/flushdb backfills the set from KEYS once.
 sub _index_keys_matching ( $redis, $tag ) {
@@ -647,17 +648,27 @@ sub _index_keys_matching ( $redis, $tag ) {
     }
 
     if ( $tag =~ /:/ ) {
-
-        # Prefix match: "INDEX_$tag" up to "INDEX_$tag\xff".
         my $prefix = "INDEX_$tag";
         return $redis->zrangebylex( "LRR_TAG_INDEX_NAMES", "[$prefix", "[$prefix\x{ff}" );
     }
 
-    # Substring match — pull everything and filter. Result set is the universe
-    # of distinct tag names (bounded by tag count, not archive count).
-    # Match anywhere past the "INDEX_" prefix (6 chars).
-    my @all = $redis->zrangebylex( "LRR_TAG_INDEX_NAMES", "-", "+" );
-    return grep { index( $_, $tag, 6 ) >= 0 } @all;
+    # Substring: ZSCAN MATCH 'INDEX_*tag*' — Redis does the glob, client sees
+    # only matching members. Iterate until cursor returns 0.
+    my @result;
+    my $cursor = 0;
+    my $pattern = "INDEX_*$tag*";
+    while (1) {
+        my @reply = $redis->zscan( "LRR_TAG_INDEX_NAMES", $cursor, "MATCH", $pattern, "COUNT", 500 );
+        $cursor = $reply[0];
+        my $batch = $reply[1];
+
+        # zscan returns a flat list alternating (member, score, member, score, ...)
+        for ( my $i = 0; $i < @$batch; $i += 2 ) {
+            push @result, $batch->[$i];
+        }
+        last if $cursor eq "0";
+    }
+    return @result;
 }
 
 1;
