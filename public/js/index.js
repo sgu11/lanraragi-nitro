@@ -909,7 +909,96 @@ Index._bulkDeleteFinish = function (total, failures) {
     }
 };
 
-Index.bulkAddToCategory = function () { alert("bulkAddToCategory: not implemented yet"); };
+Index.bulkAddToCategory = function () {
+    Server.callAPI("/api/categories", "GET", null, I18N.CategoryFetchError,
+        (cats) => {
+            // Only static categories accept manual archive adds.
+            const staticCats = cats.filter(c => c.search === "" || c.search == null);
+            if (staticCats.length === 0) {
+                LRR.toast({
+                    heading: "No static categories exist. Create one first via the Categories page.",
+                    icon: "warning",
+                    hideAfter: 5000,
+                });
+                return;
+            }
+            const inputOptions = {};
+            for (let i = 0; i < staticCats.length; i++) {
+                inputOptions[staticCats[i].id] = staticCats[i].name;
+            }
+            LRR.showPopUp({
+                title: `Add ${Selection.size()} archive${Selection.size() === 1 ? "" : "s"} to category`,
+                input: "select",
+                inputOptions,
+                inputPlaceholder: "Choose a category…",
+                showCancelButton: true,
+                confirmButtonText: I18N.ConfirmYes,
+                reverseButtons: true,
+            }).then((result) => {
+                if (!result.isConfirmed || !result.value) return;
+                Index._bulkAddToCategoryExecute(Selection.ids(), result.value);
+            });
+        });
+};
+
+Index._bulkAddToCategoryExecute = function (ids, catId) {
+    const failures = [];
+    const total = ids.length;
+
+    const runNext = (i) => {
+        if (i >= total) {
+            Index._bulkAddToCategoryFinish(total, failures, catId);
+            return;
+        }
+        const arcId = ids[i];
+        const endpoint = new LRR.apiURL(`/api/categories/${catId}/${arcId}`);
+        fetch(endpoint, { method: "PUT" })
+            .then((response) => (response.ok ? response.json() : { success: 0, error: "HTTP " + response.status }))
+            .then((data) => {
+                if (!data.success) {
+                    failures.push({ id: arcId, error: data.error || "unknown" });
+                }
+            })
+            .catch((err) => {
+                failures.push({ id: arcId, error: err.message });
+            })
+            .finally(() => {
+                runNext(i + 1);
+            });
+    };
+    runNext(0);
+};
+
+Index._bulkAddToCategoryFinish = function (total, failures, catId) {
+    const succeeded = total - failures.length;
+    if (failures.length === 0) {
+        LRR.toast({
+            heading: `Added ${succeeded} archive${succeeded === 1 ? "" : "s"} to category`,
+            icon: "success",
+            hideAfter: 4000,
+        });
+    } else {
+        LRR.showPopUp({
+            text: `Added ${succeeded} of ${total}. Failed: ${failures.map(f => f.id).join(", ")}`,
+            icon: "warning",
+        });
+    }
+    Selection.clear();
+    // Unmark cards visually — they were cleared from Selection but still have .selected class.
+    document.querySelectorAll(".id1.selected, tr.selected").forEach(el => {
+        el.classList.remove("selected");
+    });
+    document.querySelectorAll(".card-select.checked").forEach(el => {
+        el.classList.remove("checked");
+        el.setAttribute("aria-checked", "false");
+    });
+    // If target is the bookmark category, refresh bookmark icons.
+    if (catId === localStorage.getItem("bookmarkCategoryId")) {
+        if (typeof IndexTable !== "undefined" && IndexTable.dataTable) {
+            IndexTable.dataTable.ajax.reload(null, false);
+        }
+    }
+};
 
 /**
  * Handle context menu clicks.
