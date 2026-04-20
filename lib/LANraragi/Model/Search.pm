@@ -633,42 +633,21 @@ LUA
 }
 
 # B.4 helper: return all INDEX_* key names that match the user's tag token.
-# Walks the LRR_TAG_INDEX_NAMES lex-sorted set instead of running a KEYS glob.
 #
-# Namespaced tag (contains ":") → ZRANGEBYLEX prefix match, O(log N + M).
-# Bare tag → ZSCAN with MATCH so Redis filters server-side and only the
-# matching names cross the wire. Pulling the whole set and grepping in Perl
-# was 2-3× slower than the KEYS version it replaced for common substrings.
+# Namespaced tag (ns:val) → ZRANGEBYLEX on the maintained LRR_TAG_INDEX_NAMES
+# set. True O(log N + M) prefix match; this is where B.4's win lives.
 #
-# First call after upgrade/flushdb backfills the set from KEYS once.
+# Bare tag (*val*) → falls back to KEYS 'INDEX_*$tag*'. The maintained-set
+# alternatives (ZRANGE+Perl-grep, ZSCAN MATCH) were measured 2-5× slower than
+# KEYS on this library size. The keyspace being scanned here is only the
+# search DB (DB 3), which holds the INDEX_* sets plus a handful of small
+# keys — a few tens of ms at 10k-archive scale.
 sub _index_keys_matching ( $redis, $tag ) {
-    unless ( $redis->exists("LRR_TAG_INDEX_NAMES") ) {
-        my @all = $redis->keys("INDEX_*");
-        $redis->zadd( "LRR_TAG_INDEX_NAMES", map { ( 0, $_ ) } @all ) if @all;
-    }
-
     if ( $tag =~ /:/ ) {
         my $prefix = "INDEX_$tag";
         return $redis->zrangebylex( "LRR_TAG_INDEX_NAMES", "[$prefix", "[$prefix\x{ff}" );
     }
-
-    # Substring: ZSCAN MATCH 'INDEX_*tag*' — Redis does the glob, client sees
-    # only matching members. Iterate until cursor returns 0.
-    my @result;
-    my $cursor = 0;
-    my $pattern = "INDEX_*$tag*";
-    while (1) {
-        my @reply = $redis->zscan( "LRR_TAG_INDEX_NAMES", $cursor, "MATCH", $pattern, "COUNT", 500 );
-        $cursor = $reply[0];
-        my $batch = $reply[1];
-
-        # zscan returns a flat list alternating (member, score, member, score, ...)
-        for ( my $i = 0; $i < @$batch; $i += 2 ) {
-            push @result, $batch->[$i];
-        }
-        last if $cursor eq "0";
-    }
-    return @result;
+    return $redis->keys("INDEX_*$tag*");
 }
 
 1;
