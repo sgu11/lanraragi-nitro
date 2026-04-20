@@ -948,3 +948,18 @@ body.infinite-scroll .fullscreen-infinite img {
 body:not([data-user-logged="1"]) .card-select {
     display: none !important;
 }
+
+.card-select-compact {
+    position: static;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+    opacity: 1;
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(128, 128, 128, 0.8);
+}
+
+tr.selected {
+    background: rgba(33, 150, 243, 0.15) !important;
+}

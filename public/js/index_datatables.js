@@ -251,16 +251,30 @@ IndexTable.createdRow = function (row, data, dataIndex, cells) {
     // Update row with id and context-menu class
     row.id = data.arcid || data.id;
     row.classList.add("context-menu");
-    // Builds a id1 class div to jam in the thumb container for the given archive data
+
+    const arcid = data.arcid || data.id;
+
     if (localStorage.indexViewMode === "1") {
-        // Build a thumb-like div with the data
+        // Thumbnail mode: build a card-like div in the thumb container
         $("#thumbs_container").append(LRR.buildThumbnailDiv(data));
+    } else if (LRR.isUserLogged()) {
+        // Compact mode: prepend an inline selection glyph into the first cell.
+        // Only for logged-in users (bulk actions require auth).
+        const firstCell = row.cells[0];
+        if (firstCell && !firstCell.querySelector(".card-select")) {
+            const glyph = document.createElement("span");
+            glyph.className = "card-select card-select-compact";
+            glyph.setAttribute("role", "checkbox");
+            glyph.setAttribute("aria-checked", "false");
+            glyph.setAttribute("tabindex", "0");
+            glyph.setAttribute("data-arcid", arcid);
+            firstCell.insertBefore(glyph, firstCell.firstChild);
+        }
     }
 
     // Re-apply persisted bulk-selection state for this archive.
     // Both the <tr> and the .id1 card share the same id in thumbnail mode; querySelectorAll
     // with a class scope reliably targets the card without colliding with the row.
-    const arcid = data.arcid || data.id;
     if (Selection.has(arcid)) {
         row.classList.add("selected");
         const cards = document.querySelectorAll(`.id1#${CSS.escape(arcid)}`);
@@ -272,6 +286,11 @@ IndexTable.createdRow = function (row, data, dataIndex, cells) {
                 glyph.setAttribute("aria-checked", "true");
             }
         });
+        const rowGlyph = row.querySelector(".card-select-compact");
+        if (rowGlyph) {
+            rowGlyph.classList.add("checked");
+            rowGlyph.setAttribute("aria-checked", "true");
+        }
     }
 };
 
