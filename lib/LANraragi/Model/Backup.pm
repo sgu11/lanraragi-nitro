@@ -76,10 +76,11 @@ sub build_backup_JSON {
     my @keys = LANraragi::Utils::Database::all_archive_ids($redis);
 
     # Pipelined HMGET — fetch only the 5 fields we need for backup, one round-trip instead of N.
+    # Callback sig is (reply, error); use $_[0] for the arrayref of field values.
     my @hmget_results;
     my @fields = qw(name title tags summary thumbhash);
     for my $id (@keys) {
-        $redis->hmget( $id, @fields, sub { push @hmget_results, [ $id, $_[1] ] } );
+        $redis->hmget( $id, @fields, sub { push @hmget_results, [ $id, $_[0] ] } );
     }
     $redis->wait_all_responses;
 

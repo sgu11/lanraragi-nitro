@@ -200,7 +200,8 @@ sub setup_redis_mock {
 
             my $value = $datamodel{$key}{$hashkey};
             if ($cb) {
-                $cb->( $self, $value );
+                # Real Redis client fires the cb with (reply, error). Match that.
+                $cb->( $value, undef );
                 return;
             }
             return $value;
@@ -217,7 +218,8 @@ sub setup_redis_mock {
 
             my @values = map { $datamodel{$key}{$_} } @fields;
             if ($cb) {
-                $cb->( $self, \@values );
+                # Real Redis client fires the cb with (reply, error). Match that.
+                $cb->( \@values, undef );
                 return;
             }
             if ( $self->{ismulti} ) {

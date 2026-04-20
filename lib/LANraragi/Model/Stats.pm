@@ -101,9 +101,10 @@ sub build_stat_hashes {
 
     # Pipeline one HMGET per archive for the three fields we need — tags, title,
     # isnew. One round-trip total instead of ~4×N sequential HGETs (B.5).
+    # Pipelined callback is (reply, error) — $_[0] is the arrayref of values.
     my %prefetch;
     for my $id (@keys) {
-        $redis->hmget( $id, 'tags', 'title', 'isnew', sub { $prefetch{$id} = $_[1] } );
+        $redis->hmget( $id, 'tags', 'title', 'isnew', sub { $prefetch{$id} = $_[0] } );
     }
     $redis->wait_all_responses;
 

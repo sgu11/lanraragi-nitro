@@ -189,11 +189,12 @@ sub update_filemap {
     if (@existingfiles) {
         my $redis_arc = LANraragi::Model::Config->get_redis;
 
-        # Batch-fetch all arcsize values in one pipeline round-trip
+        # Batch-fetch all arcsize values in one pipeline round-trip.
+        # Pipelined hget callback is (reply, error) — use $_[0] for the value.
         my @ids = map { $filemap{$_} } @existingfiles;
         my @cached_sizes;
         for my $id (@ids) {
-            $redis_arc->hget( $id, "arcsize", sub { push @cached_sizes, $_[1] } );
+            $redis_arc->hget( $id, "arcsize", sub { push @cached_sizes, $_[0] } );
         }
         $redis_arc->wait_all_responses;
 
