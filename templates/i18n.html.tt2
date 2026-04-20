@@ -12,6 +12,7 @@ I18N.ConfirmDestructive = "[% c.lh("This action cannot be undone!") %]";
 I18N.ConfirmVeryDestructive = "[% c.lh("This action (truly) cannot be undone!") %]";
 I18N.ConfirmYes = "[% c.lh("Yes, delete it!") %]";
 I18N.ConfirmNo = "[% c.lh("No, keep it!") %]";
+I18N.Selected = "[% c.lh("selected") %]";
 I18N.ErrorDeletingCache = "[% c.lh("Error while deleting cache! Check application logs.") %]";
 I18N.GenericReponseError = "[% c.lh("Error while processing request") %]";
 I18N.MinionSendError = "[% c.lh("Error sending job to Minion") %]";

@@ -54,6 +54,21 @@ Index.initializeAll = function () {
         $(this).closest(".context-menu").toggleClass("selected", checked);
     });
 
+    // Banner show/hide + count update driven by Selection changes.
+    Selection.onChange(function (size) {
+        const banner = document.getElementById("bulk-selection-banner");
+        if (!banner) return;
+        if (size === 0) {
+            banner.style.display = "none";
+        } else {
+            banner.style.display = "flex";
+            const countEl = banner.querySelector(".bulk-count");
+            if (countEl) {
+                countEl.textContent = `${size} ${I18N.Selected || "selected"}`;
+            }
+        }
+    });
+
     // 0 = List view
     // 1 = Thumbnail view
     // List view is at 0 but became the non-default state later so here's some legacy weirdness
