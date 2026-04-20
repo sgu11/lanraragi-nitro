@@ -19,6 +19,8 @@ This fork is maintained by AI agents (Claude Code) under human direction. Change
 
 - **Thumbnail loading and caching** on the library page reworked for fewer requests and faster scroll.
 - **Stale `arcsize` and `pagecount` recovery** for archives that were replaced on disk under the same path — Shinobu now reconciles cached values against actual file size.
+- **Bulk archive actions** on the index page (desktop) — hover-revealed checkbox on every card and an inline row checkbox in compact mode. The selection banner (next to the Crop thumbnails toggle) shows the live count with `Select page`, `Clear`, and an `Actions ▾` dropdown (Delete, Add to category). Right-clicking a selected card swaps the context menu to the bulk variant. Selection is sticky across pagination, sort, and filter; cleared on full reload. Bulk API strategy is sequential client-side calls — no new server endpoints. Spec and plan: [`docs/superpowers/specs/2026-04-20-bulk-archive-actions-design.md`](docs/superpowers/specs/2026-04-20-bulk-archive-actions-design.md).
+- **Mobile portrait card sizing fix** — cards were rendering desktop-sized (228×335, 280px thumb box) on portrait phones/tablets around 1440 CSS-px because no media query fired above 560px and the viewport meta omitted `initial-scale=1`. Added `initial-scale=1` to all 15 templates, relaxed the `.id3 img` cap so the image fills its container, added a 561–900px portrait breakpoint (196×296, 236px thumb), and mirrored the `min-height` override at ≤560px so phones actually get 256px cards instead of 335px cards with a blank strip.
 
 ### Performance
 
