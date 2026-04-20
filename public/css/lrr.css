@@ -894,3 +894,57 @@ body.infinite-scroll .fullscreen-infinite img {
   top: 5px;
   left: 25%
 }
+
+/* ==== Bulk selection ==== */
+
+.id1 {
+    position: relative;
+}
+
+.card-select {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    z-index: 5;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    box-sizing: border-box;
+}
+
+.id1:hover .card-select {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.card-select.checked {
+    opacity: 1;
+    pointer-events: auto;
+    background: #2196f3;
+    border-color: #fff;
+}
+
+.card-select.checked::after {
+    content: "\2713";
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    display: block;
+    text-align: center;
+    line-height: 16px;
+}
+
+.id1.selected {
+    outline: 3px solid #2196f3;
+    outline-offset: -3px;
+}
+
+body:not([data-user-logged="1"]) .card-select {
+    display: none !important;
+}

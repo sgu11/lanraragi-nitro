@@ -313,6 +313,7 @@ LRR.buildThumbnailDiv = function (data, tagTooltip = true) {
 
     // Don't enforce no_fallback=true here, we don't want those divs to trigger Minion jobs
     return `<div class="id1 context-menu swiper-slide" id="${id}">
+                <div class="card-select" role="checkbox" aria-checked="false" tabindex="0" data-arcid="${id}"></div>
                 <div class="id2">
                     ${LRR.buildStatusDiv(data)}
                     <a href="${reader_url}" title="${LRR.encodeHTML(data.title)}">${LRR.encodeHTML(data.title)}</a>
