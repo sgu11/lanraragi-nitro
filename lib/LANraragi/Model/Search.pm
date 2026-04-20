@@ -60,8 +60,12 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
         ( $keyed_count, @filtered ) =
           search_uncached( $category_id, $filter, $sortkey, $sortorder, $newonly, $untaggedonly, $grouptanks, $hidecompleted );
 
-        # Cache this query in the search database, prepending the keyed count for partition-aware cache inversion
-        eval { $redis->hset( "LRR_SEARCHCACHE", $cachekey, nfreeze [ $keyed_count, @filtered ] ); };
+        # Per-entry TTL (5 min). invalidate_cache bumps LRR_SEARCHCACHE_GEN which makes every prior key unreachable;
+        # those old keys expire naturally via TTL rather than via a blocking mass DEL.
+        eval {
+            my $gen = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
+            $redis->set( "LRR_SEARCHCACHE:$gen:$cachekey", nfreeze [ $keyed_count, @filtered ], 'EX', 300 );
+        };
     }
     $redis->quit();
 
@@ -87,28 +91,34 @@ sub check_cache ( $cachekey, $cachekey_inv ) {
     my $cachehit = 0;
     $logger->debug("Search request: $cachekey");
 
-    if ( $redis->exists("LRR_SEARCHCACHE") && $redis->hexists( "LRR_SEARCHCACHE", $cachekey ) ) {
+    my $gen        = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
+    my $key        = "LRR_SEARCHCACHE:$gen:$cachekey";
+    my $key_inv    = "LRR_SEARCHCACHE:$gen:$cachekey_inv";
+    my $frozendata = $redis->get($key);
+
+    if ( defined $frozendata && length $frozendata ) {
         $logger->debug("Using cache for this query.");
         $cachehit = 1;
 
-        my $frozendata = $redis->hget( "LRR_SEARCHCACHE", $cachekey );
-        my @cached     = @{ thaw $frozendata };
+        my @cached = @{ thaw $frozendata };
         shift @cached;    # Discard the keyed count, since they're at the bottom of the list naturally
         @filtered = @cached;
 
-    } elsif ( $redis->exists("LRR_SEARCHCACHE") && $redis->hexists( "LRR_SEARCHCACHE", $cachekey_inv ) ) {
-        $logger->debug("A cache key exists with the opposite sortorder.");
-        $cachehit = 1;
+    } else {
+        $frozendata = $redis->get($key_inv);
+        if ( defined $frozendata && length $frozendata ) {
+            $logger->debug("A cache key exists with the opposite sortorder.");
+            $cachehit = 1;
 
-        my $frozendata  = $redis->hget( "LRR_SEARCHCACHE", $cachekey_inv );
-        my @cached      = @{ thaw $frozendata };
-        my $keyed_count = shift @cached;
+            my @cached      = @{ thaw $frozendata };
+            my $keyed_count = shift @cached;
 
-        # Reverse only the keyed prefix; unkeyed archives stay at the back
-        if ( $keyed_count > 0 && $keyed_count < scalar @cached ) {
-            @filtered = ( reverse( @cached[ 0 .. $keyed_count - 1 ] ), @cached[ $keyed_count .. $#cached ] );
-        } else {
-            @filtered = reverse @cached;
+            # Reverse only the keyed prefix; unkeyed archives stay at the back
+            if ( $keyed_count > 0 && $keyed_count < scalar @cached ) {
+                @filtered = ( reverse( @cached[ 0 .. $keyed_count - 1 ] ), @cached[ $keyed_count .. $#cached ] );
+            } else {
+                @filtered = reverse @cached;
+            }
         }
     }
 

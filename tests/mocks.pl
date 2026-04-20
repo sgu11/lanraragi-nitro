@@ -152,12 +152,17 @@ sub setup_redis_mock {
     $redis->mock( 'exists',  sub { shift; return $_[0] eq "LRR_SEARCHCACHE" ? 0 : 1 } );
     $redis->mock( 'hexists', sub { 1 } );
     $redis->mock( 'hset',    sub { 1 } );
+    $redis->mock( 'hsetnx',  sub { 1 } );
+    $redis->mock( 'hdel',    sub { 1 } );
+    $redis->mock( 'get',     sub { undef } );
+    $redis->mock( 'incr',    sub { 1 } );
     $redis->mock( 'quit',    sub { 1 } );
     $redis->mock( 'select',  sub { 1 } );
     $redis->mock( 'flushdb', sub { 1 } );
     $redis->mock( 'zincrby', sub { 1 } );
     $redis->mock( 'zrem',    sub { 1 } );
     $redis->mock( 'watch',   sub { 1 } );
+    $redis->mock( 'unwatch', sub { 1 } );
     $redis->mock( 'set',     sub { 1 } );
     $redis->mock( 'hlen',    sub { 1337 } );
     $redis->mock( 'dbsize',  sub { 1337 } );

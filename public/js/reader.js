@@ -1350,39 +1350,45 @@ Reader.updateArchiveOverlay = function (forceUpdate = false) {
         $(".chapter-selector").html("");
     }
 
-    // For each link in the pages array, craft a div and jam it in the overlay.
-    let htmlBlob = "";
-    for (let page = firstPage; page < lastPage + 1; ++page) {
-        const index = page - 1;
+    // Yield between chunks so a large archive doesn't freeze the main thread.
+    const $pagesSection = $("#pages-section");
+    $pagesSection.html("");
+    const chunkSize = 20;
+    const renderToken = Symbol("overlay-render");
+    Reader.overlayRenderToken = renderToken;
 
-        const thumbCss = (localStorage.cropthumbs === "true") ? "id3" : "id3 nocrop";
-        const thumbnailUrl = new LRR.apiURL(`/api/archives/${Reader.id}/thumbnail?page=${page}`);
-        
-        let thumbnail = `
-            <div class='${thumbCss} quick-thumbnail' page='${index}' style='display: inline-block; cursor: pointer'>
-                <span class='page-number'>${I18N.ReaderPage(page)}</span>
-                <img src="${thumbnailUrl}" id="${index}_thumb" loading="lazy" />`;
-        
-        if (LRR.isUserLogged()) 
-            thumbnail += `<a href="#" style="padding:12px; top:2%; left:72%;" 
-                             title="${I18N.ReaderSetPageAsThumbnail}" 
-                             class="fas fa-file-image page-number set-thumbnail"></a>
-                          <a href="#" style="padding:12px; top:80%; left:72%;" 
-                             title="${I18N.ReaderAddToc}" 
-                             class="fas fa-book-medical page-number add-toc"></a>`;
+    const renderChunk = (start) => {
+        // Bail if a newer overlay render superseded this one.
+        if (Reader.overlayRenderToken !== renderToken) return;
+        if (start > lastPage) {
+            $("#archivePagesOverlay").attr("loaded", "true");
+            return;
+        }
+        const end = Math.min(start + chunkSize - 1, lastPage);
+        let blob = "";
+        for (let page = start; page <= end; ++page) {
+            const index = page - 1;
+            const thumbCss = (localStorage.cropthumbs === "true") ? "id3" : "id3 nocrop";
+            const thumbnailUrl = new LRR.apiURL(`/api/archives/${Reader.id}/thumbnail?page=${page}`);
+            let thumbnail = `
+                <div class='${thumbCss} quick-thumbnail' page='${index}' style='display: inline-block; cursor: pointer'>
+                    <span class='page-number'>${I18N.ReaderPage(page)}</span>
+                    <img src="${thumbnailUrl}" id="${index}_thumb" loading="lazy" />`;
+            if (LRR.isUserLogged()) thumbnail += `<a href="#" style="padding:12px; top:2%; left:72%;"
+                                 title="${I18N.ReaderSetPageAsThumbnail}"
+                                 class="fas fa-file-image page-number set-thumbnail"></a>
+                              <a href="#" style="padding:12px; top:80%; left:72%;"
+                                 title="${I18N.ReaderAddToc}"
+                                 class="fas fa-book-medical page-number add-toc"></a>`;
+            if (Reader.pageThumbnails.includes(index)) thumbnail += "</div>";
+            else thumbnail += `<i id="${index}_spinner" class="fa fa-4x fa-circle-notch fa-spin ttspinner" style="display:flex;justify-content: center; align-items: center;"></i></div>`;
+            blob += thumbnail;
+        }
+        $pagesSection.append(blob);
+        window.requestAnimationFrame(() => renderChunk(end + 1));
+    };
 
-        if (Reader.pageThumbnails.includes(index)) thumbnail += 
-            `</div>`;
-        else thumbnail += 
-                `<i id="${index}_spinner" class="fa fa-4x fa-circle-notch fa-spin ttspinner" style="display:flex;justify-content: center; align-items: center;"></i>
-            </div>`;
-
-        htmlBlob += thumbnail;
-    }
-
-    // NOTE: This can be slow on huge archives and on slower devices, due to the huge DOM change.
-    $("#pages-section").html(htmlBlob);
-    $("#archivePagesOverlay").attr("loaded", "true");
+    renderChunk(firstPage);
 };
 
 Reader.generateThumbnails = function () {

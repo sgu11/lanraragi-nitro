@@ -132,29 +132,49 @@ sub generate_page_thumbnails {
         # Check if a job is already queued for this archive
         if ( $redis->hexists( $id, "thumbjob" ) ) {
 
-            my $job_id = $redis->hget( $id, "thumbjob" );
+            my $existing_id = $redis->hget( $id, "thumbjob" );
+            my $existing_job = $self->minion->job($existing_id);
+            my $job_state    = $existing_job ? $existing_job->info->{state} : undef;
 
             # If the job is pending or running, don't queue a new job and just return this one
-            my $job_state = $self->minion->job($job_id)->info->{state};
-            if ( $job_state eq "active" || $job_state eq "inactive" ) {
+            if ( defined $job_state && ( $job_state eq "active" || $job_state eq "inactive" ) ) {
                 $self->render(
                     openapi => {
                         operation => "generate_page_thumbnails",
                         success   => 1,
-                        job       => $job_id
+                        job       => $existing_id
                     },
                     status => 202    # 202 Accepted
                 );
                 $redis->quit;
                 return;
             }
+
+            # Stale thumbjob field (job purged, finished, or failed without the on_failed hook firing).
+            # Clear it so HSETNX below can claim. Only clear if it still matches what we just read.
+            $redis->watch( $id );
+            my $current = $redis->hget( $id, "thumbjob" );
+            if ( defined $current && $current eq $existing_id ) {
+                $redis->multi;
+                $redis->hdel( $id, "thumbjob" );
+                $redis->exec;
+            } else {
+                $redis->unwatch;
+            }
         }
 
         # Queue a minion job to generate the thumbnails. Clients can check on its progress through the job ID.
         my $job_id = $self->minion->enqueue( page_thumbnails => [ $id, $force ] => { priority => 0, attempts => 3 } );
 
-        # Save job in Redis so we can check on it if this endpoint is called again
-        $redis->hset( $id, "thumbjob", $job_id );
+        # Atomic claim: HSETNX returns 1 if we set it, 0 if a concurrent worker won the race.
+        my $claimed = $redis->hsetnx( $id, "thumbjob", $job_id );
+        if ( !$claimed ) {
+
+            # Lost the race. Remove our redundant job and return the winner's id.
+            my $winner = $redis->hget( $id, "thumbjob" );
+            eval { $self->minion->job($job_id)->remove; };
+            $job_id = $winner if defined $winner;
+        }
         $self->render(
             openapi => {
                 operation => "generate_page_thumbnails",
@@ -271,6 +291,9 @@ sub serve_page {
             put( $cachekey, $content );
         }
 
+        # Archive IDs are content-hashed, so (id, path) is stable; private because No-Fun Mode can gate access.
+        $self->res->headers->cache_control('private, max-age=3600, immutable');
+
         # resize_image always converts the image to jpg
         $self->render_file(
             data                => $content,
@@ -283,6 +306,8 @@ sub serve_page {
         my ( $n, $p, $file_ext ) = fileparse( $path, qr/\.[^.]*/ );
         my $content = get_page_data( $id, $path );
         $logger->debug( "Data size:" . length($content) );
+
+        $self->res->headers->cache_control('private, max-age=3600, immutable');
 
         # Serve extracted file directly
         $self->render_file(

@@ -21,6 +21,10 @@ sub first_install_actions {
         $logger->info("First-time installation detected!");
         $redis->hset('LRR_CONFIG', 'htmltitle', 'LANraragi');
 
+        # Opinionated default for fresh installs only — faster first paint on mobile.
+        # Existing installs keep their configured value (or the fallback default in Config.pm).
+        $redis->hset('LRR_CONFIG', 'pagesize', '30');
+
         $logger->debug("Creating first category...");
         my $default_category_id = LANraragi::Model::Category::create_category("🔖 Favorites", "", 0, "");
         LANraragi::Model::Category::update_bookmark_link($default_category_id);

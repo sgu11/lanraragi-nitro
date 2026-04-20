@@ -19,6 +19,7 @@ use Encode::Guess qw/euc-jp shiftjis 7bit-jis/;
 use Redis;
 use Cwd;
 use Data::Dumper;
+use Storable qw(nfreeze thaw);
 use Archive::Libarchive qw( ARCHIVE_OK );
 use Archive::Libarchive::Extract;
 use Archive::Libarchive::Peek;
@@ -155,9 +156,24 @@ sub expand {
 }
 
 # Returns a list of all the files contained in the given archive with corresponding archive ID.
-sub get_filelist ($archive, $arcid) {
+# Reads through a Redis-backed cache (`pagefiles` field on the archive hash) to avoid
+# re-opening and re-scanning the archive on every reader open. Callers that mutate the
+# underlying file (Shinobu arcsize mismatch, change_archive_id) must HDEL `pagefiles`.
+sub get_filelist ( $archive, $arcid, $force = 0 ) {
 
     my $logger = get_logger( "Archive", "lanraragi" );
+
+    my $cache_redis = eval { LANraragi::Model::Config->get_redis };
+    if ( $cache_redis && $arcid && !$force ) {
+        my $cached = eval { $cache_redis->hget( $arcid, "pagefiles" ) };
+        if ( defined $cached && length $cached ) {
+            my $list = eval { thaw($cached) };
+            if ( ref $list eq 'ARRAY' && @$list ) {
+                eval { $cache_redis->quit };
+                return @$list;
+            }
+        }
+    }
 
     my @files = ();
 
@@ -234,7 +250,15 @@ sub get_filelist ($archive, $arcid) {
     my @other_pages = grep { !$credit_hash{$_} && !$cover_hash{$_} } @files;
     @files = ( @cover_pages, @other_pages, @credit_pages );
 
-    # Return files
+    # Persist the final ordered list so the next call can skip the extraction.
+    # Use Storable rather than JSON: filenames in archives can be non-UTF-8 bytes.
+    if ( $cache_redis && $arcid && @files ) {
+        eval { $cache_redis->hset( $arcid, "pagefiles", nfreeze( \@files ) ) };
+        eval { $cache_redis->quit };
+    } elsif ($cache_redis) {
+        eval { $cache_redis->quit };
+    }
+
     return @files;
 }
 

@@ -205,6 +205,7 @@ sub update_filemap {
 
             if ( $actual_size && $current_arcsize != $actual_size ) {
                 $logger->info("arcsize mismatch for $id (cached: " . ($current_arcsize || "none") . ", actual: $actual_size), updating!");
+                $redis_arc->hdel( $id, "pagefiles" );
                 add_arcsize( $redis_arc, $id );
                 $logger->debug("Recalculating pagecount for $id");
                 add_pagecount( $redis_arc, $id );
@@ -219,6 +220,7 @@ sub update_filemap {
     eval {
         if ( IS_UNIX ) {
             # Now that we have all new files, process them...with multithreading!
+            MCE::Loop->init( { max_workers => $ENV{LRR_MCE_WORKERS} } ) if $ENV{LRR_MCE_WORKERS};
             mce_loop {
                 add_new_files(@{ $_ });
             } \@newfiles;
@@ -333,6 +335,7 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
 
             if ( !$current_arcsize || $current_arcsize != $actual_size ) {
                 $logger->info("arcsize mismatch for $id (cached: " . ($current_arcsize // "none") . ", actual: $actual_size), updating!");
+                $redis_arc->hdel( $id, "pagefiles" );
                 add_arcsize( $redis_arc, $id );
                 $logger->debug("Recalculating pagecount for $id");
                 add_pagecount( $redis_arc, $id );

@@ -104,6 +104,7 @@ sub add_tasks {
 
             eval {
                 if ( IS_UNIX ) {
+                    MCE::Loop->init( { max_workers => $ENV{LRR_MCE_WORKERS} } ) if $ENV{LRR_MCE_WORKERS};
                     mce_loop {
                         $sub->(@{ $_ });
                     } \@keys;
@@ -167,6 +168,7 @@ sub add_tasks {
 
             eval {
                 if ( IS_UNIX ) {
+                    MCE::Loop->init( { max_workers => $ENV{LRR_MCE_WORKERS} } ) if $ENV{LRR_MCE_WORKERS};
                     mce_loop {
                         $sub->(@{ $_ });
                     } \@keys;
@@ -270,6 +272,7 @@ sub add_tasks {
 
             eval {
                 if ( IS_UNIX ) {
+                    MCE::Loop->init( { max_workers => $ENV{LRR_MCE_WORKERS} } ) if $ENV{LRR_MCE_WORKERS};
                     mce_loop {
                         $sub->(@{ $_ });
                     } \@ids;
@@ -470,6 +473,22 @@ sub add_tasks {
         }
     );
 
+    # Clear the stale thumbjob field when a page_thumbnails job fails or exhausts its retries.
+    # Without this, a subsequent request sees thumbjob set and won't re-enqueue.
+    $minion->on(
+        failed => sub {
+            my ( $minion, $job ) = @_;
+            return unless $job->task eq 'page_thumbnails';
+            my ($id) = @{ $job->args };
+            return unless $id;
+            my $redis = LANraragi::Model::Config->get_redis;
+            my $stored = $redis->hget( $id, "thumbjob" );
+            if ( defined $stored && $stored eq $job->id ) {
+                $redis->hdel( $id, "thumbjob" );
+            }
+            $redis->quit;
+        }
+    );
 }
 
 1;

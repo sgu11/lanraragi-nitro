@@ -6,6 +6,10 @@ const Server = {};
 
 Server.isScriptRunning = false;
 
+// Inflight request cache: deduplicates concurrent GETs to the same URL.
+// Only applied to GET; side-effectful verbs must not be merged.
+Server._inflight = new Map();
+
 /**
  * Call that shows a popup to the user on success/failure.
  * Returns the promise so you can add final callbacks if needed.
@@ -17,9 +21,25 @@ Server.isScriptRunning = false;
  * @returns The result of the callback, or NULL.
  */
 Server.callAPI = function (endpoint, method, successMessage, errorMessage, successCallback) {
-    let endpointUrl = new LRR.apiURL(endpoint);
-    return fetch(endpointUrl, { method })
-        .then((response) => (response.ok ? response.json() : { success: 0, error: I18N.GenericReponseError }))
+    const endpointUrl = new LRR.apiURL(endpoint);
+    const verb = method || "GET";
+    const dedupKey = verb === "GET" ? `GET ${endpointUrl}` : null;
+
+    let dataPromise;
+    if (dedupKey && Server._inflight.has(dedupKey)) {
+        dataPromise = Server._inflight.get(dedupKey);
+    } else {
+        dataPromise = fetch(endpointUrl, { method: verb })
+            .then((response) => (response.ok ? response.json() : { success: 0, error: I18N.GenericReponseError }));
+        if (dedupKey) {
+            Server._inflight.set(dedupKey, dataPromise);
+            dataPromise.finally(() => {
+                if (Server._inflight.get(dedupKey) === dataPromise) Server._inflight.delete(dedupKey);
+            });
+        }
+    }
+
+    return dataPromise
         .then((data) => {
             if (Object.prototype.hasOwnProperty.call(data, "success") && !data.success) {
                 throw new Error(data.error);

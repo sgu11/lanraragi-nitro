@@ -83,6 +83,10 @@ sub change_archive_id ( $old_id, $new_id ) {
         $redis->rename( $old_id, $new_id );
     }
 
+    # The renamed hash still carries the previous pagefiles cache; drop it so the next
+    # get_filelist call rebuilds from the new on-disk content.
+    $redis->hdel( $new_id, "pagefiles" );
+
     # Update archive size
     my $file = get_archive_path( $redis, $new_id );
     $redis->hset( $new_id, "arcsize", -s $file );
@@ -592,11 +596,16 @@ sub compute_id ($file) {
 
 }
 
-# Bust the current search cache key in Redis.
+# Bust the current search cache in Redis.
+# Bumps LRR_SEARCHCACHE_GEN so previously-written entries (keyed by the old gen) become
+# unreachable by reads. They carry a TTL and expire naturally — no blocking mass DEL.
+# Clears the legacy LRR_SEARCHCACHE hash and re-sets the `created` sentinel that metrics
+# consumers read. Any residual pre-migration entries in that hash are dropped here too.
 # Add "1" as a parameter to rebuild stat hashes as well. (Use with caution!)
 sub invalidate_cache ( $rebuild_indexes = 0 ) {
 
     my $redis = LANraragi::Model::Config->get_redis_search;
+    $redis->incr("LRR_SEARCHCACHE_GEN");
     $redis->del("LRR_SEARCHCACHE");
     $redis->hset( "LRR_SEARCHCACHE", "created", time );
     $redis->quit();
