@@ -818,6 +818,35 @@ Index.loadContextMenuRatings = (id) => Server.callAPI(`/api/archives/${id}/metad
 );
 
 /**
+ * Handle bulk context-menu and banner-dropdown actions. Dispatches to per-action handlers.
+ * @param {string} action One of: "delete", "addcat"
+ */
+Index.handleBulkAction = function (action) {
+    if (typeof Selection === "undefined" || Selection.size() === 0) {
+        LRR.toast({
+            heading: "No archives selected",
+            icon: "warning",
+            hideAfter: 3000,
+        });
+        return;
+    }
+    switch (action) {
+        case "delete":
+            Index.bulkDelete();
+            break;
+        case "addcat":
+            Index.bulkAddToCategory();
+            break;
+        default:
+            break;
+    }
+};
+
+// Stubs replaced in Tasks 9 and 10.
+Index.bulkDelete = function () { alert("bulkDelete: not implemented yet"); };
+Index.bulkAddToCategory = function () { alert("bulkAddToCategory: not implemented yet"); };
+
+/**
  * Handle context menu clicks.
  * @param {*} option The clicked option
  * @param {*} id The Archive ID

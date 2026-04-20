@@ -235,6 +235,22 @@
 			$.contextMenu({
 				selector: '.context-menu',
 				build: ($trigger, e) => {
+					const id = $trigger.attr("id");
+					// Bulk branch: right-clicked card is in the active selection.
+					if (typeof Selection !== "undefined" && Selection.has(id) && Selection.size() > 0) {
+						return {
+							callback: function (key) { Index.handleBulkAction(key); },
+							items: {
+								[% IF userlogged %]
+								"delete": { name: "[% c.lh('Delete') %] (" + Selection.size() + ")", icon: "fas fa-trash-alt" },
+								"addcat": { name: "[% c.lh('Add to Category') %] (" + Selection.size() + ")", icon: "fas fa-search-plus" }
+								[% ELSE %]
+								"noop": { name: "[% c.lh('Log in to perform bulk actions') %]", icon: "fas fa-lock" }
+								[% END %]
+							}
+						};
+					}
+					// Single-archive branch (unchanged).
 					return {
 						callback: function (key, options) {
 							Index.handleContextMenu(key, $(this).attr("id"));
