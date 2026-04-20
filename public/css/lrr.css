@@ -625,7 +625,7 @@ body.swal2-shown>[aria-hidden="true"] {
   }
 }
 
-@media all and (max-width: 900px) and (orientation: portrait) {
+@media all and (min-width: 561px) and (max-width: 900px) and (orientation: portrait) {
 
   div.id1 {
     width: 196px;
