@@ -629,11 +629,11 @@ body.swal2-shown>[aria-hidden="true"] {
 
   div.id1 {
     width: 196px;
-    min-height: 296px;
+    min-height: 296px !important;
   }
 
   div.id3 {
-    height: 236px;
+    height: 236px !important;
   }
 
 }
