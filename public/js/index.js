@@ -100,6 +100,28 @@ Index.initializeAll = function () {
         });
     });
 
+    // Banner Actions dropdown: toggle menu, close on outside click, dispatch on item click.
+    $(document).on("click.bulk-actions-toggle", "#bulk-actions-toggle", function (e) {
+        e.stopPropagation();
+        const menu = document.getElementById("bulk-actions-menu");
+        if (!menu) return;
+        menu.hidden = !menu.hidden;
+    });
+
+    $(document).on("click.bulk-actions-outside", function (e) {
+        const menu = document.getElementById("bulk-actions-menu");
+        if (!menu || menu.hidden) return;
+        if (e.target.closest("#bulk-actions-menu") || e.target.closest("#bulk-actions-toggle")) return;
+        menu.hidden = true;
+    });
+
+    $(document).on("click.bulk-actions-item", "#bulk-actions-menu li", function () {
+        const action = this.getAttribute("data-action");
+        const menu = document.getElementById("bulk-actions-menu");
+        if (menu) menu.hidden = true;
+        Index.handleBulkAction(action);
+    });
+
     // 0 = List view
     // 1 = Thumbnail view
     // List view is at 0 but became the non-default state later so here's some legacy weirdness
