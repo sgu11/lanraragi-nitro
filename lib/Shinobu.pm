@@ -288,7 +288,11 @@ sub add_to_filemap ( $redis_cfg, $file ) {
         }
 
         # New file handling runs outside the lock so auto-plugin can acquire its own lock.
+        # Wait for the write to finish first — zip files built in-place only become readable
+        # once the central directory is written, and plugins that crack the archive open
+        # (e.g. info.txt readers) fail with "Could not read archive" on a partial file.
         if ( $acquired && $is_new ) {
+            wait_for_stable_size($file);
             add_new_file( $id, $file );
             invalidate_cache();
         }
@@ -446,6 +450,27 @@ sub add_new_files (@files) {
     $redis->quit();
 }
 
+
+# Block until the file's size has been unchanged for 2 consecutive 1-second polls,
+# indicating the writer has closed it. For zips built in-place the central directory
+# is written in the final flush, so size-stability is a reliable "archive is readable"
+# signal. Bails after a 5-minute ceiling or if the file disappears mid-wait.
+sub wait_for_stable_size ($file) {
+    my $prev   = -1;
+    my $stable = 0;
+    for ( 1 .. 300 ) {
+        return unless -e $file;
+        my $size = -s $file // 0;
+        if ( $size == $prev ) {
+            return if ++$stable >= 2;
+        } else {
+            $stable = 0;
+        }
+        $prev = $size;
+        sleep 1;
+    }
+    $logger->warn("Timed out waiting for file size to stabilize: $file");
+}
 
 sub add_new_file ( $id, $file ) {
 
