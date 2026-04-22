@@ -32,6 +32,7 @@ Index.initializeAll = function () {
     $(document).on("click.order-sortby", "#order-sortby", Index.toggleOrder);
     $(document).on("click.open-carousel", ".collapsible-title", Index.toggleCarousel);
     $(document).on("click.reload-carousel", "#reload-carousel", Index.updateCarousel);
+    $(document).on("click.toggle-carousel-visibility", "#toggle-carousel-visibility", Index.toggleCarouselVisibility);
     $(document).on("click.close-overlay", "#overlay-shade", LRR.closeOverlay);
     $(document).on("click.thumbnail-bookmark-icon", ".thumbnail-bookmark-icon", Index.toggleBookmarkStatusByIcon);
     $(document).on("click.title-bookmark-icon", ".title-bookmark-icon", Index.toggleBookmarkStatusByIcon);
@@ -150,12 +151,21 @@ Index.initializeAll = function () {
         localStorage.carouselOpen = 1;
     }
 
-    // Force-open the collapsible if carouselOpen = true
-    if (localStorage.carouselOpen === "1") {
-        $(".collapsible-title").trigger("click", [false]);
-        // Index.updateCarousel(); will be executed by toggleCarousel
-    } else {
-        Index.updateCarousel();
+    // Default to visible carousel
+    if (localStorage.getItem("carouselHidden") === null) {
+        localStorage.carouselHidden = "0";
+    }
+
+    Index.applyCarouselVisibility();
+
+    if (localStorage.carouselHidden !== "1") {
+        // Force-open the collapsible if carouselOpen = true
+        if (localStorage.carouselOpen === "1") {
+            $(".collapsible-title").trigger("click", [false]);
+            // Index.updateCarousel(); will be executed by toggleCarousel
+        } else {
+            Index.updateCarousel();
+        }
     }
 
     // Initialize carousel mode menu
@@ -315,6 +325,30 @@ Index.handleEscapeKey = function (e) {
 Index.toggleMode = function () {
     localStorage.indexViewMode = (localStorage.indexViewMode === "1") ? "0" : "1";
     IndexTable.dataTable.draw();
+};
+
+Index.applyCarouselVisibility = function () {
+    const hidden = localStorage.carouselHidden === "1";
+    $(".index-carousel").toggle(!hidden);
+    $("#toggle-carousel-visibility").val(hidden ? I18N.ShowCarousel : I18N.HideCarousel);
+};
+
+Index.toggleCarouselVisibility = function (e) {
+    if (e) e.preventDefault();
+    localStorage.carouselHidden = (localStorage.carouselHidden === "1") ? "0" : "1";
+    Index.applyCarouselVisibility();
+
+    if (localStorage.carouselHidden === "1") return;
+
+    // Re-show: initialize/update carousel if the collapsible is open
+    if (localStorage.carouselOpen === "1") {
+        if (!Index.carouselInitialized) {
+            // Force-open triggers carousel init + update
+            $(".collapsible-title").trigger("click", [false]);
+        } else {
+            Index.updateCarousel();
+        }
+    }
 };
 
 Index.toggleCarousel = function (e, updateLocalStorage = true) {
