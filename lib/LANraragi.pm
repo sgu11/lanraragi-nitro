@@ -116,8 +116,11 @@ sub startup {
     # Load i18n
     LANraragi::Utils::I18NInitializer::initialize($self);
 
-    # Check old settings and migrate them if needed
-    if ( $self->LRR_CONF->get_redis->keys('LRR_*') ) {
+    # Check old settings and migrate them if needed.
+    # Ignore maintained archive-DB index sets (LRR_ALL_ARCHIVES/LRR_CATEGORIES/LRR_TANKS)
+    # so a clean install doesn't trip the migration path every restart.
+    my @legacy_keys = grep { !/^LRR_(ALL_ARCHIVES|CATEGORIES|TANKS)$/ } $self->LRR_CONF->get_redis->keys('LRR_*');
+    if ( @legacy_keys ) {
         say "Migrating old settings to new format...";
         migrate_old_settings($self);
     }
@@ -308,10 +311,11 @@ sub add_sigint_handler {
 sub migrate_old_settings {
     my $self = shift;
 
-    # Grab all LRR_* keys from LRR_CONF->get_redis and move them to the config DB
+    # Grab all LRR_* keys from LRR_CONF->get_redis and move them to the config DB.
+    # Exclude maintained archive-DB index sets — those belong in DB 0.
     my $redis     = $self->LRR_CONF->get_redis;
     my $config_db = $self->LRR_CONF->get_configdb;
-    my @keys      = $redis->keys('LRR_*');
+    my @keys      = grep { !/^LRR_(ALL_ARCHIVES|CATEGORIES|TANKS)$/ } $redis->keys('LRR_*');
 
     foreach my $key (@keys) {
         say "Migrating $key to database $config_db";

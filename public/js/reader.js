@@ -1049,6 +1049,8 @@ Reader.loadImage = async function (index) {
         const dims = await new Promise((resolve) => {
             const img = new Image();
             img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+            // Don't hang navigation if the blob can't be decoded.
+            img.onerror = () => resolve({ width: 0, height: 0 });
             img.src = blobUrl;
         });
         Reader.preloadedDimensions[index] = dims;

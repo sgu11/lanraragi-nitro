@@ -33,9 +33,12 @@ Server.callAPI = function (endpoint, method, successMessage, errorMessage, succe
             .then((response) => (response.ok ? response.json() : { success: 0, error: I18N.GenericReponseError }));
         if (dedupKey) {
             Server._inflight.set(dedupKey, dataPromise);
-            dataPromise.finally(() => {
+            const cleanup = () => {
                 if (Server._inflight.get(dedupKey) === dataPromise) Server._inflight.delete(dedupKey);
-            });
+            };
+            // Use then(onFulfilled, onRejected) instead of finally() so the cleanup chain
+            // doesn't produce an unhandled rejection when fetch errors out.
+            dataPromise.then(cleanup, cleanup);
         }
     }
 
