@@ -557,16 +557,27 @@ Reader.initInfiniteScrollView = function () {
 
     Reader.applyContainerWidth();
 
-    // Wait for the pages to load before scrolling to the current page
+    // Wait for the pages to load before scrolling to the current page.
+    // Count already-complete images up front: jQuery .on("load") does not fire retroactively
+    // for <img> elements that finished loading before the handler was bound (e.g. warm HTTP cache),
+    // which would otherwise leave allImagesLoaded=false forever and skip the initial goToPage.
     const images = $("#display .reader-image");
+    const total = images.length;
     let loaded = 0;
-    images.on("load", () => {
+    const onOne = () => {
         loaded += 1;
-        if (loaded === images.length) {
+        if (loaded >= total) {
             allImagesLoaded = true;
             if (window.scrollY === 0) {
                 Reader.goToPage(Reader.currentPage);
             }
+        }
+    };
+    images.each((_, img) => {
+        if (img.complete && img.naturalWidth > 0) {
+            onOne();
+        } else {
+            $(img).one("load error", onOne);
         }
     });
 };
