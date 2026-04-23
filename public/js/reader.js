@@ -557,28 +557,41 @@ Reader.initInfiniteScrollView = function () {
 
     Reader.applyContainerWidth();
 
-    // Wait for the pages to load before scrolling to the current page.
-    // Count already-complete images up front: jQuery .on("load") does not fire retroactively
-    // for <img> elements that finished loading before the handler was bound (e.g. warm HTTP cache),
-    // which would otherwise leave allImagesLoaded=false forever and skip the initial goToPage.
-    const images = $("#display .reader-image");
-    const total = images.length;
-    let loaded = 0;
-    const onOne = () => {
-        loaded += 1;
-        if (loaded >= total) {
-            allImagesLoaded = true;
-            if (window.scrollY === 0) {
-                Reader.goToPage(Reader.currentPage);
-            }
-        }
-    };
-    images.each((_, img) => {
-        if (img.complete && img.naturalWidth > 0) {
-            onOne();
-        } else {
-            $(img).one("load error", onOne);
-        }
+    // Resume scroll cleanly: wait for images 0..target to finish loading so the
+    // scroll target's vertical position is stable before scrollIntoView. Without
+    // this, images above the target load after the scroll, push content down,
+    // and the user lands in a gray gap between pages ("blank screen after brief
+    // moment"). Only images above the target matter for target position; below
+    // can stream in as the user scrolls.
+    const images = $("#display .reader-image").toArray();
+    const target = Math.min(Reader.maxPage, Math.max(0, +Reader.currentPage || 0));
+
+    const waitUntilLoaded = (img) => (img.complete && img.naturalWidth > 0)
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            const done = () => {
+                img.removeEventListener("load", done);
+                img.removeEventListener("error", done);
+                resolve();
+            };
+            img.addEventListener("load", done);
+            img.addEventListener("error", done);
+        });
+
+    Promise.all(images.slice(0, target + 1).map(waitUntilLoaded)).then(() => {
+        if (window.scrollY !== 0) return;
+        // Double rAF: let the browser paint the laid-out images, then scroll.
+        // Avoids scrollIntoView running before layout has stabilized from the
+        // last batch of image decodes.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            Reader.goToPage(target);
+        }));
+    });
+
+    // Gate for the IntersectionObserver — once every image has resolved (load
+    // or error), scroll-driven progress updates are safe.
+    Promise.all(images.map(waitUntilLoaded)).then(() => {
+        allImagesLoaded = true;
     });
 };
 
