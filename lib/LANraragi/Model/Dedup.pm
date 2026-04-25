@@ -73,7 +73,11 @@ use File::Temp qw(tempdir);
 
 # Indirection seams so tests can stub side effects without an archive on disk.
 sub _get_archive_path { LANraragi::Utils::Path::get_archive_path(@_) }
-sub _get_filelist     { my @list = LANraragi::Utils::Archive::get_filelist(@_); return @list }
+# Force-refresh the pagefiles cache when computing pHashes. The cache stored in
+# Redis can drift if an archive file was replaced without HDEL'ing pagefiles
+# (we have observed cached lists pointing at filenames that no longer exist
+# inside the archive); force=1 rewalks the archive and rewrites the cache.
+sub _get_filelist     { my @list = LANraragi::Utils::Archive::get_filelist($_[0], $_[1], 1); return @list }
 # extract_single_file returns content bytes, not a path; pHash needs a path.
 # Use extract_single_file_to_file into a per-call tempdir.
 sub _extract_page {
