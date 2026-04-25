@@ -80,4 +80,41 @@ note("DELETE /api/duplicates/pairs adds member to dismissed set and removes from
     ok($body->{dismissed}, "response reports dismissed:true");
 }
 
+note("GET /api/duplicates/stats reports counts and config");
+{
+    package FakeRedis3 {
+        sub new { bless {}, shift }
+        sub zcard   { 17 }
+        sub hgetall {
+            my ($self, $key) = @_;
+            return (algo_version => 1, pages_sampled => 5, pcount_tolerance_pct => 20,
+                    loose_max_score => 40, candidate_pair_cap => 1_000_000)
+                if $key eq 'LRR_DEDUP_CONFIG';
+            return ();
+        }
+        sub get  { 1234567890 }
+        sub keys { ('id1','id2','id3') }
+        sub hget { my ($self, $k, $f) = @_; $f eq 'pagehashes_v' ? '1' : '' }
+        sub quit { 1 }
+    }
+    $controller_module->redefine('_get_redis_config', sub { FakeRedis3->new });
+    $controller_module->redefine('_get_redis',        sub { FakeRedis3->new });
+
+    # all_archive_ids needs to be stubbed too — it walks redis->keys and calls hexists.
+    my $db_mod = Test::MockModule->new('LANraragi::Utils::Database');
+    $db_mod->redefine('all_archive_ids', sub { ('id1','id2','id3') });
+
+    my $t = Mojolicious::Lite->new;
+    $t->routes->any('/api/duplicates/stats')->to('api-duplicates#stats');
+    my $tx = Mojo::Transaction::HTTP->new;
+    my $c  = Mojolicious::Controller->new(app => $t, tx => $tx);
+    $c->req->url->parse('/api/duplicates/stats');
+
+    LANraragi::Controller::Api::Duplicates::stats($c);
+    my $body = decode_json($c->res->body);
+    is($body->{total_pairs}, 17, "total_pairs from zcard");
+    is($body->{config}{algo_version}, 1, "algo_version reported");
+    is($body->{last_scan_ts}, 1234567890, "last_scan_ts reported");
+}
+
 done_testing();

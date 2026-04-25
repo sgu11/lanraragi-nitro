@@ -3,6 +3,7 @@ use Mojo::Base 'Mojolicious::Controller';
 
 use Mojo::JSON qw(decode_json);
 use LANraragi::Utils::Redis qw(redis_decode);
+use LANraragi::Utils::Database;
 
 # Preset name -> server-side max_score cap.
 my %PRESETS = (
@@ -96,6 +97,49 @@ sub delete_pair {
     $redis_cfg->quit;
 
     $self->render(json => { dismissed => \1, pair => $pair });
+}
+
+sub stats {
+    my $self = shift;
+    my $redis_cfg = _get_redis_config();
+    my $redis     = _get_redis();
+
+    my $total_pairs   = $redis_cfg->zcard("LRR_DUPLICATE_PAIRS") + 0;
+    my %config        = $redis_cfg->hgetall("LRR_DEDUP_CONFIG");
+    my $last_scan_ts  = $redis_cfg->get("LRR_DEDUP_LAST_SCAN");
+    my $algo_version  = ($config{algo_version} // 1) + 0;
+
+    my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+    my $hashed  = 0;
+    my $errored = 0;
+    my $pending = 0;
+    for my $id (@ids) {
+        my $v   = $redis->hget($id, "pagehashes_v")   // '';
+        my $err = $redis->hget($id, "pagehashes_err") // '';
+        if ($v eq $algo_version) { $hashed++ }
+        elsif ($err =~ /^\Q$algo_version\E:/) { $errored++ }
+        else { $pending++ }
+    }
+
+    $redis->quit;
+    $redis_cfg->quit;
+
+    $self->render(json => {
+        total_pairs              => $total_pairs,
+        archives_total           => scalar @ids,
+        archives_with_hashes     => $hashed,
+        archives_pending         => $pending,
+        archives_errored         => $errored,
+        last_scan_ts             => defined $last_scan_ts ? $last_scan_ts + 0 : 0,
+        algo_version             => $algo_version,
+        config => {
+            algo_version         => $algo_version,
+            pages_sampled        => ($config{pages_sampled}        // 5)  + 0,
+            pcount_tolerance_pct => ($config{pcount_tolerance_pct} // 20) + 0,
+            loose_max_score      => ($config{loose_max_score}      // 40) + 0,
+            candidate_pair_cap   => ($config{candidate_pair_cap}   // 10_000_000) + 0,
+        },
+    });
 }
 
 1;
