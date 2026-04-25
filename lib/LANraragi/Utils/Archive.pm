@@ -398,10 +398,18 @@ sub extract_single_file ( $archive, $filepath ) {
         my $contents = "";
         my $peek     = Archive::Libarchive::Peek->new( filename => $archive );
 
-        # This sub can receive either encoded or raw filenames, so we have to test for both.
-        $contents = $peek->file($filepath) // $peek->file(redis_encode($filepath));
+        # Filename can arrive in three flavors depending on caller:
+        #   - already libarchive-shaped UTF-8 (from a fresh ArchiveRead walk)
+        #   - redis_encode'd (when the name was round-tripped through Redis)
+        #   - redis_decode'd (when the cached pagefiles list was decoded once already)
+        # Try all three before giving up.
+        $contents = $peek->file($filepath)
+                 // $peek->file(redis_encode($filepath))
+                 // $peek->file(redis_decode($filepath));
         if (defined($contents)) {
             $logger->debug("Found file $filepath in archive $archive");
+        } else {
+            $logger->debug("Could not extract '$filepath' from $archive (tried raw, encoded, decoded)");
         }
 
         return $contents;
