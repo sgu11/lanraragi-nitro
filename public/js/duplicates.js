@@ -99,12 +99,12 @@ Duplicates.dismissPair = function (pair) {
 };
 
 Duplicates.queueFind = function () {
-    return fetch(LRR.apiURL("/api/minion/find_duplicate_pairs/queue"), { method: "POST" })
+    return fetch(LRR.apiURL("/api/minion/find_duplicate_pairs/queue?args=[]"), { method: "POST" })
         .then((r) => r.json());
 };
 
 Duplicates.queueBackfill = function () {
-    return fetch(LRR.apiURL("/api/minion/backfill_pagehashes/queue"), { method: "POST" })
+    return fetch(LRR.apiURL("/api/minion/backfill_pagehashes/queue?args=[]"), { method: "POST" })
         .then((r) => r.json());
 };
 
