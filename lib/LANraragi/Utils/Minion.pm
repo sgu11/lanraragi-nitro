@@ -230,8 +230,9 @@ sub add_tasks {
         backfill_pagehashes => sub {
             my ($job) = @_;
             my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
-            my $redis  = LANraragi::Model::Config->get_redis;
-            my $cfg    = _dedup_config_from_redis($redis);
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
 
             my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
             my $enqueued = 0;
@@ -251,9 +252,10 @@ sub add_tasks {
                     compute_pagehashes => [ $id ] => { priority => 0 }
                 );
                 $enqueued++;
-                $redis->set("LRR_DEDUP_BACKFILL_CURSOR", $id);
+                $redis_cfg->set("LRR_DEDUP_BACKFILL_CURSOR", $id);
             }
             $redis->quit;
+            $redis_cfg->quit;
             $logger->info("backfill_pagehashes: enqueued=$enqueued skipped=$skipped");
             $job->finish({ enqueued => $enqueued, skipped => $skipped });
         }
