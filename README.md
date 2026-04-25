@@ -68,7 +68,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 
 ### Plugins
 
-- New **metadata sidecar plugin** metadata plugin — parses `info.txt` files produced by [metadata sidecar plugin](https://github.com/KurtBestor/metadata sidecar plugin) (distinct format from upstream's `EHDLInfo` plugin). Archives without the info.txt log at INFO and return empty (silent skip) instead of raising an ERROR — on a library with mixed sources, Auto-Plugin would otherwise flood the log.
+- New metadata plugin that parses sidecar `info.txt` files bundled with archives (distinct format from upstream's `EHDLInfo` plugin). Archives without the info.txt log at INFO and return empty (silent skip) instead of raising an ERROR — on a library with mixed sources, Auto-Plugin would otherwise flood the log.
 
 ### i18n
 
@@ -78,7 +78,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 ### Docs / Ops
 
 - [`CLAUDE.md`](CLAUDE.md) documents the architecture, build, plugin contract, and code style for AI agents working in this repo.
-- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) documents the three-tier deployment procedure to the production instance on `deployment target` (hot code-swap, compose edit, image rebuild) with pre-flight, verification, and rollback steps.
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) documents the three-tier deployment procedure to the production instance (hot code-swap, compose edit, image rebuild) with pre-flight, verification, and rollback steps.
 
 ---
 
