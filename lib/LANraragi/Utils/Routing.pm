@@ -133,6 +133,7 @@ sub apply_routes {
     $logged_in->get('/tankoubons')->to('tankoubon#index');
 
     $logged_in->get('/duplicates')->to('duplicates#index');
+    $logged_in->get('/api/duplicates/pairs')->to('api-duplicates#pairs');
 
     # Metrics API (not part of OpenAPI spec, serves Prometheus format)
     if ( $self->LRR_CONF->enable_metrics ) {
