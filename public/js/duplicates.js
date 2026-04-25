@@ -9,6 +9,8 @@ Duplicates.state = {
     total: 0,
 };
 
+Duplicates._poller = null;
+
 Duplicates.refreshStats = function () {
     fetch(new LRR.apiURL("/api/duplicates/stats"))
         .then((r) => r.json())
@@ -20,6 +22,13 @@ Duplicates.refreshStats = function () {
             $("#dupes-stats").text(
                 `pairs: ${s.total_pairs} · hashed: ${hashed}/${total} · pending: ${pending} · last scan: ${lastScan}`,
             );
+            // Auto-poll while a backfill is in flight; stop once pending reaches 0.
+            if (pending > 0 && Duplicates._poller === null) {
+                Duplicates._poller = setInterval(Duplicates.refreshStats, 10000);
+            } else if (pending === 0 && Duplicates._poller !== null) {
+                clearInterval(Duplicates._poller);
+                Duplicates._poller = null;
+            }
         })
         .catch(() => {
             $("#dupes-stats").text("stats unavailable");
@@ -64,7 +73,12 @@ Duplicates.renderPairs = function (pairs) {
                     `</a>`,
             );
             $side.append(`<div class="dupe-title">${$(`<div></div>`).text(archive.title || archive.name).html()}</div>`);
-            $side.append(`<div class="dupe-meta">${archive.pagecount}p</div>`);
+            const sizeBytes = archive.arcsize || 0;
+            const sizeMB = sizeBytes >= 1073741824
+                ? (sizeBytes / 1073741824).toFixed(2) + " GB"
+                : (sizeBytes / 1048576).toFixed(1) + " MB";
+            const tagsLbl = (archive.tag_count || 0) + " tags";
+            $side.append(`<div class="dupe-meta">${archive.pagecount}p · ${sizeMB} · ${tagsLbl}</div>`);
             $side.append(
                 `<button class="stdbtn dupe-delete" data-arcid="${archive.arcid}" data-side="${side}">Delete this side</button>`,
             );

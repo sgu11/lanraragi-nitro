@@ -235,9 +235,13 @@ sub add_tasks {
             my $cfg       = _dedup_config_from_redis($redis_cfg);
 
             my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+            my $total    = scalar @ids;
             my $enqueued = 0;
             my $skipped  = 0;
+            my $seen     = 0;
+            $logger->info("backfill_pagehashes: scanning $total archives (algo_version=$cfg->{algo_version})");
             for my $id (@ids) {
+                $seen++;
                 my $v   = $redis->hget($id, "pagehashes_v")   // '';
                 my $err = $redis->hget($id, "pagehashes_err") // '';
                 if ($v eq $cfg->{algo_version}) {
@@ -253,11 +257,13 @@ sub add_tasks {
                 );
                 $enqueued++;
                 $redis_cfg->set("LRR_DEDUP_BACKFILL_CURSOR", $id);
+                $logger->info("backfill_pagehashes: progress $seen/$total (enqueued=$enqueued skipped=$skipped)")
+                    if $seen % 500 == 0;
             }
             $redis->quit;
             $redis_cfg->quit;
-            $logger->info("backfill_pagehashes: enqueued=$enqueued skipped=$skipped");
-            $job->finish({ enqueued => $enqueued, skipped => $skipped });
+            $logger->info("backfill_pagehashes: done enqueued=$enqueued skipped=$skipped total=$total");
+            $job->finish({ enqueued => $enqueued, skipped => $skipped, total => $total });
         }
     );
 

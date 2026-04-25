@@ -72,12 +72,19 @@ sub _archive_brief {
     my ($redis, $id) = @_;
     my %h = $redis->hgetall($id);
     return {} unless %h;
+    my $tags  = redis_decode($h{tags} // '');
+    my $tag_count = 0;
+    if (length $tags) {
+        $tag_count = scalar(grep { /\S/ } split /,/, $tags);
+    }
     return {
         arcid     => $id,
         title     => redis_decode($h{title} // ''),
         name      => redis_decode($h{name}  // ''),
-        tags      => redis_decode($h{tags}  // ''),
+        tags      => $tags,
         pagecount => ($h{pagecount} // 0) + 0,
+        arcsize   => ($h{arcsize}   // 0) + 0,
+        tag_count => $tag_count,
     };
 }
 

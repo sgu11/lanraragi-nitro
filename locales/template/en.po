@@ -1740,6 +1740,9 @@ msgstr "Error sending job to Minion"
 
 # ------Start of Duplicates.html.tt2------
 
+msgid "Duplicates"
+msgstr "Duplicates"
+
 msgid "Duplicate Detection"
 msgstr "Duplicate Detection"
 
