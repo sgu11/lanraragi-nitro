@@ -81,6 +81,8 @@ if ($VIPS_LOADED) {
     $vips_ffi->attach( vips_colourspace => ['VipsImage', 'VipsImage*', 'int'] => ['opaque'] => 'int' );
     $vips_ffi->attach( vips_pngsave => ['VipsImage', 'string'] => ['opaque'] => 'int' );
     $vips_ffi->attach( vips_thumbnail_buffer => ['string', 'uint64', 'VipsImage*', 'int'] => ['string', 'int', 'string', 'int', 'opaque'] => 'int' );
+    $vips_ffi->attach( vips_image_write_to_memory => ['VipsImage', 'size_t*'] => 'opaque' );
+    $vips_ffi->attach( vips_cast => ['VipsImage', 'VipsImage*', 'int'] => ['opaque'] => 'int' );
 } else {
     # Dummy functions if libvips is not loaded
     *vips_init = sub { die "libvips is not loaded. Cannot call vips_init." };
@@ -100,12 +102,15 @@ if ($VIPS_LOADED) {
     *vips_colourspace = sub { die "libvips is not loaded. Cannot call vips_colourspace." };
     *vips_pngsave = sub { die "libvips is not loaded. Cannot call vips_pngsave." };
     *vips_thumbnail_buffer = sub { die "libvips is not loaded. Cannot call vips_thumbnail_buffer." };
+    *vips_image_write_to_memory = sub { die "libvips is not loaded. Cannot call vips_image_write_to_memory." };
+    *vips_cast = sub { die "libvips is not loaded. Cannot call vips_cast." };
 }
 
 # Define VipsInterpretation enum values
 use constant VIPS_INTERPRETATION_GREY16 => 12; # VIPS_INTERPRETATION_GREY16
 use constant VIPS_INTERPRETATION_B_W => 17; # VIPS_INTERPRETATION_B_W
 use constant VIPS_SIZE_FORCE => 3; # VIPS_SIZE_FORCE
+use constant VIPS_FORMAT_UCHAR => 0; # VIPS_FORMAT_UCHAR
 use constant VIPS_ALIGN_CENTRE => 0; # VIPS_ALIGN_CENTRE
 use constant VIPS_INTERESTING_CENTRE => 1;
 
@@ -255,6 +260,37 @@ sub unref_image ($image) {
 
 sub is_vips_loaded () {
     return $VIPS_LOADED;
+}
+
+# Loads $image_path, force-resizes to 32x32, converts to single-channel uchar grayscale,
+# and returns an arrayref of 1024 pixel values (row-major, 0..255). Used by the pHash pipeline.
+sub extract_grayscale_32x32 ($image_path) {
+    open(my $fh, '<:raw', $image_path) or die "Can't open $image_path: $!";
+    my $buffer = do { local $/; <$fh> };
+    close $fh;
+
+    my $resized = stretch_resize($buffer, 32, 32);
+
+    my $grey16;
+    my $cs_ret = vips_colourspace($resized, \$grey16, VIPS_INTERPRETATION_GREY16, undef);
+    unref_image($resized);
+    die "Error converting to greyscale: " . fetch_and_clear_error() if $cs_ret != 0;
+
+    my $gray;
+    my $cast_ret = vips_cast($grey16, \$gray, VIPS_FORMAT_UCHAR, undef);
+    unref_image($grey16);
+    die "Error casting to uchar: " . fetch_and_clear_error() if $cast_ret != 0;
+
+    my $size = 0;
+    my $ptr  = vips_image_write_to_memory($gray, \$size);
+    unref_image($gray);
+    die "Error writing image to memory: " . fetch_and_clear_error() unless $ptr;
+    die "Unexpected pixel buffer size: $size (expected >= 1024)" if $size < 1024;
+
+    my $bytes = buffer_to_scalar($ptr, 1024);
+    g_free($ptr);
+
+    return [ unpack("C*", $bytes) ];
 }
 
 1;

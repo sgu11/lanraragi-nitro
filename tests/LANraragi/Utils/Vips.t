@@ -38,6 +38,16 @@ note("test creating a blank image");
     is(LANraragi::Utils::Vips::height($img), 200, "Should be correct height");
 }
 
+note("test extract_grayscale_32x32 returns 1024 bytes");
+{
+    my $image_path = "$cwd/tests/samples/reader.jpg";
+    my $pixels = LANraragi::Utils::Vips::extract_grayscale_32x32($image_path);
+    is(ref($pixels), 'ARRAY', "Should return an arrayref");
+    is(scalar(@$pixels), 1024, "Should have exactly 1024 pixel values");
+    my @out_of_range = grep { $_ < 0 || $_ > 255 } @$pixels;
+    is(scalar(@out_of_range), 0, "All pixel values should be uchar 0..255");
+}
+
 done_testing();
 
 1;
