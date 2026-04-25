@@ -1,0 +1,20 @@
+.dupes-stats { margin-left: 12px; opacity: 0.85; }
+.dupes-threshold-label { margin-left: 16px; }
+
+.dupe-pair-card {
+    border: 1px solid var(--card-border, #444);
+    border-radius: 6px;
+    padding: 10px;
+    margin: 8px 0;
+    background: var(--card-bg, #222);
+}
+.dupe-score { font-weight: 600; margin-bottom: 6px; }
+.dupe-row { display: flex; align-items: flex-start; gap: 12px; }
+.dupe-side { flex: 1; min-width: 0; }
+.dupe-middle { width: 220px; text-align: center; }
+.dupe-thumb { max-width: 200px; max-height: 280px; }
+.dupe-title { font-weight: 600; margin-top: 4px; word-break: break-word; }
+.dupe-meta { opacity: 0.75; font-size: 0.9em; }
+.dupe-perpage { font-family: monospace; margin: 8px 0; }
+
+#dupes-pagination { margin-top: 12px; display: flex; gap: 8px; align-items: center; }

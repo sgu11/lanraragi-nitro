@@ -1,7 +1,7 @@
 [% WRAPPER 'main.tt2' title=title %]
 [% csshead %]
-<link rel="stylesheet" href="[% rootpath %]style/index.css?v=[% version %]" />
-<link rel="stylesheet" href="[% rootpath %]style/duplicates.css?v=[% version %]" />
+<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$version") %]" />
+<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/duplicates.css?$version") %]" />
 
 <div id="dupes-container">
     <div id="dupes-toolbar">
