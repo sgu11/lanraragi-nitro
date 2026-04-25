@@ -67,14 +67,21 @@ sub score_pair {
 }
 
 use LANraragi::Utils::Path    qw(get_archive_path);
-use LANraragi::Utils::Archive qw(extract_single_file get_filelist);
+use LANraragi::Utils::Archive qw(get_filelist);
 use LANraragi::Utils::PHash   qw(compute_phash_64);
+use File::Temp qw(tempdir);
 
 # Indirection seams so tests can stub side effects without an archive on disk.
 sub _get_archive_path { LANraragi::Utils::Path::get_archive_path(@_) }
 sub _get_filelist     { my @list = LANraragi::Utils::Archive::get_filelist(@_); return @list }
-sub _extract_page     { LANraragi::Utils::Archive::extract_single_file(@_) }
-sub _unlink_temp      { unlink $_[0] if -e $_[0] }
+# extract_single_file returns content bytes, not a path; pHash needs a path.
+# Use extract_single_file_to_file into a per-call tempdir.
+sub _extract_page {
+    my ($archive, $page) = @_;
+    my $dir = tempdir(CLEANUP => 0);
+    return LANraragi::Utils::Archive::extract_single_file_to_file($archive, $page, $dir);
+}
+sub _unlink_temp      { unlink $_[0] if $_[0] && -e $_[0] }
 sub _compute_phash    { LANraragi::Utils::PHash::compute_phash_64(@_) }
 
 # Computes pHashes for $id and writes them to Redis. Idempotent.
