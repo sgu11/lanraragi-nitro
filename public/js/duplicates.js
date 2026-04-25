@@ -1,264 +1,190 @@
-/**
- * Duplicate Operations
- * @global
- */
+"use strict";
+
 const Duplicates = {};
 
-Duplicates.dt = {};
-
-
-Duplicates.initializeAll = function () {
-    // bind events to DOM
-    $(document).on("click.goback", "#goback", () => { window.location.replace("./"); });
-    $(document).on("mouseenter.thumbnail-wrapper", ".thumbnail-wrapper", (e) => $(e.currentTarget).find(".thumbnail-popover").show());
-    $(document).on("mouseleave.thumbnail-wrapper", ".thumbnail-wrapper", (e) => $(e.currentTarget).find(".thumbnail-popover").hide());
-
-    $(document).on("click.find-duplicates", ".find-duplicates", Duplicates.findDuplicates);
-    $(document).on("click.clear-duplicates", ".clear-duplicates", () => { window.location.href = new LRR.apiURL("/duplicates?delete=1"); });
-    $(document).on("click.delete-archive", ".delete-archive", Duplicates.deleteArchive);
-    $(document).on("click.delete-selected", ".delete-selected", Duplicates.deleteArchives);
-
-    let dupeMinionJob = localStorage.getItem("dupeMinionJob");
-    if (dupeMinionJob !== null) {
-        // If we are searching for duplicates, show the processing message
-        $(".find-duplicates").hide();
-        $("#processing").show();
-
-        Duplicates.pollMinionJob(dupeMinionJob);
-    }
-
-    if (localStorage.getItem("previousDupeJob") !== null) {
-        // Remove the previous job from localStorage
-        localStorage.removeItem("previousDupeJob");
-        // We had a previous job, show the "no duplicates" message if there's no dupe data on the page
-        $("#nodupes").show();
-    }
-
-    $(document).on("change.duplicate-select-condition", ".duplicate-select-condition", Duplicates.conditionChange);
-    Duplicates.initializeDataTable();
-}
-
-/**
- * Sends a POST request to queue a find_duplicates job,
- * detecting archive duplicates based on their thumbnail hashes.
- */
-Duplicates.findDuplicates = function () {
-
-    let formData = new FormData();
-    formData.append("args", "[5]"); // threshold
-    formData.append("priority", 0);
-
-    $(".find-duplicates").hide();
-    $("#processing").show();
-
-    Server.callAPIBody("/api/minion/find_duplicates/queue", "POST", formData,
-        "Queued up a job to find duplicates! Stay tuned for updates or check the Minion console.",
-        I18N.MinionSendError,
-        (data) => {
-            // Disable the buttons to avoid accidental double-clicks.
-            $(".find-duplicates").prop("disabled", true);
-            localStorage.dupeMinionJob = data.job;
-
-            Duplicates.pollMinionJob(data.job);
-        },
-    );
+Duplicates.state = {
+    offset: 0,
+    limit: 50,
+    threshold: 25,
+    total: 0,
 };
 
-Duplicates.pollMinionJob = function (job) {
-    // Check minion job state periodically while we're on this page
-    Server.checkJobStatus(
-        job,
-        true,
-        (d) => {
-            // Refresh the window so that the newly found duplicates are shown.
-            // Make sure the URL doesn't contain delete=1 so we don't instantly delete them.
-            if (window.location.href.includes("delete=1")) {
-                window.location.href = window.location.href.replace(/delete=1/, "");
-            }
-            else {
-                // If the job is done, reload the page to show the results.
-                let job = localStorage.getItem("dupeMinionJob");
-                localStorage.setItem("previousDupeJob", job);
-                localStorage.removeItem("dupeMinionJob");
-                window.location.reload();
-            }
-        },
-        (error) => {
-            $(".find-duplicates").prop("disabled", false);
-            LRR.showErrorToast(I18N.MinionCheckError, error);
-        },
-    );
-}
-
-Duplicates.drawCallbackDataTable = function (settings) {
-    var groupColumn = 0;
-    var api = this.api();
-    var rows = api.rows({ page: "current" }).nodes();
-    var lastGroup = null;
-
-    // Iterate over the data once to insert group rows at end of each group
-    api.column(groupColumn, { page: "current" })
-        .data()
-        .each(function (group, i) {
-            if (lastGroup && lastGroup !== group) {
-                $(rows).eq(i).before(
-                    `<tr class="separator"><td colspan="10" style="padding: 0px;"></td></tr>`
-                );
-            }
-            lastGroup = group;
+Duplicates.refreshStats = function () {
+    fetch(LRR.apiURL("/api/duplicates/stats"))
+        .then((r) => r.json())
+        .then((s) => {
+            const pending = s.archives_pending || 0;
+            const hashed = s.archives_with_hashes || 0;
+            const total = s.archives_total || 0;
+            const lastScan = s.last_scan_ts ? new Date(s.last_scan_ts * 1000).toLocaleString() : "never";
+            $("#dupes-stats").text(
+                `pairs: ${s.total_pairs} · hashed: ${hashed}/${total} · pending: ${pending} · last scan: ${lastScan}`,
+            );
+        })
+        .catch(() => {
+            $("#dupes-stats").text("stats unavailable");
         });
-}
-
-Duplicates.initializeDataTable = function () {
-
-    // Classes for even/odd lines
-    $.fn.dataTableExt.oStdClasses.sStripeOdd = "gtr0";
-    $.fn.dataTableExt.oStdClasses.sStripeEven = "gtr1";
-
-    Duplicates.dt = $("#ds").DataTable({
-        dom: `<"table-control-wrapper" <"search-box" f><"length-box" l>><t><p>`,
-        // avoid sorting columns as it messes with the grouping
-        columns: [
-            { title: "Group-Key", visible: false },
-            { title: "", orderable: false, width: "20px" },
-            { title: "Title", orderable: false },
-            { title: "Pages", orderable: false, width: "52px" },
-            { title: "Filename", orderable: false },
-            { title: "Filesize", orderable: false },
-            { title: "Date", orderable: false },
-            { title: "Tags", orderable: false },
-            { title: "Action", orderable: false }
-        ],
-        order: [[0, "asc"]],
-        autoWidth: false,
-        pageLength: 10,
-        deferRender: true,
-        drawCallback: Duplicates.drawCallbackDataTable
-    });
 };
 
-Duplicates.compareDuplicates = function (rows, field, fieldType, order = "desc") {
-    var values = [];
-    var rowToExclude = null;
+Duplicates.loadPairs = function () {
+    const url =
+        LRR.apiURL("/api/duplicates/pairs") +
+        `?max_score=${encodeURIComponent(Duplicates.state.threshold)}` +
+        `&offset=${Duplicates.state.offset}&limit=${Duplicates.state.limit}`;
 
-    // Determine comparator and starting value based on order
-    var comparator = order === "asc" ? Math.min : Math.max;
-    var targetValue = order === "asc" ? Infinity : -Infinity;
+    fetch(url)
+        .then((r) => r.json())
+        .then((data) => {
+            Duplicates.state.total = data.total || 0;
+            Duplicates.renderPairs(data.pairs || []);
+            $("#dupes-page-info").text(
+                `${Duplicates.state.offset + 1}-${Duplicates.state.offset + (data.pairs || []).length} of ${data.total || 0}`,
+            );
+        })
+        .catch(() => {
+            $("#dupes-list").text("failed to load pairs");
+        });
+};
 
-    // Function to parse the value based on the field type
-    function parseValue(value) {
-        if (fieldType === "integer") {
-            return parseInt(value, 10);
-        } else if (fieldType === "float") {
-            return parseFloat(value);
-        } else if (fieldType === "date") {
-            return new Date(value).getTime();
-        }
-        return value;
-    }
-    // Iterate over rows to find the target row based on the comparator
-    rows.each(function () {
-        var row = $(this);
-        var value = parseValue(row.find(`.${field}`).text());
-        values.push(value);
-
-        if (comparator(value, targetValue) === value) {
-            targetValue = value;
-            rowToExclude = row;
-        }
-    });
-
-    // Do not check anything if all values are equal
-    var allEqual = values.every((val) => val === values[0]);
-    if (allEqual) return;
-
-    // Iterate over rows again to check the checkbox for all rows except the target row
-    rows.each(function () {
-        var row = $(this);
-        if (rowToExclude && row[0] !== rowToExclude[0]) {
-            row.find(".form-check-input").prop("checked", true);
-        }
-    });
-}
-
-Duplicates.conditionChange = function (event) {
-    var option = $(event.target).val();
-
-    // Clear current selection
-    $(".form-check-input").prop("checked", false);
-
-    // Early return if none should be selected
-    if (option === "none") {
+Duplicates.renderPairs = function (pairs) {
+    const $list = $("#dupes-list").empty();
+    if (!pairs.length) {
+        $list.text("No pairs at this threshold.");
         return;
     }
+    pairs.forEach((p) => {
+        const $card = $(`<div class="dupe-pair-card"></div>`);
+        $card.append(`<div class="dupe-score">score ${p.score.toFixed(1)} · pcount Δ ${p.page_count_delta}</div>`);
 
-    $(".duplicate-group").each((_, group) => {
-        // Find all rows of a group
-        var groupRow = $(group);
-        var rowsInGroup = groupRow.add(groupRow.nextUntil(".separator"));
-
-        // Compare rows in group according to selected option
-        switch (option) {
-            case "less-tags":
-                Duplicates.compareDuplicates(rowsInGroup, "tag-count", "integer");
-                break;
-            case "less-size":
-                Duplicates.compareDuplicates(rowsInGroup, "file-size", "float");
-                break;
-            case "less-pages":
-                Duplicates.compareDuplicates(rowsInGroup, "page-count", "integer");
-                break;
-            case "not-old":
-                Duplicates.compareDuplicates(rowsInGroup, "date-added", "date");
-                break;
-            case "not-young":
-                Duplicates.compareDuplicates(rowsInGroup, "date-added", "date", "asc");
-                break;
+        const renderSide = (side, archive) => {
+            const $side = $(`<div class="dupe-side"></div>`);
+            $side.append(
+                `<a href="${LRR.apiURL("/reader?id=" + encodeURIComponent(archive.arcid))}">` +
+                    `<img class="dupe-thumb" src="${LRR.apiURL("/api/archives/" + encodeURIComponent(archive.arcid) + "/thumbnail")}" alt="${archive.title}" />` +
+                    `</a>`,
+            );
+            $side.append(`<div class="dupe-title">${$(`<div></div>`).text(archive.title || archive.name).html()}</div>`);
+            $side.append(`<div class="dupe-meta">${archive.pagecount}p</div>`);
+            $side.append(
+                `<button class="stdbtn dupe-delete" data-arcid="${archive.arcid}" data-side="${side}">Delete this side</button>`,
+            );
+            return $side;
         };
+
+        const $row = $(`<div class="dupe-row"></div>`);
+        $row.append(renderSide("a", p.a));
+        const $mid = $(`<div class="dupe-middle"></div>`);
+        $mid.append(`<div class="dupe-perpage">[${(p.per_page || []).join(", ")}]</div>`);
+        $mid.append(
+            `<button class="stdbtn dupe-dismiss" data-pair="${p.id_a}|${p.id_b}">Not a duplicate</button>`,
+        );
+        $row.append($mid);
+        $row.append(renderSide("b", p.b));
+        $card.append($row);
+        $list.append($card);
     });
 };
 
-Duplicates.deleteArchive = function (event) {
-    LRR.showPopUp({
-        text: I18N.ConfirmArchiveDeletion,
-        icon: "warning",
-        showCancelButton: true,
-        focusConfirm: false,
-        confirmButtonText: I18N.ConfirmYes,
-        reverseButtons: true,
-        confirmButtonColor: "#d33",
-    }).then((result) => {
-        if (result.isConfirmed) {
-            let archiveId = $(event.currentTarget).attr("data-id");
-            Server.deleteArchive(archiveId, () => { Duplicates.dt.row($(event.currentTarget).parents("tr")).remove().draw() });
-        }
-    });
+Duplicates.deleteArchive = function (arcid) {
+    return fetch(LRR.apiURL("/api/archives/" + encodeURIComponent(arcid)), { method: "DELETE" })
+        .then((r) => r.json());
 };
 
-Duplicates.deleteArchives = function () {
-    LRR.showPopUp({
-        text: I18N.ConfirmArchivesDeletion,
-        icon: "warning",
-        showCancelButton: true,
-        focusConfirm: false,
-        confirmButtonText: I18N.ConfirmYes,
-        reverseButtons: true,
-        confirmButtonColor: "#d33",
-    }).then((result) => {
-        if (result.isConfirmed) {
-            $("table tbody tr").each(function () {
-                const row = $(this);
-                const isChecked = row.find(".form-check-input").is(":checked");
-                const dataId = row.find(".delete-archive").attr("data-id");
+Duplicates.dismissPair = function (pair) {
+    return fetch(LRR.apiURL("/api/duplicates/pairs"), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pair }),
+    }).then((r) => r.json());
+};
 
-                if (isChecked && dataId) {
-                    Server.deleteArchive(dataId, () => { Duplicates.dt.row(row).remove().draw() });
-                }
+Duplicates.queueFind = function () {
+    return fetch(LRR.apiURL("/api/minion/find_duplicate_pairs/queue"), { method: "POST" })
+        .then((r) => r.json());
+};
+
+Duplicates.queueBackfill = function () {
+    return fetch(LRR.apiURL("/api/minion/backfill_pagehashes/queue"), { method: "POST" })
+        .then((r) => r.json());
+};
+
+$(function () {
+    Duplicates.refreshStats();
+    Duplicates.loadPairs();
+
+    $("#threshold-slider").on("input", function () {
+        Duplicates.state.threshold = parseInt(this.value, 10);
+        $("#threshold-value").text(this.value);
+    });
+    $("#threshold-slider").on("change", function () {
+        Duplicates.state.offset = 0;
+        Duplicates.loadPairs();
+    });
+
+    $("#preset-select").on("change", function () {
+        const presets = { strict: 12, medium: 25, loose: 40, very_loose: 55 };
+        const v = presets[this.value] || 25;
+        Duplicates.state.threshold = v;
+        $("#threshold-slider").val(v);
+        $("#threshold-value").text(v);
+        Duplicates.state.offset = 0;
+        Duplicates.loadPairs();
+    });
+
+    $("#run-find").on("click", function () {
+        Duplicates.queueFind().then(() => {
+            LRR.showPopUp({
+                title: "Match queued",
+                text: "Pair index will rebuild. Refresh stats periodically.",
+                icon: "info",
             });
+        });
+    });
+
+    $("#run-backfill").on("click", function () {
+        Duplicates.queueBackfill().then(() => {
+            LRR.showPopUp({
+                title: "Backfill queued",
+                text: "Page hashes will be computed for archives missing them.",
+                icon: "info",
+            });
+        });
+    });
+
+    $("#dupes-list").on("click", ".dupe-delete", function () {
+        const arcid = $(this).data("arcid");
+        LRR.showPopUp({
+            title: "Delete archive?",
+            text: "This permanently deletes the archive file.",
+            icon: "warning",
+            showCancelButton: true,
+        }).then((res) => {
+            if (!res.isConfirmed) return;
+            Duplicates.deleteArchive(arcid).then(() => {
+                Duplicates.loadPairs();
+                Duplicates.refreshStats();
+            });
+        });
+    });
+
+    $("#dupes-list").on("click", ".dupe-dismiss", function () {
+        const pair = $(this).data("pair");
+        Duplicates.dismissPair(pair).then(() => {
+            Duplicates.loadPairs();
+            Duplicates.refreshStats();
+        });
+    });
+
+    $("#dupes-prev").on("click", function () {
+        if (Duplicates.state.offset >= Duplicates.state.limit) {
+            Duplicates.state.offset -= Duplicates.state.limit;
+            Duplicates.loadPairs();
         }
     });
-};
-
-jQuery(() => {
-    Duplicates.initializeAll();
+    $("#dupes-next").on("click", function () {
+        if (Duplicates.state.offset + Duplicates.state.limit < Duplicates.state.total) {
+            Duplicates.state.offset += Duplicates.state.limit;
+            Duplicates.loadPairs();
+        }
+    });
 });
