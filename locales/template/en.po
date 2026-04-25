@@ -1013,6 +1013,9 @@ msgstr "O: show advanced reader options."
 msgid "P: toggle double page mode"
 msgstr "P: toggle double page mode"
 
+msgid "J: toggle double page offset"
+msgstr "J: toggle double page offset"
+
 msgid "Q: bring up the thumbnail index and archive options."
 msgstr "Q: bring up the thumbnail index and archive options."
 
