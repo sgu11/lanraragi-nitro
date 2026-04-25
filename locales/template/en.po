@@ -1804,3 +1804,30 @@ msgid "No duplicates found!"
 msgstr "No duplicates found!"
 
 # ------End of Duplicates.html.tt2------
+
+# ------Start of index.html.tt2 (carousel + bulk actions)------
+msgid "Hide Carousel"
+msgstr "Hide Carousel"
+
+msgid "Show Carousel"
+msgstr "Show Carousel"
+
+msgid "selected"
+msgstr "selected"
+
+msgid "Select page"
+msgstr "Select page"
+
+msgid "Clear"
+msgstr "Clear"
+
+msgid "Actions"
+msgstr "Actions"
+
+msgid "Delete from library"
+msgstr "Delete from library"
+
+msgid "Add to category"
+msgstr "Add to category"
+
+# ------End of index.html.tt2 (carousel + bulk actions)------
