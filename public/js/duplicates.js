@@ -10,7 +10,7 @@ Duplicates.state = {
 };
 
 Duplicates.refreshStats = function () {
-    fetch(LRR.apiURL("/api/duplicates/stats"))
+    fetch(new LRR.apiURL("/api/duplicates/stats"))
         .then((r) => r.json())
         .then((s) => {
             const pending = s.archives_pending || 0;
@@ -28,7 +28,7 @@ Duplicates.refreshStats = function () {
 
 Duplicates.loadPairs = function () {
     const url =
-        LRR.apiURL("/api/duplicates/pairs") +
+        new LRR.apiURL("/api/duplicates/pairs") +
         `?max_score=${encodeURIComponent(Duplicates.state.threshold)}` +
         `&offset=${Duplicates.state.offset}&limit=${Duplicates.state.limit}`;
 
@@ -59,8 +59,8 @@ Duplicates.renderPairs = function (pairs) {
         const renderSide = (side, archive) => {
             const $side = $(`<div class="dupe-side"></div>`);
             $side.append(
-                `<a href="${LRR.apiURL("/reader?id=" + encodeURIComponent(archive.arcid))}">` +
-                    `<img class="dupe-thumb" src="${LRR.apiURL("/api/archives/" + encodeURIComponent(archive.arcid) + "/thumbnail")}" alt="${LRR.encodeHTML(archive.title || "")}" />` +
+                `<a href="${new LRR.apiURL("/reader?id=" + encodeURIComponent(archive.arcid))}">` +
+                    `<img class="dupe-thumb" src="${new LRR.apiURL("/api/archives/" + encodeURIComponent(archive.arcid) + "/thumbnail")}" alt="${LRR.encodeHTML(archive.title || "")}" />` +
                     `</a>`,
             );
             $side.append(`<div class="dupe-title">${$(`<div></div>`).text(archive.title || archive.name).html()}</div>`);
@@ -101,13 +101,13 @@ Duplicates.fetchJSON = function (url, init) {
 
 Duplicates.deleteArchive = function (arcid) {
     return Duplicates.fetchJSON(
-        LRR.apiURL("/api/archives/" + encodeURIComponent(arcid)),
+        new LRR.apiURL("/api/archives/" + encodeURIComponent(arcid)),
         { method: "DELETE" },
     );
 };
 
 Duplicates.dismissPair = function (pair) {
-    return Duplicates.fetchJSON(LRR.apiURL("/api/duplicates/pairs"), {
+    return Duplicates.fetchJSON(new LRR.apiURL("/api/duplicates/pairs"), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pair }),
@@ -116,14 +116,14 @@ Duplicates.dismissPair = function (pair) {
 
 Duplicates.queueFind = function () {
     return Duplicates.fetchJSON(
-        LRR.apiURL("/api/minion/find_duplicate_pairs/queue?args=[]"),
+        new LRR.apiURL("/api/minion/find_duplicate_pairs/queue?args=[]"),
         { method: "POST" },
     );
 };
 
 Duplicates.queueBackfill = function () {
     return Duplicates.fetchJSON(
-        LRR.apiURL("/api/minion/backfill_pagehashes/queue?args=[]"),
+        new LRR.apiURL("/api/minion/backfill_pagehashes/queue?args=[]"),
         { method: "POST" },
     );
 };
