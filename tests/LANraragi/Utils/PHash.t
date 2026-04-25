@@ -32,4 +32,30 @@ note("hamming_hex: counts differing bits between two 16-char hex strings");
     is(LANraragi::Utils::PHash::hamming_hex("00" x 8, "01" . "00" x 7), 1, "One bit difference = 1");
 }
 
+note("re-encoding the same image yields a small Hamming distance");
+{
+    my $src = "$cwd/tests/samples/reader.jpg";
+
+    # Round-trip through libvips JPEG at quality 50 to emulate a re-encode.
+    open(my $fh, '<:raw', $src) or die $!;
+    my $buf = do { local $/; <$fh> };
+    close $fh;
+
+    my $img = LANraragi::Utils::Vips::new_from_buffer($buf);
+    my $reencoded = LANraragi::Utils::Vips::write_to_buffer($img, ".jpg", 50);
+    LANraragi::Utils::Vips::unref_image($img);
+
+    my $tmp = "/tmp/phash_reencoded_$$.jpg";
+    open(my $out, '>:raw', $tmp) or die $!;
+    print $out $reencoded;
+    close $out;
+
+    my $h_orig  = LANraragi::Utils::PHash::compute_phash_64($src);
+    my $h_re    = LANraragi::Utils::PHash::compute_phash_64($tmp);
+    unlink $tmp;
+
+    my $dist = LANraragi::Utils::PHash::hamming_hex($h_orig, $h_re);
+    cmp_ok($dist, "<=", 8, "Re-encoded copy should be within 8 bits (got $dist)");
+}
+
 done_testing();
