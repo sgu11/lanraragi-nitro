@@ -22,8 +22,23 @@ use LANraragi::Utils::TempFolder qw(get_temp);
 use LANraragi::Model::Upload;
 use LANraragi::Model::Config;
 use LANraragi::Model::Stats;
+use LANraragi::Model::Dedup;
 
 use constant IS_UNIX => ( $Config{osname} ne 'MSWin32' );
+
+# Reads dedup tunables from Redis with sane defaults. The hash key lives in DB 2 (config).
+sub _dedup_config_from_redis {
+    my ($redis_cfg) = @_;
+    my %h;
+    eval { %h = $redis_cfg->hgetall("LRR_DEDUP_CONFIG"); };
+    return {
+        algo_version         => ($h{algo_version}         // 1) + 0,
+        pages_sampled        => ($h{pages_sampled}        // 5) + 0,
+        pcount_tolerance_pct => ($h{pcount_tolerance_pct} // 20) + 0,
+        loose_max_score      => ($h{loose_max_score}      // 40) + 0,
+        candidate_pair_cap   => ($h{candidate_pair_cap}   // 10_000_000) + 0,
+    };
+}
 
 # Add Tasks to the Minion instance.
 sub add_tasks {
@@ -191,105 +206,107 @@ sub add_tasks {
     );
 
     $minion->add_task(
-        find_duplicates => sub {
-            my ( $job, @args ) = @_;
-            my ($threshold) = @args;
-
-            my $logger = get_logger( "Minion", "minion" );
+        compute_pagehashes => sub {
+            my ($job, $id) = @_;
+            my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
             my $redis  = LANraragi::Model::Config->get_redis;
-            my @keys   = LANraragi::Utils::Database::all_archive_ids($redis);
+            my $cfg    = _dedup_config_from_redis($redis);
 
-            $logger->info("Starting find duplicate job (threshold = $threshold)");
+            my $rc = LANraragi::Model::Dedup::compute_pagehashes_for_archive($redis, $id, $cfg);
+            $redis->quit;
 
-            # Gather thumbhashes via pipelined HGET — one round-trip instead of N sequential ones.
-            # Callback is (reply, error); $_[0] is the thumbhash value.
-            my %thumbhashes;
-            my @thumbresults;
-            for my $id (@keys) {
-                $redis->hget( $id, "thumbhash", sub { push @thumbresults, [ $id, $_[0] ] } );
+            if ($rc < 0) {
+                $logger->warn("compute_pagehashes failed for $id");
+            } elsif ($rc == 0) {
+                $logger->debug("compute_pagehashes skip $id (already at v$cfg->{algo_version})");
+            } else {
+                $logger->debug("compute_pagehashes ok $id");
+            }
+            $job->finish({ rc => $rc });
+        }
+    );
+
+    $minion->add_task(
+        backfill_pagehashes => sub {
+            my ($job) = @_;
+            my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+            my $redis  = LANraragi::Model::Config->get_redis;
+            my $cfg    = _dedup_config_from_redis($redis);
+
+            my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+            my $enqueued = 0;
+            my $skipped  = 0;
+            for my $id (@ids) {
+                my $v   = $redis->hget($id, "pagehashes_v")   // '';
+                my $err = $redis->hget($id, "pagehashes_err") // '';
+                if ($v eq $cfg->{algo_version}) {
+                    $skipped++;
+                    next;
+                }
+                if ($err =~ /^\Q$cfg->{algo_version}\E:/) {
+                    $skipped++;
+                    next;
+                }
+                LANraragi::Model::Config->get_minion->enqueue(
+                    compute_pagehashes => [ $id ] => { priority => 0 }
+                );
+                $enqueued++;
+                $redis->set("LRR_DEDUP_BACKFILL_CURSOR", $id);
+            }
+            $redis->quit;
+            $logger->info("backfill_pagehashes: enqueued=$enqueued skipped=$skipped");
+            $job->finish({ enqueued => $enqueued, skipped => $skipped });
+        }
+    );
+
+    $minion->add_task(
+        find_duplicate_pairs => sub {
+            my ($job, $loose_max_arg) = @_;
+            my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg    = _dedup_config_from_redis($redis_cfg);
+            $cfg->{loose_max_score} = $loose_max_arg if defined $loose_max_arg;
+
+            # Gather pagehashes for all archives via pipelined HMGET.
+            my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+            my @results;
+            for my $id (@ids) {
+                $redis->hmget($id, "pagehashes", "pagehashes_n",
+                    sub { push @results, [ $id, $_[0] ] });
             }
             $redis->wait_all_responses;
-            for my $r (@thumbresults) {
-                $thumbhashes{ $r->[0] } = $r->[1] if $r->[1];
+            $redis->quit;
+
+            my %page_data;
+            for my $r (@results) {
+                my ($id, $reply) = @$r;
+                my ($ph, $pn) = @{ $reply // [] };
+                next unless defined $ph && length $ph;
+                next unless defined $pn && $pn > 0;
+                $page_data{$id} = { hashes => [ split / /, $ph ], n => $pn + 0 };
             }
-            $redis->quit();
 
-            # Prepare to track visited nodes
-            my $visited = MCE::Shared->hash;
-            my @ids = keys %thumbhashes;    # List of IDs to check
+            # Wipe and rebuild the pair index. Also clean up the legacy hash.
+            my $legacy = $redis_cfg->hlen("LRR_DUPLICATE_GROUPS") // 0;
+            $redis_cfg->del("LRR_DUPLICATE_GROUPS") if $legacy;
+            $redis_cfg->del("LRR_DUPLICATE_PAIRS");
+            $redis_cfg->del("LRR_DUPLICATE_PAIR_META");
+            $logger->info("find_duplicate_pairs: cleared $legacy legacy LRR_DUPLICATE_GROUPS entries") if $legacy;
 
-            my $sub = sub {
-                my (@keys) = @_;
+            my $result = LANraragi::Model::Dedup::find_duplicate_pairs_in_memory(\%page_data, $redis_cfg, $cfg);
+            $redis_cfg->set("LRR_DEDUP_LAST_SCAN", time());
+            $redis_cfg->quit;
 
-                my $redis = LANraragi::Model::Config->get_redis_config;
-
-                foreach my $id (@keys) {
-
-                    # Skip if this ID has already been processed in another thread
-                    next if $visited->get( $id );
-                    my @stack = ($id);
-                    my @group;
-
-                    while (@stack) {
-                        my $node = pop @stack;
-                        next if $visited->get( $node );
-
-                        # Mark the node as visited
-                        $visited->set( $node, 1 );
-                        push @group, $node;
-
-                        # Find all potential duplicates for this node
-                        foreach my $other_id ( keys %thumbhashes ) {
-                            next if $node eq $other_id || $visited->get( $other_id );
-
-                            # Calculate Hamming distance
-                            my $distance = 0;
-                            for ( my $i = 0; $i < length( $thumbhashes{$node} ); $i++ ) {
-                                $distance++
-                                if substr( $thumbhashes{$node}, $i, 1 ) ne substr( $thumbhashes{$other_id}, $i, 1 );
-                                last if $distance > $threshold;    # Early exit if threshold exceeded
-                            }
-
-                            # If within threshold, add to stack for further exploration
-                            if ( $distance <= $threshold ) {
-                                $logger->debug("Found potential duplicate: $node and $other_id with distance $distance");
-                                push @stack, $other_id;
-                            }
-                        }
-                    }
-
-                    # Add the discovered group to redis
-                    # to avoid redudnant groups in different orders - sort and composite key
-                    if ( @group && scalar @group >= 2 ) {
-                        @group = sort @group;
-                        my $composite_key = join '', map { substr( $_, 0, 10 ) } @group;
-                        my $group_json    = encode_json( \@group );
-                        $logger->debug("duplicate group '$composite_key': $group_json");
-                        $redis->hset( "LRR_DUPLICATE_GROUPS", "dupgp_$composite_key", $group_json );
-                    }
-                }
-
-                $redis->quit();
-            };
-
-            eval {
-                if ( IS_UNIX ) {
-                    MCE::Loop->init( { max_workers => $ENV{LRR_MCE_WORKERS} } ) if $ENV{LRR_MCE_WORKERS};
-                    mce_loop {
-                        $sub->(@{ $_ });
-                    } \@ids;
-                    MCE::Loop->finish;
-                } else {
-                    $sub->(@ids);
-                }
-            };
-
-            $job->finish( {} );
-
-            # Crashes on Windows so don't run it there
-            if ( IS_UNIX ) {
-                MCE::Shared->stop;
+            $logger->info(sprintf(
+                "find_duplicate_pairs: archives=%d candidates=%d stored=%d truncated=%s",
+                scalar(keys %page_data), $result->{candidates}, $result->{stored},
+                $result->{truncated} ? "yes" : "no"
+            ));
+            if ($result->{truncated}) {
+                $logger->warn("find_duplicate_pairs: candidate cap reached; tighten pcount_tolerance_pct or wait for LSH (Phase 2)");
             }
+            $job->finish($result);
         }
     );
 
