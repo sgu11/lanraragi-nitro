@@ -1,37 +1,67 @@
-[% WRAPPER 'main.tt2' title=title %]
-[% csshead %]
-<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$version") %]" />
-<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/duplicates.css?$version") %]" />
+<!DOCTYPE html>
 
-<div id="dupes-container">
-    <div id="dupes-toolbar">
-        <button id="run-find" class="stdbtn" type="button">
-            <i class="fas fa-search"></i> Find duplicate pairs
-        </button>
-        <button id="run-backfill" class="stdbtn" type="button">
-            <i class="fas fa-cogs"></i> Run backfill
-        </button>
-        <span id="dupes-stats" class="dupes-stats">Loading…</span>
-        <label class="dupes-threshold-label">
-            Threshold:
-            <input id="threshold-slider" type="range" min="0" max="55" step="1" value="25" />
-            <span id="threshold-value">25</span>
-            <select id="preset-select">
-                <option value="strict">Strict (12)</option>
-                <option value="medium" selected>Medium (25)</option>
-                <option value="loose">Loose (40)</option>
-                <option value="very_loose">Very loose (55)</option>
-            </select>
-        </label>
+<html>
+
+<head>
+    <title>[% title %] - [% c.lh("Duplicates") %]</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="apple-mobile-web-status-bar-style" content="black" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+
+    <link type="image/png" rel="icon" href="/favicon.ico" />
+    <link rel="manifest" href="app.webappmanifest" />
+    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$version") %]" />
+    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/duplicates.css?$version") %]" />
+    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/fontawesome-all.min.css") %]" />
+    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/sweetalert2.min.css") %]" />
+    [% csshead %]
+
+    <script defer src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/JAVASCRIPT"></script>
+    <script defer src="[% c.url_for("/js/vendor/sweetalert2.min.js") %]" type="text/JAVASCRIPT"></script>
+    <script defer src="[% c.url_for("/js/i18n.js?$version") %]" type="text/JAVASCRIPT"></script>
+    <script defer src="[% c.url_for("/js/common.js?$version") %]" type="text/JAVASCRIPT"></script>
+    <script defer src="[% c.url_for("/js/duplicates.js?$version") %]" type="text/JAVASCRIPT"></script>
+
+</head>
+
+<body>
+
+    <div id="dupes-container" class='ido' style='margin: 20px;'>
+        <h2 class='ih' style='text-align:center'>[% c.lh("Duplicates") %]</h2>
+
+        <div id="dupes-toolbar">
+            <button id="run-find" class="stdbtn" type="button">
+                <i class="fas fa-search"></i> Find duplicate pairs
+            </button>
+            <button id="run-backfill" class="stdbtn" type="button">
+                <i class="fas fa-cogs"></i> Run backfill
+            </button>
+            <span id="dupes-stats" class="dupes-stats">Loading…</span>
+            <label class="dupes-threshold-label">
+                Threshold:
+                <input id="threshold-slider" type="range" min="0" max="55" step="1" value="25" />
+                <span id="threshold-value">25</span>
+                <select id="preset-select">
+                    <option value="strict">Strict (12)</option>
+                    <option value="medium" selected>Medium (25)</option>
+                    <option value="loose">Loose (40)</option>
+                    <option value="very_loose">Very loose (55)</option>
+                </select>
+            </label>
+        </div>
+
+        <div id="dupes-list">Loading pairs…</div>
+
+        <div id="dupes-pagination">
+            <button id="dupes-prev" type="button" class="stdbtn">Prev</button>
+            <button id="dupes-next" type="button" class="stdbtn">Next</button>
+            <span id="dupes-page-info"></span>
+        </div>
     </div>
 
-    <div id="dupes-list">Loading pairs…</div>
-    <div id="dupes-pagination">
-        <button id="dupes-prev" type="button" class="stdbtn">Prev</button>
-        <button id="dupes-next" type="button" class="stdbtn">Next</button>
-        <span id="dupes-page-info"></span>
-    </div>
-</div>
+</body>
 
-<script src="[% rootpath %]js/duplicates.js?v=[% version %]"></script>
-[% END %]
+</html>
