@@ -141,4 +141,69 @@ sub compute_pagehashes_for_archive {
     return 1;
 }
 
+use Mojo::JSON qw(encode_json);
+
+# Pure matcher driver: takes pre-loaded %page_data instead of fetching from
+# Redis, so the algorithm can be unit-tested without I/O. The Minion task
+# wraps this with the Redis-side gather and DEL/cleanup steps.
+#
+# %page_data maps id -> { hashes => [...], n => N }.
+# $redis is used only for ZADD / HSET / SISMEMBER. The caller is
+# responsible for DEL'ing the destination keys before invoking this
+# function so the run rebuilds cleanly.
+sub find_duplicate_pairs_in_memory {
+    my ($page_data, $redis, $config) = @_;
+    my $loose_max  = $config->{loose_max_score}      // 40;
+    my $tol_pct    = $config->{pcount_tolerance_pct} // 20;
+    my $cap        = $config->{candidate_pair_cap}   // 10_000_000;
+    my $algo       = $config->{algo_version}         // 1;
+    my $tolerance  = $tol_pct / 100.0;
+
+    my @ids = sort { $page_data->{$a}{n} <=> $page_data->{$b}{n} } keys %$page_data;
+
+    # Sliding window over sorted-by-n ids -> candidate pairs (i,j) with i<j.
+    my @candidates;
+    my $truncated = 0;
+    OUTER: for (my $i = 0; $i < @ids; $i++) {
+        my $n_i = $page_data->{$ids[$i]}{n};
+        my $upper_bound = $n_i * (1 + $tolerance);
+        for (my $j = $i + 1; $j < @ids; $j++) {
+            my $n_j = $page_data->{$ids[$j]}{n};
+            last if $n_j > $upper_bound;
+            push @candidates, [ $ids[$i], $ids[$j] ];
+            if (scalar(@candidates) >= $cap) {
+                $truncated = 1;
+                last OUTER;
+            }
+        }
+    }
+
+    my $stored = 0;
+    for my $pair (@candidates) {
+        my ($a, $b) = sort @$pair;          # lex sort for stable member key
+        my $member = "$a|$b";
+        next if $redis->sismember("LRR_DEDUP_DISMISSED", $member);
+
+        my ($score, $per_page, $pcount_delta) =
+            score_pair($page_data->{$a}, $page_data->{$b});
+        next if $score > $loose_max;
+
+        $redis->zadd("LRR_DUPLICATE_PAIRS", $score, $member);
+        $redis->hset("LRR_DUPLICATE_PAIR_META", $member,
+            encode_json({
+                per_page     => $per_page,
+                pcount_delta => $pcount_delta,
+                algo_version => $algo,
+                ts           => time(),
+            }));
+        $stored++;
+    }
+
+    return {
+        stored     => $stored,
+        candidates => scalar(@candidates),
+        truncated  => $truncated,
+    };
+}
+
 1;
