@@ -1,0 +1,37 @@
+[% WRAPPER 'main.tt2' title=title %]
+[% csshead %]
+<link rel="stylesheet" href="[% rootpath %]style/index.css?v=[% version %]" />
+<link rel="stylesheet" href="[% rootpath %]style/duplicates.css?v=[% version %]" />
+
+<div id="dupes-container">
+    <div id="dupes-toolbar">
+        <button id="run-find" class="stdbtn" type="button">
+            <i class="fas fa-search"></i> Find duplicate pairs
+        </button>
+        <button id="run-backfill" class="stdbtn" type="button">
+            <i class="fas fa-cogs"></i> Run backfill
+        </button>
+        <span id="dupes-stats" class="dupes-stats">Loading…</span>
+        <label class="dupes-threshold-label">
+            Threshold:
+            <input id="threshold-slider" type="range" min="0" max="55" step="1" value="25" />
+            <span id="threshold-value">25</span>
+            <select id="preset-select">
+                <option value="strict">Strict (12)</option>
+                <option value="medium" selected>Medium (25)</option>
+                <option value="loose">Loose (40)</option>
+                <option value="very_loose">Very loose (55)</option>
+            </select>
+        </label>
+    </div>
+
+    <div id="dupes-list">Loading pairs…</div>
+    <div id="dupes-pagination">
+        <button id="dupes-prev" type="button" class="stdbtn">Prev</button>
+        <button id="dupes-next" type="button" class="stdbtn">Next</button>
+        <span id="dupes-page-info"></span>
+    </div>
+</div>
+
+<script src="[% rootpath %]js/duplicates.js?v=[% version %]"></script>
+[% END %]
