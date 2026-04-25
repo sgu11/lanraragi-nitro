@@ -18,3 +18,5 @@ win-dist
 # Playwright MCP browser-test artifacts
 .playwright-mcp
 smoke-*.png
+
+.worktrees
