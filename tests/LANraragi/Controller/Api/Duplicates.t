@@ -45,4 +45,39 @@ is($body->{pairs}[0]{id_b}, "id_b", "first pair id_b parsed");
 cmp_ok($body->{pairs}[0]{score}, "==", 4.5, "score passed through");
 is($body->{total}, 2, "total reported");
 
+note("DELETE /api/duplicates/pairs adds member to dismissed set and removes from index");
+{
+    my @sadd_seen;
+    my @zrem_seen;
+    my @hdel_seen;
+    package FakeRedis2 {
+        sub new { bless {}, shift }
+        sub sadd { my ($self, $k, $m) = @_; push @sadd_seen, [$k, $m]; 1 }
+        sub zrem { my ($self, $k, $m) = @_; push @zrem_seen, [$k, $m]; 1 }
+        sub hdel { my ($self, $k, $m) = @_; push @hdel_seen, [$k, $m]; 1 }
+        sub quit { 1 }
+    }
+    $controller_module->redefine('_get_redis_config', sub { FakeRedis2->new });
+
+    my $t = Mojolicious::Lite->new;
+    $t->routes->any('/api/duplicates/pairs')->to('api-duplicates#delete_pair');
+
+    my $tx = Mojo::Transaction::HTTP->new;
+    my $c  = Mojolicious::Controller->new(app => $t, tx => $tx);
+    $c->req->method('DELETE');
+    $c->req->url->parse('/api/duplicates/pairs');
+    $c->req->headers->content_type('application/json');
+    $c->req->body('{"pair":"' . ('a' x 40) . '|' . ('b' x 40) . '"}');
+
+    LANraragi::Controller::Api::Duplicates::delete_pair($c);
+
+    my $expected_pair = ('a' x 40) . '|' . ('b' x 40);
+    is_deeply($sadd_seen[0], ['LRR_DEDUP_DISMISSED',     $expected_pair], "added to dismissed set");
+    is_deeply($zrem_seen[0], ['LRR_DUPLICATE_PAIRS',     $expected_pair], "removed from pair sorted set");
+    is_deeply($hdel_seen[0], ['LRR_DUPLICATE_PAIR_META', $expected_pair], "removed from meta hash");
+
+    my $body = decode_json($c->res->body);
+    ok($body->{dismissed}, "response reports dismissed:true");
+}
+
 done_testing();

@@ -80,4 +80,22 @@ sub _archive_brief {
     };
 }
 
+sub delete_pair {
+    my $self = shift;
+    my $body = $self->req->json // {};
+    my $pair = $body->{pair} // '';
+
+    unless ($pair =~ /\A[0-9a-f]{40}\|[0-9a-f]{40}\z/) {
+        return $self->render(status => 400, json => { error => "pair must be 'idA|idB' lowercase hex" });
+    }
+
+    my $redis_cfg = _get_redis_config();
+    $redis_cfg->sadd("LRR_DEDUP_DISMISSED",     $pair);
+    $redis_cfg->zrem("LRR_DUPLICATE_PAIRS",     $pair);
+    $redis_cfg->hdel("LRR_DUPLICATE_PAIR_META", $pair);
+    $redis_cfg->quit;
+
+    $self->render(json => { dismissed => \1, pair => $pair });
+}
+
 1;
