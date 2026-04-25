@@ -2,6 +2,7 @@ use strict;
 use warnings;
 use v5.36;
 use Test::More;
+use Test::MockObject;
 
 use_ok('LANraragi::Model::Dedup');
 
@@ -68,6 +69,41 @@ note("score_pair: aggregates Hamming distance across slots");
     my ($score, $per_page) = LANraragi::Model::Dedup::score_pair($a, $b);
     is_deeply($per_page, [1, 1, 1], "1 bit differs per slot");
     cmp_ok(abs($score - 1.0), "<", 0.01, "mean Hamming = 1, no pcount delta -> score 1");
+}
+
+note("compute_pagehashes_for_archive: writes pagehashes/_v/_n and clears _err");
+{
+    use Test::MockModule qw(strict);
+    use Cwd qw(getcwd);
+
+    my $cwd = getcwd();
+    require "$cwd/tests/mocks.pl";
+    setup_redis_mock();
+
+    # Capture HSET / HDEL calls.
+    my @writes;
+    my $redis_mock = Test::MockObject->new();
+    $redis_mock->mock('hset', sub { shift; push @writes, ['hset', @_]; 1 });
+    $redis_mock->mock('hdel', sub { shift; push @writes, ['hdel', @_]; 1 });
+    $redis_mock->mock('hget', sub { undef });
+    $redis_mock->mock('quit', sub { 1 });
+
+    my $dedup_mod = Test::MockModule->new('LANraragi::Model::Dedup');
+    $dedup_mod->redefine('_get_archive_path', sub { $0 });
+    $dedup_mod->redefine('_get_filelist',     sub { ('p1.jpg','p2.jpg','p3.jpg','p4.jpg','p5.jpg','p6.jpg','p7.jpg','p8.jpg','p9.jpg','pA.jpg') });
+    $dedup_mod->redefine('_extract_page',     sub { '/tmp/page_x.jpg' });
+    $dedup_mod->redefine('_unlink_temp',      sub { 1 });
+    $dedup_mod->redefine('_compute_phash',    sub { 'aaaaaaaaaaaaaaaa' });
+
+    LANraragi::Model::Dedup::compute_pagehashes_for_archive($redis_mock, "abc123", { algo_version => 1, pages_sampled => 5 });
+
+    my %seen = map { $_->[1] . "|" . $_->[2] => $_->[3] } grep { $_->[0] eq 'hset' } @writes;
+    is($seen{"abc123|pagehashes"},   "aaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaa", "writes 5 hashes");
+    is($seen{"abc123|pagehashes_v"}, 1, "writes algo version");
+    is($seen{"abc123|pagehashes_n"}, 10, "writes page count");
+
+    my $hdel_seen = grep { $_->[0] eq 'hdel' && $_->[1] eq 'abc123' && $_->[2] eq 'pagehashes_err' } @writes;
+    ok($hdel_seen, "clears pagehashes_err on success");
 }
 
 done_testing();
