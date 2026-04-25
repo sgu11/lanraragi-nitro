@@ -65,9 +65,12 @@ sub initialize {
             eval { $translated = $handle->maketext( $key, @encoded_args ); };
             $error = $@;
             if ($error) {
-                $c->LRR_LOGGER->error("Maketext error: [$error]");
                 eval { $translated = LANraragi::Utils::I18N->get_handle('en')->maketext( $key, @encoded_args ); };
-                if ($@) { return $key; }    # Last-ditch fallback
+                if ($@) {
+                    $c->LRR_LOGGER->error("Maketext error: [$error]");
+                    return $key;    # Last-ditch fallback
+                }
+                $c->LRR_LOGGER->debug("Missing translation for key '$key' in selected locale; using English fallback");
             }
 
             # make sure the result is decoded in UTF-8
