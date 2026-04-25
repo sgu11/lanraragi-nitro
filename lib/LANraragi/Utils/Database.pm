@@ -456,8 +456,12 @@ sub clean_database {
                 $logger->warn("Found $newid in the filemap! Changing ID from $id to it.");
 
                 if ( $redis->exists($newid) ) {
-                    $logger->warn("ID $newid already exists in the database! Unlinking old ID.");
+                    $logger->warn("ID $newid already exists in the database! Deleting orphan record for old ID $id.");
+                    # Blank the file ref first so delete_archive's -e check skips the file
+                    # (the file now belongs to $newid, we must not unlink it).
                     $redis->hset( $id, "file", "" );
+                    LANraragi::Model::Archive::delete_archive($id);
+                    $deleted_arcs++;
                 } else {
                     change_archive_id( $id, $newid );
                     $redis_config->hset( "LRR_FILEMAP", $file, $newid );
