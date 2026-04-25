@@ -95,6 +95,16 @@ note("GET /api/duplicates/stats reports counts and config");
         sub get  { 1234567890 }
         sub keys { ('id1','id2','id3') }
         sub hget { my ($self, $k, $f) = @_; $f eq 'pagehashes_v' ? '1' : '' }
+        # Pipelined HMGET: callback fires synchronously; reply is arrayref of values.
+        sub hmget {
+            my $self = shift;
+            my $cb = ref($_[-1]) eq 'CODE' ? pop @_ : undef;
+            my ($k, @fields) = @_;
+            my @vals = map { $_ eq 'pagehashes_v' ? '1' : '' } @fields;
+            $cb->(\@vals, undef) if $cb;
+            return \@vals;
+        }
+        sub wait_all_responses { 1 }
         sub quit { 1 }
     }
     $controller_module->redefine('_get_redis_config', sub { FakeRedis3->new });
