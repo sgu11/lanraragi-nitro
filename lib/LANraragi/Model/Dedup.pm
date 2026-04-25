@@ -70,6 +70,7 @@ use LANraragi::Utils::Path    qw(get_archive_path);
 use LANraragi::Utils::Archive qw(get_filelist);
 use LANraragi::Utils::PHash   qw(compute_phash_64);
 use File::Temp qw(tempdir);
+use File::Path qw();
 
 # Indirection seams so tests can stub side effects without an archive on disk.
 sub _get_archive_path { LANraragi::Utils::Path::get_archive_path(@_) }
@@ -79,13 +80,20 @@ sub _get_archive_path { LANraragi::Utils::Path::get_archive_path(@_) }
 # inside the archive); force=1 rewalks the archive and rewrites the cache.
 sub _get_filelist     { my @list = LANraragi::Utils::Archive::get_filelist($_[0], $_[1], 1); return @list }
 # extract_single_file returns content bytes, not a path; pHash needs a path.
-# Use extract_single_file_to_file into a per-call tempdir.
+# Use extract_single_file_to_file into a per-call tempdir. Returns
+# ($file_path, $dir) so the caller can remove both — leaving the dir
+# behind on a long-lived Minion worker leaks ~5 dirs per archive.
 sub _extract_page {
     my ($archive, $page) = @_;
     my $dir = tempdir(CLEANUP => 0);
-    return LANraragi::Utils::Archive::extract_single_file_to_file($archive, $page, $dir);
+    my $file = LANraragi::Utils::Archive::extract_single_file_to_file($archive, $page, $dir);
+    return ($file, $dir);
 }
-sub _unlink_temp      { unlink $_[0] if $_[0] && -e $_[0] }
+sub _unlink_temp {
+    my ($file, $dir) = @_;
+    unlink $file if $file && -e $file;
+    File::Path::remove_tree($dir) if $dir && -d $dir;
+}
 sub _compute_phash    { LANraragi::Utils::PHash::compute_phash_64(@_) }
 
 # Computes pHashes for $id and writes them to Redis. Idempotent.
@@ -121,10 +129,10 @@ sub compute_pagehashes_for_archive {
     my $any_success = 0;
     for my $pos (@positions) {
         my $page = $filelist[$pos];
-        my $extracted;
+        my ($extracted, $extracted_dir);
         my $hash;
         eval {
-            $extracted = _extract_page($file, $page);
+            ($extracted, $extracted_dir) = _extract_page($file, $page);
             $hash = _compute_phash($extracted);
         };
         if ($@ || !$hash) {
@@ -133,7 +141,7 @@ sub compute_pagehashes_for_archive {
             push @hashes, $hash;
             $any_success = 1;
         }
-        _unlink_temp($extracted) if $extracted;
+        _unlink_temp($extracted, $extracted_dir) if $extracted || $extracted_dir;
     }
 
     while (scalar(@hashes) < $k) {

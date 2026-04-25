@@ -113,9 +113,18 @@ sub stats {
     my $hashed  = 0;
     my $errored = 0;
     my $pending = 0;
+    # Pipelined HMGET in one round-trip per archive instead of two
+    # synchronous round-trips. On a 17k library this is ~30s vs ~3min.
+    my @results;
     for my $id (@ids) {
-        my $v   = $redis->hget($id, "pagehashes_v")   // '';
-        my $err = $redis->hget($id, "pagehashes_err") // '';
+        $redis->hmget($id, "pagehashes_v", "pagehashes_err",
+            sub { push @results, $_[0] });
+    }
+    $redis->wait_all_responses;
+    for my $reply (@results) {
+        my ($v, $err) = @{ $reply // [] };
+        $v   //= '';
+        $err //= '';
         if ($v eq $algo_version) { $hashed++ }
         elsif ($err =~ /^\Q$algo_version\E:/) { $errored++ }
         else { $pending++ }

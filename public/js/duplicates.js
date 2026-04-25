@@ -60,7 +60,7 @@ Duplicates.renderPairs = function (pairs) {
             const $side = $(`<div class="dupe-side"></div>`);
             $side.append(
                 `<a href="${LRR.apiURL("/reader?id=" + encodeURIComponent(archive.arcid))}">` +
-                    `<img class="dupe-thumb" src="${LRR.apiURL("/api/archives/" + encodeURIComponent(archive.arcid) + "/thumbnail")}" alt="${archive.title}" />` +
+                    `<img class="dupe-thumb" src="${LRR.apiURL("/api/archives/" + encodeURIComponent(archive.arcid) + "/thumbnail")}" alt="${LRR.encodeHTML(archive.title || "")}" />` +
                     `</a>`,
             );
             $side.append(`<div class="dupe-title">${$(`<div></div>`).text(archive.title || archive.name).html()}</div>`);
@@ -85,27 +85,47 @@ Duplicates.renderPairs = function (pairs) {
     });
 };
 
+// Wrapper that surfaces both network failures and JSON-level error fields.
+// Without this, a 5xx with a JSON {error: "..."} body silently looks identical
+// to success because fetch resolves on any HTTP status.
+Duplicates.fetchJSON = function (url, init) {
+    return fetch(url, init).then((r) => {
+        return r.json().then((json) => {
+            if (!r.ok || json.error) {
+                throw new Error(json.error || `HTTP ${r.status}`);
+            }
+            return json;
+        });
+    });
+};
+
 Duplicates.deleteArchive = function (arcid) {
-    return fetch(LRR.apiURL("/api/archives/" + encodeURIComponent(arcid)), { method: "DELETE" })
-        .then((r) => r.json());
+    return Duplicates.fetchJSON(
+        LRR.apiURL("/api/archives/" + encodeURIComponent(arcid)),
+        { method: "DELETE" },
+    );
 };
 
 Duplicates.dismissPair = function (pair) {
-    return fetch(LRR.apiURL("/api/duplicates/pairs"), {
+    return Duplicates.fetchJSON(LRR.apiURL("/api/duplicates/pairs"), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pair }),
-    }).then((r) => r.json());
+    });
 };
 
 Duplicates.queueFind = function () {
-    return fetch(LRR.apiURL("/api/minion/find_duplicate_pairs/queue?args=[]"), { method: "POST" })
-        .then((r) => r.json());
+    return Duplicates.fetchJSON(
+        LRR.apiURL("/api/minion/find_duplicate_pairs/queue?args=[]"),
+        { method: "POST" },
+    );
 };
 
 Duplicates.queueBackfill = function () {
-    return fetch(LRR.apiURL("/api/minion/backfill_pagehashes/queue?args=[]"), { method: "POST" })
-        .then((r) => r.json());
+    return Duplicates.fetchJSON(
+        LRR.apiURL("/api/minion/backfill_pagehashes/queue?args=[]"),
+        { method: "POST" },
+    );
 };
 
 $(function () {
@@ -132,23 +152,31 @@ $(function () {
     });
 
     $("#run-find").on("click", function () {
-        Duplicates.queueFind().then(() => {
-            LRR.showPopUp({
-                title: "Match queued",
-                text: "Pair index will rebuild. Refresh stats periodically.",
-                icon: "info",
+        Duplicates.queueFind()
+            .then(() => {
+                LRR.showPopUp({
+                    title: "Match queued",
+                    text: "Pair index will rebuild. Refresh stats periodically.",
+                    icon: "info",
+                });
+            })
+            .catch((err) => {
+                LRR.showPopUp({ title: "Could not queue match", text: String(err), icon: "error" });
             });
-        });
     });
 
     $("#run-backfill").on("click", function () {
-        Duplicates.queueBackfill().then(() => {
-            LRR.showPopUp({
-                title: "Backfill queued",
-                text: "Page hashes will be computed for archives missing them.",
-                icon: "info",
+        Duplicates.queueBackfill()
+            .then(() => {
+                LRR.showPopUp({
+                    title: "Backfill queued",
+                    text: "Page hashes will be computed for archives missing them.",
+                    icon: "info",
+                });
+            })
+            .catch((err) => {
+                LRR.showPopUp({ title: "Could not queue backfill", text: String(err), icon: "error" });
             });
-        });
     });
 
     $("#dupes-list").on("click", ".dupe-delete", function () {
@@ -160,19 +188,27 @@ $(function () {
             showCancelButton: true,
         }).then((res) => {
             if (!res.isConfirmed) return;
-            Duplicates.deleteArchive(arcid).then(() => {
-                Duplicates.loadPairs();
-                Duplicates.refreshStats();
-            });
+            Duplicates.deleteArchive(arcid)
+                .then(() => {
+                    Duplicates.loadPairs();
+                    Duplicates.refreshStats();
+                })
+                .catch((err) => {
+                    LRR.showPopUp({ title: "Delete failed", text: String(err), icon: "error" });
+                });
         });
     });
 
     $("#dupes-list").on("click", ".dupe-dismiss", function () {
         const pair = $(this).data("pair");
-        Duplicates.dismissPair(pair).then(() => {
-            Duplicates.loadPairs();
-            Duplicates.refreshStats();
-        });
+        Duplicates.dismissPair(pair)
+            .then(() => {
+                Duplicates.loadPairs();
+                Duplicates.refreshStats();
+            })
+            .catch((err) => {
+                LRR.showPopUp({ title: "Dismiss failed", text: String(err), icon: "error" });
+            });
     });
 
     $("#dupes-prev").on("click", function () {
