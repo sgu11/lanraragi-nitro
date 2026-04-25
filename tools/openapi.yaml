@@ -2587,7 +2587,9 @@ paths:
               - thumbnail_task
               - page_thumbnails
               - regen_all_thumbnails
-              - find_duplicates
+              - backfill_pagehashes
+              - compute_pagehashes
+              - find_duplicate_pairs
               - build_stat_hashes
               - handle_upload
               - download_url
@@ -3367,6 +3369,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationResponse'
+  /api/duplicates/pairs:
+    get:
+      summary: List ranked duplicate pairs
+      tags: [Misc]
+      parameters:
+        - in: query
+          name: max_score
+          schema: { type: number }
+          description: Score ceiling. Overrides preset when both are sent.
+        - in: query
+          name: preset
+          schema:
+            type: string
+            enum: [strict, medium, loose, very_loose]
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        '200':
+          description: List of pairs
+      x-mojo-to: 'api-duplicates#pairs'
+    delete:
+      summary: Mark a pair as not-a-duplicate
+      tags: [Misc]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pair]
+              properties:
+                pair:
+                  type: string
+                  example: "abc...|def..."
+      responses:
+        '200':
+          description: Pair dismissed
+      x-mojo-to: 'api-duplicates#delete_pair'
+  /api/duplicates/stats:
+    get:
+      summary: Deduplicator stats and config
+      tags: [Misc]
+      responses:
+        '200':
+          description: Stats payload
+      x-mojo-to: 'api-duplicates#stats'
 components:
   securitySchemes:
     api_key:
