@@ -250,15 +250,16 @@ $(function () {
                 const cleaned = res.total_removed || 0;
                 return Duplicates.queueFind().then(() => cleaned);
             })
-            .then((cleaned) => {
+            .then(() => {
+                // Stats refresh below makes the cleanup visible (deck size
+                // drops, then climbs back up after the find job lands), so
+                // there's no toast/popup here. The page doesn't load the
+                // react-toastify bundle either.
                 setTimeout(() => {
                     Duplicates.refreshStats();
                     Duplicates.loadPairs();
                     $btn.prop("disabled", false);
                 }, 1500);
-                if (cleaned > 0) {
-                    LRR.toast && LRR.toast({ heading: `Cleaned ${cleaned} stale pair(s)`, icon: "success" });
-                }
             })
             .catch((err) => {
                 $btn.prop("disabled", false);
