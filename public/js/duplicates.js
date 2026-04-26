@@ -79,8 +79,13 @@ Duplicates.renderPairs = function (pairs) {
                 : (sizeBytes / 1048576).toFixed(1) + " MB";
             const tagsLbl = (archive.tag_count || 0) + " tags";
             const metaParts = [`${archive.pagecount}p`, sizeMB];
-            if (archive.language)   metaParts.push(archive.language);
-            if (archive.date_added) metaParts.push(archive.date_added);
+            if (archive.language) metaParts.push(archive.language);
+            if (archive.date_added) {
+                const ts = parseInt(archive.date_added, 10);
+                metaParts.push(Number.isFinite(ts) && ts > 0
+                    ? new Date(ts * 1000).toISOString().slice(0, 10)
+                    : archive.date_added);
+            }
             metaParts.push(tagsLbl);
             const $meta = $(`<div class="dupe-meta"></div>`).text(metaParts.join(" · "));
             $side.append($meta);
