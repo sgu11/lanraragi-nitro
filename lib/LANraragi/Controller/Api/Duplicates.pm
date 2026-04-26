@@ -74,17 +74,27 @@ sub _archive_brief {
     return {} unless %h;
     my $tags  = redis_decode($h{tags} // '');
     my $tag_count = 0;
+    my $language  = '';
+    my $date_added = '';
     if (length $tags) {
-        $tag_count = scalar(grep { /\S/ } split /,/, $tags);
+        my @parts = grep { /\S/ } split /,/, $tags;
+        $tag_count = scalar @parts;
+        for my $t (@parts) {
+            $t =~ s/^\s+|\s+$//g;
+            if    ($t =~ /^language:\s*(.+)$/i)   { $language   = $1 unless length $language }
+            elsif ($t =~ /^date_added:\s*(.+)$/i) { $date_added = $1 unless length $date_added }
+        }
     }
     return {
-        arcid     => $id,
-        title     => redis_decode($h{title} // ''),
-        name      => redis_decode($h{name}  // ''),
-        tags      => $tags,
-        pagecount => ($h{pagecount} // 0) + 0,
-        arcsize   => ($h{arcsize}   // 0) + 0,
-        tag_count => $tag_count,
+        arcid      => $id,
+        title      => redis_decode($h{title} // ''),
+        name       => redis_decode($h{name}  // ''),
+        tags       => $tags,
+        pagecount  => ($h{pagecount} // 0) + 0,
+        arcsize    => ($h{arcsize}   // 0) + 0,
+        tag_count  => $tag_count,
+        language   => $language,
+        date_added => $date_added,
     };
 }
 

@@ -4,7 +4,7 @@ const Duplicates = {};
 
 Duplicates.state = {
     offset: 0,
-    limit: 50,
+    limit: 100,
     threshold: 25,
     total: 0,
 };
@@ -78,7 +78,12 @@ Duplicates.renderPairs = function (pairs) {
                 ? (sizeBytes / 1073741824).toFixed(2) + " GB"
                 : (sizeBytes / 1048576).toFixed(1) + " MB";
             const tagsLbl = (archive.tag_count || 0) + " tags";
-            $side.append(`<div class="dupe-meta">${archive.pagecount}p · ${sizeMB} · ${tagsLbl}</div>`);
+            const metaParts = [`${archive.pagecount}p`, sizeMB];
+            if (archive.language)   metaParts.push(archive.language);
+            if (archive.date_added) metaParts.push(archive.date_added);
+            metaParts.push(tagsLbl);
+            const $meta = $(`<div class="dupe-meta"></div>`).text(metaParts.join(" · "));
+            $side.append($meta);
             $side.append(
                 `<button class="stdbtn dupe-delete" data-arcid="${archive.arcid}" data-side="${side}">Delete this side</button>`,
             );
