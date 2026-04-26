@@ -10,6 +10,12 @@ Duplicates.state = {
 };
 
 Duplicates._poller = null;
+Duplicates.lastCursorThreshold = null;
+
+Duplicates.deckIsStale = function () {
+    return Duplicates.lastCursorThreshold !== null
+        && Duplicates.lastCursorThreshold !== Duplicates.state.threshold;
+};
 
 Duplicates.refreshStats = function () {
     fetch(new LRR.apiURL("/api/duplicates/stats"))
@@ -20,17 +26,24 @@ Duplicates.refreshStats = function () {
             const total = s.archives_total || 0;
             const deckSize = s.deck_size || 0;
             const deckTarget = s.deck_target || 100;
+            Duplicates.lastCursorThreshold =
+                (s.cursor_threshold !== null && s.cursor_threshold !== undefined)
+                    ? s.cursor_threshold + 0
+                    : null;
+            const stale = Duplicates.deckIsStale();
             const sweepDone = s.sweep_done ? " · sweep complete" : "";
-            const deckThr = (s.cursor_threshold !== null && s.cursor_threshold !== undefined)
-                ? ` (≤${s.cursor_threshold})`
+            const deckThr = Duplicates.lastCursorThreshold !== null
+                ? ` (≤${Duplicates.lastCursorThreshold})`
                 : "";
+            const staleLabel = stale ? " · stale, click Find to rebuild" : "";
             const lastScan = s.last_scan_ts ? new Date(s.last_scan_ts * 1000).toLocaleString() : "never";
             $("#dupes-stats").text(
-                `deck: ${deckSize}/${deckTarget}${deckThr}${sweepDone} · hashed: ${hashed}/${total} · pending: ${pending} · last scan: ${lastScan}`,
+                `deck: ${deckSize}/${deckTarget}${deckThr}${sweepDone}${staleLabel} · hashed: ${hashed}/${total} · pending: ${pending} · last scan: ${lastScan}`,
             );
-            // Disable the Find button when the deck is already full so the
-            // user is steered toward reviewing/clearing the current deck first.
-            $("#run-find").prop("disabled", s.deck_full ? true : false);
+            // Find stays enabled while the deck threshold is stale: clicking
+            // it triggers a server-side rebuild. Only block when the deck is
+            // full AND already matches the slider's threshold.
+            $("#run-find").prop("disabled", s.deck_full && !stale);
             // Auto-poll while a backfill is in flight; stop once pending reaches 0.
             if (pending > 0 && Duplicates._poller === null) {
                 Duplicates._poller = setInterval(Duplicates.refreshStats, 10000);
@@ -41,6 +54,23 @@ Duplicates.refreshStats = function () {
         })
         .catch(() => {
             $("#dupes-stats").text("stats unavailable");
+        });
+};
+
+// Shared helper: trigger a server-side rebuild when the slider/preset has
+// drifted from the deck's current threshold, then refresh stats and pairs
+// once the Minion job has had a moment to land.
+Duplicates.rebuildDeckIfStale = function () {
+    if (!Duplicates.deckIsStale()) return;
+    Duplicates.queueFind()
+        .then(() => {
+            setTimeout(() => {
+                Duplicates.refreshStats();
+                Duplicates.loadPairs();
+            }, 1500);
+        })
+        .catch((err) => {
+            LRR.showPopUp({ title: "Could not rebuild deck", text: String(err), icon: "error" });
         });
 };
 
@@ -176,6 +206,8 @@ $(function () {
     $("#threshold-slider").on("change", function () {
         Duplicates.state.offset = 0;
         Duplicates.loadPairs();
+        Duplicates.refreshStats();
+        Duplicates.rebuildDeckIfStale();
     });
 
     $("#preset-select").on("change", function () {
@@ -186,16 +218,17 @@ $(function () {
         $("#threshold-value").text(v);
         Duplicates.state.offset = 0;
         Duplicates.loadPairs();
+        Duplicates.refreshStats();
+        Duplicates.rebuildDeckIfStale();
     });
 
     $("#run-find").on("click", function () {
         Duplicates.queueFind()
             .then(() => {
-                LRR.showPopUp({
-                    title: "Match queued",
-                    text: "Pair index will rebuild. Refresh stats periodically.",
-                    icon: "info",
-                });
+                setTimeout(() => {
+                    Duplicates.refreshStats();
+                    Duplicates.loadPairs();
+                }, 1500);
             })
             .catch((err) => {
                 LRR.showPopUp({ title: "Could not queue match", text: String(err), icon: "error" });
