@@ -276,6 +276,31 @@ sub add_tasks {
             my $cfg    = _dedup_config_from_redis($redis_cfg);
             $cfg->{loose_max_score} = $loose_max_arg if defined $loose_max_arg;
 
+            # Deck UX: keep at most DECK_TARGET unreviewed pairs in
+            # LRR_DUPLICATE_PAIRS at any time. Each run tops the deck up,
+            # resuming from a persisted (cur_i, cur_j) cursor.
+            my $DECK_TARGET = 100;
+            my $deck_size = $redis_cfg->zcard("LRR_DUPLICATE_PAIRS") + 0;
+            my $room      = $DECK_TARGET - $deck_size;
+            if ($room <= 0) {
+                $logger->info(
+                    "find_duplicate_pairs: deck full ($deck_size/$DECK_TARGET); review existing pairs first"
+                );
+                $redis->quit;
+                $redis_cfg->quit;
+                $job->finish({ stored => 0, deck_size => $deck_size, deck_full => 1 });
+                return;
+            }
+
+            # One-time cleanup of pre-deck legacy index.
+            my $legacy = $redis_cfg->hlen("LRR_DUPLICATE_GROUPS") // 0;
+            $redis_cfg->del("LRR_DUPLICATE_GROUPS") if $legacy;
+            $logger->info("find_duplicate_pairs: cleared $legacy legacy LRR_DUPLICATE_GROUPS entries") if $legacy;
+
+            $cfg->{cur_i}        = ($redis_cfg->hget("LRR_DEDUP_CONFIG", "pair_cursor_i") // 0) + 0;
+            $cfg->{cur_j}        = ($redis_cfg->hget("LRR_DEDUP_CONFIG", "pair_cursor_j") // 0) + 0;
+            $cfg->{target_pairs} = $room;
+
             # Gather pagehashes for all archives via pipelined HMGET.
             my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
             my @results;
@@ -295,24 +320,27 @@ sub add_tasks {
                 $page_data{$id} = { hashes => [ split / /, $ph ], n => $pn + 0 };
             }
 
-            # Wipe and rebuild the pair index. Also clean up the legacy hash.
-            my $legacy = $redis_cfg->hlen("LRR_DUPLICATE_GROUPS") // 0;
-            $redis_cfg->del("LRR_DUPLICATE_GROUPS") if $legacy;
-            $redis_cfg->del("LRR_DUPLICATE_PAIRS");
-            $redis_cfg->del("LRR_DUPLICATE_PAIR_META");
-            $logger->info("find_duplicate_pairs: cleared $legacy legacy LRR_DUPLICATE_GROUPS entries") if $legacy;
-
             my $result = LANraragi::Model::Dedup::find_duplicate_pairs_in_memory(\%page_data, $redis_cfg, $cfg);
             $redis_cfg->set("LRR_DEDUP_LAST_SCAN", time());
+
+            if ($result->{sweep_done}) {
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "pair_cursor_i", 0);
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "pair_cursor_j", 0);
+            } else {
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "pair_cursor_i", $result->{cur_i});
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "pair_cursor_j", $result->{cur_j});
+            }
             $redis_cfg->quit;
 
             $logger->info(sprintf(
-                "find_duplicate_pairs: archives=%d candidates=%d stored=%d truncated=%s",
+                "find_duplicate_pairs: archives=%d candidates=%d stored=%d deck=%d/%d cursor=(%d,%d) sweep_done=%s",
                 scalar(keys %page_data), $result->{candidates}, $result->{stored},
-                $result->{truncated} ? "yes" : "no"
+                $deck_size + $result->{stored}, $DECK_TARGET,
+                $result->{cur_i}, $result->{cur_j},
+                $result->{sweep_done} ? "yes" : "no"
             ));
             if ($result->{truncated}) {
-                $logger->warn("find_duplicate_pairs: candidate cap reached; tighten pcount_tolerance_pct or wait for LSH (Phase 2)");
+                $logger->warn("find_duplicate_pairs: candidate cap reached; tighten pcount_tolerance_pct");
             }
             $job->finish($result);
         }

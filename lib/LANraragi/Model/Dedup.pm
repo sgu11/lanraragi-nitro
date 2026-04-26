@@ -164,64 +164,90 @@ use Mojo::JSON qw(encode_json);
 
 # Pure matcher driver: takes pre-loaded %page_data instead of fetching from
 # Redis, so the algorithm can be unit-tested without I/O. The Minion task
-# wraps this with the Redis-side gather and DEL/cleanup steps.
+# wraps this with the Redis-side gather and cursor persistence.
 #
 # %page_data maps id -> { hashes => [...], n => N }.
-# $redis is used only for ZADD / HSET / SISMEMBER. The caller is
-# responsible for DEL'ing the destination keys before invoking this
-# function so the run rebuilds cleanly.
+#
+# $config recognized keys:
+#   loose_max_score, pcount_tolerance_pct, candidate_pair_cap, algo_version
+#   cur_i, cur_j        - resume position in the sliding window (0,0 = start)
+#   target_pairs        - stop after this many *new* pairs are stored
+#                         (0 or undef = no cap, exhaust the sweep)
+#
+# Returns: { stored, candidates, truncated, cur_i, cur_j, sweep_done }.
+# Caller persists cur_i/cur_j and resets to 0 when sweep_done is true.
 sub find_duplicate_pairs_in_memory {
     my ($page_data, $redis, $config) = @_;
-    my $loose_max  = $config->{loose_max_score}      // 40;
-    my $tol_pct    = $config->{pcount_tolerance_pct} // 20;
-    my $cap        = $config->{candidate_pair_cap}   // 10_000_000;
-    my $algo       = $config->{algo_version}         // 1;
-    my $tolerance  = $tol_pct / 100.0;
+    my $loose_max    = $config->{loose_max_score}      // 40;
+    my $tol_pct      = $config->{pcount_tolerance_pct} // 20;
+    my $cap          = $config->{candidate_pair_cap}   // 10_000_000;
+    my $algo         = $config->{algo_version}         // 1;
+    my $start_i      = $config->{cur_i}                // 0;
+    my $start_j      = $config->{cur_j}                // 0;
+    my $target_pairs = $config->{target_pairs}         // 0;
+    my $tolerance    = $tol_pct / 100.0;
 
     my @ids = sort { $page_data->{$a}{n} <=> $page_data->{$b}{n} } keys %$page_data;
+    my $n_total = scalar @ids;
 
-    # Sliding window over sorted-by-n ids -> candidate pairs (i,j) with i<j.
-    my @candidates;
-    my $truncated = 0;
-    OUTER: for (my $i = 0; $i < @ids; $i++) {
+    # Stale cursor (e.g. archives deleted) — restart from beginning.
+    $start_i = 0 if $start_i >= $n_total;
+
+    my $stored          = 0;
+    my $candidates_seen = 0;
+    my $truncated       = 0;
+    my $cur_i           = $n_total;   # default = sweep complete
+    my $cur_j           = 0;
+
+    OUTER: for (my $i = $start_i; $i < $n_total; $i++) {
         my $n_i = $page_data->{$ids[$i]}{n};
         my $upper_bound = $n_i * (1 + $tolerance);
-        for (my $j = $i + 1; $j < @ids; $j++) {
+        my $j_begin = ($i == $start_i && $start_j > $i) ? $start_j : $i + 1;
+
+        for (my $j = $j_begin; $j < $n_total; $j++) {
             my $n_j = $page_data->{$ids[$j]}{n};
             last if $n_j > $upper_bound;
-            push @candidates, [ $ids[$i], $ids[$j] ];
-            if (scalar(@candidates) >= $cap) {
+
+            if ($candidates_seen >= $cap) {
                 $truncated = 1;
+                $cur_i = $i; $cur_j = $j;
+                last OUTER;
+            }
+            $candidates_seen++;
+
+            my ($a, $b) = sort ($ids[$i], $ids[$j]);
+            my $member = "$a|$b";
+            next if $redis->sismember("LRR_DEDUP_DISMISSED", $member);
+            next if defined $redis->zscore("LRR_DUPLICATE_PAIRS", $member);
+
+            my ($score, $per_page, $pcount_delta) =
+                score_pair($page_data->{$a}, $page_data->{$b});
+            next if $score > $loose_max;
+
+            $redis->zadd("LRR_DUPLICATE_PAIRS", $score, $member);
+            $redis->hset("LRR_DUPLICATE_PAIR_META", $member,
+                encode_json({
+                    per_page     => $per_page,
+                    pcount_delta => $pcount_delta,
+                    algo_version => $algo,
+                    ts           => time(),
+                }));
+            $stored++;
+
+            if ($target_pairs && $stored >= $target_pairs) {
+                $cur_i = $i; $cur_j = $j + 1;
                 last OUTER;
             }
         }
     }
 
-    my $stored = 0;
-    for my $pair (@candidates) {
-        my ($a, $b) = sort @$pair;          # lex sort for stable member key
-        my $member = "$a|$b";
-        next if $redis->sismember("LRR_DEDUP_DISMISSED", $member);
-
-        my ($score, $per_page, $pcount_delta) =
-            score_pair($page_data->{$a}, $page_data->{$b});
-        next if $score > $loose_max;
-
-        $redis->zadd("LRR_DUPLICATE_PAIRS", $score, $member);
-        $redis->hset("LRR_DUPLICATE_PAIR_META", $member,
-            encode_json({
-                per_page     => $per_page,
-                pcount_delta => $pcount_delta,
-                algo_version => $algo,
-                ts           => time(),
-            }));
-        $stored++;
-    }
-
     return {
         stored     => $stored,
-        candidates => scalar(@candidates),
+        candidates => $candidates_seen,
         truncated  => $truncated,
+        cur_i      => $cur_i,
+        cur_j      => $cur_j,
+        sweep_done => ($cur_i >= $n_total ? 1 : 0),
     };
 }
 

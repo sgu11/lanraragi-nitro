@@ -34,7 +34,7 @@
 
         <div id="dupes-toolbar">
             <button id="run-find" class="stdbtn" type="button">
-                <i class="fas fa-search"></i> Find duplicate pairs
+                <i class="fas fa-search"></i> Find more pairs (next deck)
             </button>
             <button id="run-backfill" class="stdbtn" type="button">
                 <i class="fas fa-cogs"></i> Run backfill

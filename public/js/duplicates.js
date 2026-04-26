@@ -18,10 +18,16 @@ Duplicates.refreshStats = function () {
             const pending = s.archives_pending || 0;
             const hashed = s.archives_with_hashes || 0;
             const total = s.archives_total || 0;
+            const deckSize = s.deck_size || 0;
+            const deckTarget = s.deck_target || 100;
+            const sweepDone = s.sweep_done ? " · sweep complete" : "";
             const lastScan = s.last_scan_ts ? new Date(s.last_scan_ts * 1000).toLocaleString() : "never";
             $("#dupes-stats").text(
-                `pairs: ${s.total_pairs} · hashed: ${hashed}/${total} · pending: ${pending} · last scan: ${lastScan}`,
+                `deck: ${deckSize}/${deckTarget}${sweepDone} · hashed: ${hashed}/${total} · pending: ${pending} · last scan: ${lastScan}`,
             );
+            // Disable the Find button when the deck is already full so the
+            // user is steered toward reviewing/clearing the current deck first.
+            $("#run-find").prop("disabled", s.deck_full ? true : false);
             // Auto-poll while a backfill is in flight; stop once pending reaches 0.
             if (pending > 0 && Duplicates._poller === null) {
                 Duplicates._poller = setInterval(Duplicates.refreshStats, 10000);

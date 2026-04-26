@@ -150,8 +150,19 @@ sub stats {
     $redis->quit;
     $redis_cfg->quit;
 
+    my $deck_target = 100;
+    my $cursor_i    = ($config{pair_cursor_i} // 0) + 0;
+    my $cursor_j    = ($config{pair_cursor_j} // 0) + 0;
+    my $sweep_done  = ($cursor_i == 0 && $cursor_j == 0) ? 1 : 0;
+
     $self->render(json => {
         total_pairs              => $total_pairs,
+        deck_size                => $total_pairs,
+        deck_target              => $deck_target,
+        deck_full                => ($total_pairs >= $deck_target ? 1 : 0),
+        cursor_i                 => $cursor_i,
+        cursor_j                 => $cursor_j,
+        sweep_done               => $sweep_done,
         archives_total           => scalar @ids,
         archives_with_hashes     => $hashed,
         archives_pending         => $pending,
