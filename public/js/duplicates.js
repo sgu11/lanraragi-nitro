@@ -195,6 +195,13 @@ Duplicates.queueBackfill = function () {
     );
 };
 
+Duplicates.refreshDeck = function () {
+    return Duplicates.fetchJSON(
+        new LRR.apiURL("/api/duplicates/refresh"),
+        { method: "POST" },
+    );
+};
+
 $(function () {
     Duplicates.refreshStats();
     Duplicates.loadPairs();
@@ -231,6 +238,31 @@ $(function () {
             })
             .catch((err) => {
                 LRR.showPopUp({ title: "Could not queue match", text: String(err), icon: "error" });
+            });
+    });
+
+    // Refresh deck: drop pairs that are already dismissed or that point at
+    // deleted archives, then queue a find to top the deck back up to 100.
+    $("#run-refresh").on("click", function () {
+        const $btn = $(this).prop("disabled", true);
+        Duplicates.refreshDeck()
+            .then((res) => {
+                const cleaned = res.total_removed || 0;
+                return Duplicates.queueFind().then(() => cleaned);
+            })
+            .then((cleaned) => {
+                setTimeout(() => {
+                    Duplicates.refreshStats();
+                    Duplicates.loadPairs();
+                    $btn.prop("disabled", false);
+                }, 1500);
+                if (cleaned > 0) {
+                    LRR.toast && LRR.toast({ heading: `Cleaned ${cleaned} stale pair(s)`, icon: "success" });
+                }
+            })
+            .catch((err) => {
+                $btn.prop("disabled", false);
+                LRR.showPopUp({ title: "Refresh failed", text: String(err), icon: "error" });
             });
     });
 

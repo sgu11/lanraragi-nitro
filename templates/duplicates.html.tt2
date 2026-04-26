@@ -36,6 +36,9 @@
             <button id="run-find" class="stdbtn" type="button">
                 <i class="fas fa-search"></i> Find more pairs (next deck)
             </button>
+            <button id="run-refresh" class="stdbtn" type="button">
+                <i class="fas fa-sync"></i> Refresh deck
+            </button>
             <button id="run-backfill" class="stdbtn" type="button">
                 <i class="fas fa-cogs"></i> Run backfill
             </button>

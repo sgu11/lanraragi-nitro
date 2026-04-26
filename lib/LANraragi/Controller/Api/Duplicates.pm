@@ -116,6 +116,46 @@ sub delete_pair {
     $self->render(json => { dismissed => \1, pair => $pair });
 }
 
+sub refresh {
+    my $self = shift;
+
+    my $redis_cfg = _get_redis_config();
+    my $redis     = _get_redis();
+
+    my @members  = $redis_cfg->zrange("LRR_DUPLICATE_PAIRS", 0, -1);
+    my $orphans  = 0;
+    my $dismissed_leftover = 0;
+    my @to_remove;
+
+    for my $member (@members) {
+        if ($redis_cfg->sismember("LRR_DEDUP_DISMISSED", $member)) {
+            push @to_remove, $member;
+            $dismissed_leftover++;
+            next;
+        }
+        my ($a, $b) = split /\|/, $member, 2;
+        if (!$redis->exists($a) || !$redis->exists($b)) {
+            push @to_remove, $member;
+            $orphans++;
+        }
+    }
+
+    if (@to_remove) {
+        $redis_cfg->zrem("LRR_DUPLICATE_PAIRS",     @to_remove);
+        $redis_cfg->hdel("LRR_DUPLICATE_PAIR_META", @to_remove);
+    }
+
+    $redis->quit;
+    $redis_cfg->quit;
+
+    $self->render(json => {
+        success            => \1,
+        orphans_removed    => $orphans,
+        dismissed_removed  => $dismissed_leftover,
+        total_removed      => scalar(@to_remove),
+    });
+}
+
 sub stats {
     my $self = shift;
     my $redis_cfg = _get_redis_config();

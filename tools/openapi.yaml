@@ -3419,6 +3419,19 @@ paths:
         '200':
           description: Stats payload
       x-mojo-to: 'api-duplicates#stats'
+  /api/duplicates/refresh:
+    post:
+      summary: Drop dismissed and orphan-archive pairs from the deck
+      description: >-
+        Sweeps LRR_DUPLICATE_PAIRS and removes any member that's already in
+        LRR_DEDUP_DISMISSED or whose archive IDs no longer exist (e.g. one
+        side was deleted). Caller can then queue find_duplicate_pairs to
+        top the deck back up.
+      tags: [Misc]
+      responses:
+        '200':
+          description: Refresh result with removed counts
+      x-mojo-to: 'api-duplicates#refresh'
 components:
   securitySchemes:
     api_key:
