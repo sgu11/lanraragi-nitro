@@ -57,12 +57,6 @@
         </div>
 
         <div id="dupes-list">Loading pairs…</div>
-
-        <div id="dupes-pagination">
-            <button id="dupes-prev" type="button" class="stdbtn">Prev</button>
-            <button id="dupes-next" type="button" class="stdbtn">Next</button>
-            <span id="dupes-page-info"></span>
-        </div>
     </div>
 
 </body>

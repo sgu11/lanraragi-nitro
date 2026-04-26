@@ -2,10 +2,34 @@
 
 const Duplicates = {};
 
+const DUPES_THRESHOLD_LS_KEY = "lrr.duplicates.threshold";
+const DUPES_THRESHOLD_DEFAULT = 22;
+const DUPES_THRESHOLD_MIN = 12;
+const DUPES_THRESHOLD_MAX = 25;
+
+function loadStoredThreshold() {
+    try {
+        const v = parseInt(window.localStorage.getItem(DUPES_THRESHOLD_LS_KEY), 10);
+        if (Number.isFinite(v) && v >= DUPES_THRESHOLD_MIN && v <= DUPES_THRESHOLD_MAX) {
+            return v;
+        }
+    } catch {
+        // localStorage may be disabled (private mode); fall through to default.
+    }
+    return DUPES_THRESHOLD_DEFAULT;
+}
+
+function saveStoredThreshold(v) {
+    try {
+        window.localStorage.setItem(DUPES_THRESHOLD_LS_KEY, String(v));
+    } catch {
+        // Ignore — non-fatal.
+    }
+}
+
 Duplicates.state = {
-    offset: 0,
     limit: 100,
-    threshold: 22,
+    threshold: loadStoredThreshold(),
     total: 0,
 };
 
@@ -78,16 +102,13 @@ Duplicates.loadPairs = function () {
     const url =
         new LRR.apiURL("/api/duplicates/pairs") +
         `?max_score=${encodeURIComponent(Duplicates.state.threshold)}` +
-        `&offset=${Duplicates.state.offset}&limit=${Duplicates.state.limit}`;
+        `&limit=${Duplicates.state.limit}`;
 
     fetch(url)
         .then((r) => r.json())
         .then((data) => {
             Duplicates.state.total = data.total || 0;
             Duplicates.renderPairs(data.pairs || []);
-            $("#dupes-page-info").text(
-                `${Duplicates.state.offset + 1}-${Duplicates.state.offset + (data.pairs || []).length} of ${data.total || 0}`,
-            );
         })
         .catch(() => {
             $("#dupes-list").text("failed to load pairs");
@@ -203,6 +224,14 @@ Duplicates.refreshDeck = function () {
 };
 
 $(function () {
+    // Sync the slider/dropdown/label to the persisted threshold the page
+    // started with — the template's hardcoded `value` would otherwise
+    // override it on every reload.
+    const initial = Duplicates.state.threshold;
+    $("#threshold-slider").val(initial);
+    $("#threshold-value").text(initial);
+    $("#preset-select").val(String(initial));
+
     Duplicates.refreshStats();
     Duplicates.loadPairs();
 
@@ -211,18 +240,19 @@ $(function () {
         $("#threshold-value").text(this.value);
     });
     $("#threshold-slider").on("change", function () {
-        Duplicates.state.offset = 0;
+        saveStoredThreshold(Duplicates.state.threshold);
+        $("#preset-select").val(String(Duplicates.state.threshold));
         Duplicates.loadPairs();
         Duplicates.refreshStats();
         Duplicates.rebuildDeckIfStale();
     });
 
     $("#preset-select").on("change", function () {
-        const v = parseInt(this.value, 10) || 22;
+        const v = parseInt(this.value, 10) || DUPES_THRESHOLD_DEFAULT;
         Duplicates.state.threshold = v;
+        saveStoredThreshold(v);
         $("#threshold-slider").val(v);
         $("#threshold-value").text(v);
-        Duplicates.state.offset = 0;
         Duplicates.loadPairs();
         Duplicates.refreshStats();
         Duplicates.rebuildDeckIfStale();
@@ -313,16 +343,4 @@ $(function () {
             });
     });
 
-    $("#dupes-prev").on("click", function () {
-        if (Duplicates.state.offset >= Duplicates.state.limit) {
-            Duplicates.state.offset -= Duplicates.state.limit;
-            Duplicates.loadPairs();
-        }
-    });
-    $("#dupes-next").on("click", function () {
-        if (Duplicates.state.offset + Duplicates.state.limit < Duplicates.state.total) {
-            Duplicates.state.offset += Duplicates.state.limit;
-            Duplicates.loadPairs();
-        }
-    });
 });
