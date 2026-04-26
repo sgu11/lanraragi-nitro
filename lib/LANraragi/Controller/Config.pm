@@ -140,7 +140,7 @@ sub save_config {
         $redis->multi;
 
         foreach my $key ( keys %confhash ) {
-            my $value = $confhash{$key};
+            my $value = $confhash{$key} // '';
 
             if ( $value ne '0' && $value ne '1' ) {
 
