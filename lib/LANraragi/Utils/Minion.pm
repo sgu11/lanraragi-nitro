@@ -269,12 +269,48 @@ sub add_tasks {
 
     $minion->add_task(
         find_duplicate_pairs => sub {
-            my ($job, $loose_max_arg) = @_;
+            my ($job, $threshold_arg) = @_;
             my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
             my $redis     = LANraragi::Model::Config->get_redis;
             my $redis_cfg = LANraragi::Model::Config->get_redis_config;
             my $cfg    = _dedup_config_from_redis($redis_cfg);
-            $cfg->{loose_max_score} = $loose_max_arg if defined $loose_max_arg;
+
+            # Caller (the Find button) passes the current UI threshold so the
+            # deck only fills with pairs the user actually wants to see.
+            # Without this, the deck filled at the loose ceiling (40) and a
+            # user reviewing at threshold 25 saw an empty list with the
+            # button stuck disabled.
+            my $threshold = defined $threshold_arg
+                ? $threshold_arg + 0
+                : ($cfg->{loose_max_score} // 40);
+            $cfg->{loose_max_score} = $threshold;
+
+            # If the threshold differs from the one the current cursor was
+            # built for, drop existing high-score pairs and reset the cursor
+            # so the next sweep starts over with the new gate.
+            my $prev_threshold = $redis_cfg->hget("LRR_DEDUP_CONFIG", "pair_cursor_threshold");
+            $prev_threshold = defined $prev_threshold ? $prev_threshold + 0 : -1;
+            my $threshold_changed = ($prev_threshold != $threshold);
+
+            if ($threshold_changed) {
+                # Trim pairs above the new threshold so the deck reflects it.
+                # ZREMRANGEBYSCORE doesn't return the removed members, so
+                # collect them first to also clear LRR_DUPLICATE_PAIR_META.
+                my @above = $redis_cfg->zrangebyscore(
+                    "LRR_DUPLICATE_PAIRS", "($threshold", "+inf"
+                );
+                if (@above) {
+                    $redis_cfg->zrem("LRR_DUPLICATE_PAIRS", @above);
+                    $redis_cfg->hdel("LRR_DUPLICATE_PAIR_META", @above);
+                    $logger->info(
+                        "find_duplicate_pairs: trimmed " . scalar(@above)
+                        . " pair(s) above new threshold $threshold"
+                    );
+                }
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "pair_cursor_i", 0);
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "pair_cursor_j", 0);
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "pair_cursor_threshold", $threshold);
+            }
 
             # Deck UX: keep at most DECK_TARGET unreviewed pairs in
             # LRR_DUPLICATE_PAIRS at any time. Each run tops the deck up,
@@ -284,11 +320,16 @@ sub add_tasks {
             my $room      = $DECK_TARGET - $deck_size;
             if ($room <= 0) {
                 $logger->info(
-                    "find_duplicate_pairs: deck full ($deck_size/$DECK_TARGET); review existing pairs first"
+                    "find_duplicate_pairs: deck full ($deck_size/$DECK_TARGET) at threshold $threshold; review existing pairs first"
                 );
                 $redis->quit;
                 $redis_cfg->quit;
-                $job->finish({ stored => 0, deck_size => $deck_size, deck_full => 1 });
+                $job->finish({
+                    stored     => 0,
+                    deck_size  => $deck_size,
+                    deck_full  => 1,
+                    threshold  => $threshold,
+                });
                 return;
             }
 
@@ -333,7 +374,8 @@ sub add_tasks {
             $redis_cfg->quit;
 
             $logger->info(sprintf(
-                "find_duplicate_pairs: archives=%d candidates=%d stored=%d deck=%d/%d cursor=(%d,%d) sweep_done=%s",
+                "find_duplicate_pairs: threshold=%g archives=%d candidates=%d stored=%d deck=%d/%d cursor=(%d,%d) sweep_done=%s",
+                $threshold,
                 scalar(keys %page_data), $result->{candidates}, $result->{stored},
                 $deck_size + $result->{stored}, $DECK_TARGET,
                 $result->{cur_i}, $result->{cur_j},

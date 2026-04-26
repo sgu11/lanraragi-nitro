@@ -21,9 +21,12 @@ Duplicates.refreshStats = function () {
             const deckSize = s.deck_size || 0;
             const deckTarget = s.deck_target || 100;
             const sweepDone = s.sweep_done ? " · sweep complete" : "";
+            const deckThr = (s.cursor_threshold !== null && s.cursor_threshold !== undefined)
+                ? ` (≤${s.cursor_threshold})`
+                : "";
             const lastScan = s.last_scan_ts ? new Date(s.last_scan_ts * 1000).toLocaleString() : "never";
             $("#dupes-stats").text(
-                `deck: ${deckSize}/${deckTarget}${sweepDone} · hashed: ${hashed}/${total} · pending: ${pending} · last scan: ${lastScan}`,
+                `deck: ${deckSize}/${deckTarget}${deckThr}${sweepDone} · hashed: ${hashed}/${total} · pending: ${pending} · last scan: ${lastScan}`,
             );
             // Disable the Find button when the deck is already full so the
             // user is steered toward reviewing/clearing the current deck first.
@@ -145,8 +148,12 @@ Duplicates.dismissPair = function (pair) {
 };
 
 Duplicates.queueFind = function () {
+    // Pass current UI threshold to the server so the deck only fills with
+    // pairs at or below it. Server resets the cursor when threshold differs
+    // from the previous run.
+    const args = JSON.stringify([Duplicates.state.threshold]);
     return Duplicates.fetchJSON(
-        new LRR.apiURL("/api/minion/find_duplicate_pairs/queue?args=[]"),
+        new LRR.apiURL("/api/minion/find_duplicate_pairs/queue?args=" + encodeURIComponent(args)),
         { method: "POST" },
     );
 };
