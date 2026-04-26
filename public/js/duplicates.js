@@ -5,7 +5,7 @@ const Duplicates = {};
 Duplicates.state = {
     offset: 0,
     limit: 100,
-    threshold: 25,
+    threshold: 22,
     total: 0,
 };
 
@@ -211,8 +211,7 @@ $(function () {
     });
 
     $("#preset-select").on("change", function () {
-        const presets = { strict: 12, medium: 25, loose: 40, very_loose: 55 };
-        const v = presets[this.value] || 25;
+        const v = parseInt(this.value, 10) || 22;
         Duplicates.state.threshold = v;
         $("#threshold-slider").val(v);
         $("#threshold-value").text(v);
