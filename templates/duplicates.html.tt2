@@ -33,6 +33,9 @@
         <h2 class='ih' style='text-align:center'>[% c.lh("Duplicates") %]</h2>
 
         <div id="dupes-toolbar">
+            <button id="return" class="stdbtn" type="button">
+                <i class="fas fa-arrow-left"></i> [% c.lh("Return to Library") %]
+            </button>
             <button id="run-find" class="stdbtn" type="button">
                 <i class="fas fa-search"></i> Find more pairs (next deck)
             </button>

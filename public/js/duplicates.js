@@ -235,6 +235,10 @@ $(function () {
     Duplicates.refreshStats();
     Duplicates.loadPairs();
 
+    $("#return").on("click", function () {
+        window.location.href = new LRR.apiURL("/");
+    });
+
     $("#threshold-slider").on("input", function () {
         Duplicates.state.threshold = parseInt(this.value, 10);
         $("#threshold-value").text(this.value);
