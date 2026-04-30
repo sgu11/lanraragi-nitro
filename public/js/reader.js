@@ -70,6 +70,15 @@ Reader.initializeAll = function () {
 
     $(document).on("click.close-overlay", "#overlay-shade", LRR.closeOverlay);
     $(document).on("click.toggle-full-screen", "#toggle-full-screen", () => Reader.handleFullScreen(true));
+    $(document).on("auxclick.toggle-full-screen-middle", "#i3", (e) => {
+        if (e.button !== 1 || !window.fscreen.fullscreenEnabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        Reader.toggleFullScreen();
+    });
+    $(document).on("mousedown.suppress-middle-autoscroll", "#i3", (e) => {
+        if (e.button === 1) e.preventDefault();
+    });
     $(document).on("click.toggle-auto-next-page", ".toggle-auto-next-page", Reader.toggleAutoNextPage);
     $(document).on("click.toggle-archive-overlay", "#toggle-archive-overlay", Reader.toggleArchiveOverlay);
     $(document).on("click.toggle-settings-overlay", "#toggle-settings-overlay", Reader.toggleSettingsOverlay);
