@@ -70,11 +70,11 @@ Reader.initializeAll = function () {
 
     $(document).on("click.close-overlay", "#overlay-shade", LRR.closeOverlay);
     $(document).on("click.toggle-full-screen", "#toggle-full-screen", () => Reader.handleFullScreen(true));
-    $(document).on("auxclick.toggle-full-screen-middle", "#i3", (e) => {
-        if (e.button !== 1 || !window.fscreen.fullscreenEnabled) return;
+    $(document).on("auxclick.toggle-double-page-offset-middle", "#i3", (e) => {
+        if (e.button !== 1) return;
         e.preventDefault();
         e.stopPropagation();
-        Reader.toggleFullScreen();
+        Reader.toggleDoublePageOffset();
     });
     $(document).on("mousedown.suppress-middle-autoscroll", "#i3", (e) => {
         if (e.button === 1) e.preventDefault();
