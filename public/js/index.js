@@ -226,6 +226,7 @@ Index.initializeAll = function () {
             Server.loadBookmarkCategoryId()
                 .then(() => Index.loadCategories())
                 .then(() => IndexTable.initializeAll())
+                // eslint-disable-next-line no-console
                 .catch(error => console.error("Error initializing index:", error));
         });
 
@@ -247,7 +248,7 @@ Index.initializeAll = function () {
         e.clearSelection();
     });
 
-    Index.clipboard.on("error", function (e) {
+    Index.clipboard.on("error", function (_e) {
         LRR.toast({
             heading: I18N.IndexCopyLinkFail,
             icon: "error",
@@ -276,7 +277,7 @@ Index.bookmarkIconOn = function (arcid) {
 
 Index.toggleBookmarkStatusByIcon = function (e) {
     const icon = e.currentTarget;
-    const id = icon.id;
+    const { id } = icon;
 
     if (!LRR.isUserLogged()) {
         LRR.toast({
@@ -671,9 +672,11 @@ Index.checkVersion = function () {
                 return response.json();
             }
             if (response.status === 403) {
+                // eslint-disable-next-line no-console
                 console.warn("Github API rate limit exceeded: ", response);
                 throw new Error(I18N.IndexGithubRateLimitError);
             }
+            // eslint-disable-next-line no-console
             console.warn("GitHub API returned: ", response);
             throw new Error(I18N.IndexGithubAPIError(response.status));
         })
@@ -710,6 +713,7 @@ Index.checkVersion = function () {
                 });
             }
         })
+        // eslint-disable-next-line no-console
         .catch((error) => console.log("Error checking latest version.", error));
 };
 
@@ -726,9 +730,11 @@ Index.fetchChangelog = function () {
                     return response.json();
                 }
                 if (response.status === 403) {
+                    // eslint-disable-next-line no-console
                     console.warn("Github API rate limit exceeded: ", response);
                     throw new Error(I18N.IndexGithubRateLimitError);
                 }
+                // eslint-disable-next-line no-console
                 console.warn("GitHub API returned: ", response);
                 throw new Error(I18N.IndexGithubAPIError(response.status));
             })
@@ -1078,7 +1084,11 @@ Index.handleContextMenu = function (option, id) {
                 confirmButtonColor: "#d33",
             }).then((result) => {
                 if (result.isConfirmed) {
-                    Server.deleteArchive(id, () => { document.location.reload(true); });
+                    Server.deleteArchive(id, () => {
+                        if (typeof IndexTable !== "undefined" && IndexTable.dataTable) {
+                            IndexTable.dataTable.ajax.reload(null, false);
+                        }
+                    });
                 }
             });
             break;
