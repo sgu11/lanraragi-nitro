@@ -105,6 +105,9 @@ sub add_archive_to_redis ( $id, $file, $redis, $redis_search ) {
     # New file in collection, so this flag is set.
     set_isnew( $id, "true" );
 
+    # Initialize double-page spread start mode for this archive
+    $redis->hset( $id, "spreadstart", "auto" );
+
     return $name;
 }
 
@@ -201,7 +204,7 @@ sub get_archive ($id) {
 # which dragged along heavyweight fields like the Storable-frozen `pagefiles`
 # cache and `thumbhash` on every search-result row. HMGET cuts that to only
 # the fields we serialize.
-my @ARCHIVE_JSON_FIELDS = qw(name title tags summary file isnew progress pagecount lastreadtime arcsize toc);
+my @ARCHIVE_JSON_FIELDS = qw(name title tags summary file isnew progress pagecount lastreadtime arcsize toc spreadstart);
 
 # Builds a JSON object for an archive registered in the database and returns it.
 # If you need to get many JSONs at once, use the multi variant.
@@ -288,8 +291,8 @@ sub get_tags ($id) {
 sub build_json ( $id, %hash ) {
 
     # Grab all metadata from the hash
-    my ( $name, $title, $tags, $summary, $file, $isnew, $progress, $pagecount, $lastreadtime, $arcsize, $toc ) =
-      @hash{qw(name title tags summary file isnew progress pagecount lastreadtime arcsize toc)};
+    my ( $name, $title, $tags, $summary, $file, $isnew, $progress, $pagecount, $lastreadtime, $arcsize, $toc, $spreadstart ) =
+      @hash{qw(name title tags summary file isnew progress pagecount lastreadtime arcsize toc spreadstart)};
 
     $file = create_path($file);
 
@@ -337,7 +340,8 @@ sub build_json ( $id, %hash ) {
         pagecount    => $pagecount    ? int($pagecount)    : 0,
         lastreadtime => $lastreadtime ? int($lastreadtime) : 0,
         size         => $arcsize      ? int($arcsize)      : 0,
-        toc          => \@chapters
+        toc          => \@chapters,
+        spreadstart  => $spreadstart  ? $spreadstart     : "auto"
     };
 
     return $arcdata;

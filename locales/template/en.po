@@ -1013,8 +1013,8 @@ msgstr "O: show advanced reader options."
 msgid "P: toggle double page mode"
 msgstr "P: toggle double page mode"
 
-msgid "J: toggle double page offset"
-msgstr "J: toggle double page offset"
+msgid "J: cycle spread start mode (auto, cover+first, cover alone)"
+msgstr "J: cycle spread start mode (auto, cover+first, cover alone)"
 
 msgid "Q: bring up the thumbnail index and archive options."
 msgstr "Q: bring up the thumbnail index and archive options."
@@ -1084,6 +1084,18 @@ msgstr "Single"
 
 msgid "Double"
 msgstr "Double"
+
+msgid "Spread Start"
+msgstr "Spread Start"
+
+msgid "Auto"
+msgstr "Auto"
+
+msgid "Cover + first"
+msgstr "Cover + first"
+
+msgid "Cover alone"
+msgstr "Cover alone"
 
 msgid "Reading Direction"
 msgstr "Reading Direction"

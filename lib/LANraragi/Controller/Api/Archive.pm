@@ -499,4 +499,36 @@ sub update_progress {
     );
 }
 
+sub update_spreadstart {
+    my $self  = shift->openapi->valid_input or return;
+    my $id    = $self->stash('id');
+    my $value = $self->req->param('value') || "";
+
+    unless ( $value eq "auto" || $value eq "none" || $value eq "always" ) {
+        render_api_response( $self, "update_spreadstart", "Invalid spreadstart value." );
+        return;
+    }
+
+    return unless exec_with_lock(
+        $self,
+        "archive-write:$id",
+        "update_spreadstart",
+        $id,
+        sub {
+            my $redis = $self->LRR_CONF->get_redis;
+            $redis->hset( $id, "spreadstart", $value );
+            $redis->quit();
+
+            $self->render(
+                openapi => {
+                    operation   => "update_spreadstart",
+                    id          => $id,
+                    spreadstart => $value,
+                    success     => 1
+                }
+            );
+        }
+    );
+}
+
 1;

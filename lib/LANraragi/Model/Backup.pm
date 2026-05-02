@@ -78,7 +78,7 @@ sub build_backup_JSON {
     # Pipelined HMGET — fetch only the 5 fields we need for backup, one round-trip instead of N.
     # Callback sig is (reply, error); use $_[0] for the arrayref of field values.
     my @hmget_results;
-    my @fields = qw(name title tags summary thumbhash);
+    my @fields = qw(name title tags summary thumbhash spreadstart);
     for my $id (@keys) {
         $redis->hmget( $id, @fields, sub { push @hmget_results, [ $id, $_[0] ] } );
     }
@@ -87,19 +87,20 @@ sub build_backup_JSON {
     for my $pair (@hmget_results) {
         my ( $id, $values ) = @$pair;
         eval {
-            my ( $name, $title, $tags, $summary, $thumbhash ) = @$values;
+            my ( $name, $title, $tags, $summary, $thumbhash, $spreadstart ) = @$values;
 
             ( $_ = redis_decode($_) ) for ( $name, $title, $tags, $summary );
             ( $_ = trim_CRLF($_) )    for ( $name, $title, $tags, $summary );
 
             # Backup all user-generated metadata, alongside the unique ID.
             my %arc = (
-                arcid     => $id,
-                title     => $title,
-                tags      => $tags,
-                summary   => $summary,
-                thumbhash => $thumbhash,
-                filename  => $name
+                arcid       => $id,
+                title       => $title,
+                tags        => $tags,
+                summary     => $summary,
+                thumbhash   => $thumbhash,
+                filename    => $name,
+                spreadstart => $spreadstart
             );
 
             push @{ $backup{archives} }, \%arc;
@@ -172,6 +173,10 @@ sub restore_from_JSON {
             set_title( $id, $archive->{"title"} );
             set_tags( $id, $archive->{"tags"} );
             set_summary( $id, $archive->{"summary"} );
+
+            if ( exists $archive->{"spreadstart"} ) {
+                $redis->hset( $id, "spreadstart", $archive->{"spreadstart"} );
+            }
 
             if (   $redis->hexists( $id, "thumbhash" )
                 && $redis->hget( $id, "thumbhash" ) ne "" ) {
