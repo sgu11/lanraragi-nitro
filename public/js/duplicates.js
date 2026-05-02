@@ -61,17 +61,20 @@ Duplicates.refreshStats = function () {
                 : "";
             const staleLabel = stale ? " · stale, click Find to rebuild" : "";
             const lastScan = s.last_scan_ts ? new Date(s.last_scan_ts * 1000).toLocaleString() : "never";
+            const coverHashed  = s.archives_with_coverhashes || 0;
+            const coverPending = s.archives_cover_pending    || 0;
             $("#dupes-stats").text(
-                `deck: ${deckSize}/${deckTarget}${deckThr}${sweepDone}${staleLabel} · hashed: ${hashed}/${total} · pending: ${pending} · last scan: ${lastScan}`,
+                `deck: ${deckSize}/${deckTarget}${deckThr}${sweepDone}${staleLabel} · hashed: ${hashed}/${total} · pending: ${pending} · covers: ${coverHashed}/${total} (pending ${coverPending}) · last scan: ${lastScan}`,
             );
             // Find stays enabled while the deck threshold is stale: clicking
             // it triggers a server-side rebuild. Only block when the deck is
             // full AND already matches the slider's threshold.
             $("#run-find").prop("disabled", s.deck_full && !stale);
-            // Auto-poll while a backfill is in flight; stop once pending reaches 0.
-            if (pending > 0 && Duplicates._poller === null) {
+            // Auto-poll while either backfill is in flight; stop once both reach 0.
+            const anyPending = pending > 0 || coverPending > 0;
+            if (anyPending && Duplicates._poller === null) {
                 Duplicates._poller = setInterval(Duplicates.refreshStats, 10000);
-            } else if (pending === 0 && Duplicates._poller !== null) {
+            } else if (!anyPending && Duplicates._poller !== null) {
                 clearInterval(Duplicates._poller);
                 Duplicates._poller = null;
             }
@@ -123,7 +126,12 @@ Duplicates.renderPairs = function (pairs) {
     }
     pairs.forEach((p) => {
         const $card = $(`<div class="dupe-pair-card"></div>`);
-        $card.append(`<div class="dupe-score">score ${p.score.toFixed(1)} · pcount Δ ${p.page_count_delta}</div>`);
+        const isCover = p.pass === "cover";
+        const passBadge = isCover ? `<span class="dupe-pass-badge" title="Found by the cover-only pass">COVER</span> ` : "";
+        const scoreLabel = isCover
+            ? `${passBadge}cover hamming ${p.score.toFixed(0)} · pcount Δ ${p.page_count_delta}`
+            : `score ${p.score.toFixed(1)} · pcount Δ ${p.page_count_delta}`;
+        $card.append(`<div class="dupe-score">${scoreLabel}</div>`);
 
         const renderSide = (side, archive) => {
             const $side = $(`<div class="dupe-side"></div>`);
@@ -212,6 +220,25 @@ Duplicates.queueFind = function () {
 Duplicates.queueBackfill = function () {
     return Duplicates.fetchJSON(
         new LRR.apiURL("/api/minion/backfill_pagehashes/queue?args=[]"),
+        { method: "POST" },
+    );
+};
+
+Duplicates.queueCoverBackfill = function () {
+    return Duplicates.fetchJSON(
+        new LRR.apiURL("/api/minion/backfill_coverhashes/queue?args=[]"),
+        { method: "POST" },
+    );
+};
+
+// Cover pass uses raw Hamming distance (0..64) on a single hash, not the
+// pcount-weighted score. The slider's threshold (12..25) lives in the same
+// numeric range as plausible Hamming caps, so we reuse it as the cover cap.
+// 12 ≈ near-identical covers, 25 ≈ visually similar; higher floods.
+Duplicates.queueFindCover = function () {
+    const args = JSON.stringify([Duplicates.state.threshold]);
+    return Duplicates.fetchJSON(
+        new LRR.apiURL("/api/minion/find_cover_duplicates/queue?args=" + encodeURIComponent(args)),
         { method: "POST" },
     );
 };
@@ -312,6 +339,24 @@ $(function () {
             })
             .catch((err) => {
                 LRR.showPopUp({ title: "Could not queue backfill", text: String(err), icon: "error" });
+            });
+    });
+
+    // Cover pass: queues backfill (no-op for archives already coverhashed)
+    // and the matcher in one shot. Backfill runs first by enqueue order;
+    // matcher only stores pairs over archives whose coverhash_v matches the
+    // configured cover_algo_version, so it self-skips archives still pending.
+    $("#run-find-cover").on("click", function () {
+        Duplicates.queueCoverBackfill()
+            .then(() => Duplicates.queueFindCover())
+            .then(() => {
+                setTimeout(() => {
+                    Duplicates.refreshStats();
+                    Duplicates.loadPairs();
+                }, 1500);
+            })
+            .catch((err) => {
+                LRR.showPopUp({ title: "Could not queue cover pass", text: String(err), icon: "error" });
             });
     });
 

@@ -162,6 +162,157 @@ sub compute_pagehashes_for_archive {
 
 use Mojo::JSON qw(encode_json);
 
+# ---------------------------------------------------------------------------
+# Cover-only pass.
+#
+# The pcount-based sweep above never scores pairs that fall outside the page-
+# count tolerance window — by design, since "same archive" implies similar
+# page count. But a chapter release vs. the bound tankoubon, or any
+# release/scan with a wildly different chapter split, has the same cover art
+# and we still want them surfaced for review.
+#
+# This pass stores a single pHash of page 0 as `coverhash` per archive and
+# does an O(N^2) sweep keyed only on cover similarity. Pairs land in the
+# same LRR_DUPLICATE_PAIRS zset (so the existing UI surfaces them) with
+# score = raw Hamming distance (0..64) and meta `pass => 'cover'` so the
+# UI/API can differentiate from the pcount-based pass.
+# ---------------------------------------------------------------------------
+
+# Computes the cover pHash for $id and writes it to Redis. Idempotent.
+# $config is { cover_algo_version => N }.
+# Behavior mirrors compute_pagehashes_for_archive:
+#   - skip if coverhash_v already matches
+#   - on success: write coverhash / coverhash_v, clear coverhash_err
+#   - on failure: write coverhash_err = "<algo>:<reason>", return -1
+sub compute_coverhash_for_archive {
+    my ($redis, $id, $config) = @_;
+    my $algo = $config->{cover_algo_version} // 1;
+
+    my $existing_v = $redis->hget($id, "coverhash_v");
+    return 0 if defined $existing_v && $existing_v eq $algo;
+
+    my $file = _get_archive_path($redis, $id);
+    unless ($file && -e $file) {
+        $redis->hset($id, "coverhash_err", "$algo:archive_missing");
+        return -1;
+    }
+
+    my @filelist = _get_filelist($file, $id);
+    my $n = scalar @filelist;
+    if ($n == 0) {
+        $redis->hset($id, "coverhash_err", "$algo:empty_archive");
+        return -1;
+    }
+
+    my ($extracted, $extracted_dir);
+    my $hash;
+    eval {
+        ($extracted, $extracted_dir) = _extract_page($file, $filelist[0]);
+        $hash = _compute_phash($extracted);
+    };
+    my $err = $@;
+    _unlink_temp($extracted, $extracted_dir) if $extracted || $extracted_dir;
+
+    if ($err || !$hash) {
+        $redis->hset($id, "coverhash_err", "$algo:extract_failed");
+        return -1;
+    }
+
+    $redis->hset($id, "coverhash",   $hash);
+    $redis->hset($id, "coverhash_v", $algo);
+    $redis->hdel($id, "coverhash_err");
+    return 1;
+}
+
+# Pure matcher driver for the cover-only pass.
+#
+# %cover_data maps id -> "<16-hex>" cover hash.
+#
+# $config recognized keys:
+#   cover_max_hamming   - inclusive cap on Hamming distance for storage
+#                         (default 12)
+#   candidate_pair_cap  - hard cap on comparisons per run before truncating
+#                         (default 10_000_000)
+#   cover_algo_version  - stamped into pair meta
+#   cur_i, cur_j        - resume position in the upper-triangle sweep
+#   target_pairs        - stop after this many *new* pairs are stored
+#                         (0/undef = exhaust the sweep)
+#
+# Pairs already in LRR_DUPLICATE_PAIRS or LRR_DEDUP_DISMISSED are skipped —
+# the pcount-based pass and this pass share the same store, and whoever
+# scored a pair first wins. Cross-pass overlap is rare by construction
+# (this pass only fires on pairs the pcount window excludes), so first-
+# writer-wins keeps the integration simple.
+#
+# Returns: { stored, candidates, truncated, cur_i, cur_j, sweep_done }.
+sub find_cover_duplicate_pairs_in_memory {
+    my ($cover_data, $redis, $config) = @_;
+    my $max_hamming  = $config->{cover_max_hamming}     // 12;
+    my $cap          = $config->{candidate_pair_cap}    // 10_000_000;
+    my $algo         = $config->{cover_algo_version}    // 1;
+    my $start_i      = $config->{cur_i}                 // 0;
+    my $start_j      = $config->{cur_j}                 // 0;
+    my $target_pairs = $config->{target_pairs}          // 0;
+
+    # Stable id order so cursor resumes mean what they meant last run.
+    my @ids = sort keys %$cover_data;
+    my $n_total = scalar @ids;
+
+    $start_i = 0 if $start_i >= $n_total;
+
+    my $stored          = 0;
+    my $candidates_seen = 0;
+    my $truncated       = 0;
+    my $cur_i           = $n_total;
+    my $cur_j           = 0;
+
+    OUTER: for (my $i = $start_i; $i < $n_total; $i++) {
+        my $hash_i = $cover_data->{$ids[$i]};
+        my $j_begin = ($i == $start_i && $start_j > $i) ? $start_j : $i + 1;
+
+        for (my $j = $j_begin; $j < $n_total; $j++) {
+            if ($candidates_seen >= $cap) {
+                $truncated = 1;
+                $cur_i = $i; $cur_j = $j;
+                last OUTER;
+            }
+            $candidates_seen++;
+
+            my ($a, $b) = sort ($ids[$i], $ids[$j]);
+            my $member = "$a|$b";
+            next if $redis->sismember("LRR_DEDUP_DISMISSED", $member);
+            next if defined $redis->zscore("LRR_DUPLICATE_PAIRS", $member);
+
+            my $d = hamming_hex($hash_i, $cover_data->{$ids[$j]});
+            next if $d > $max_hamming;
+
+            $redis->zadd("LRR_DUPLICATE_PAIRS", $d, $member);
+            $redis->hset("LRR_DUPLICATE_PAIR_META", $member,
+                encode_json({
+                    pass               => 'cover',
+                    cover_hamming      => $d,
+                    cover_algo_version => $algo,
+                    ts                 => time(),
+                }));
+            $stored++;
+
+            if ($target_pairs && $stored >= $target_pairs) {
+                $cur_i = $i; $cur_j = $j + 1;
+                last OUTER;
+            }
+        }
+    }
+
+    return {
+        stored     => $stored,
+        candidates => $candidates_seen,
+        truncated  => $truncated,
+        cur_i      => $cur_i,
+        cur_j      => $cur_j,
+        sweep_done => ($cur_i >= $n_total ? 1 : 0),
+    };
+}
+
 # Pure matcher driver: takes pre-loaded %page_data instead of fetching from
 # Redis, so the algorithm can be unit-tested without I/O. The Minion task
 # wraps this with the Redis-side gather and cursor persistence.

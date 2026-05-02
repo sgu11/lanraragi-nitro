@@ -45,6 +45,9 @@
             <button id="run-backfill" class="stdbtn" type="button">
                 <i class="fas fa-cogs"></i> Run backfill
             </button>
+            <button id="run-find-cover" class="stdbtn" type="button" title="Cover-only pass: ignores page-count gap, surfaces chapter↔volume style matches.">
+                <i class="fas fa-image"></i> Find by cover
+            </button>
             <span id="dupes-stats" class="dupes-stats">Loading…</span>
             <label class="dupes-threshold-label">
                 Threshold:
