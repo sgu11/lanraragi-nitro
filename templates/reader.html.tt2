@@ -247,6 +247,12 @@
     <input id="double-page" class="favtag-btn config-btn" type="button" value="[% c.lh('Double') %]">
 </div>
 
+<div id="toggle-first-portrait-damper">
+    <h2 class="config-panel"> [% c.lh("First Portrait Page") %] </h2>
+    <input id="first-portrait-damper-on" class="favtag-btn config-btn" type="button" value="[% c.lh('Enabled') %]">
+    <input id="first-portrait-damper-off" class="favtag-btn config-btn" type="button" value="[% c.lh('Disabled') %]">
+</div>
+
 <div id="toggle-manga-mode">
     <h2 class="config-panel"> [% c.lh("Reading Direction") %] </h2>
     <span class="config-panel"></span>

@@ -765,7 +765,8 @@ body.infinite-scroll .reading-direction,
 body.infinite-scroll #toggle-manga-mode,
 body.infinite-scroll #preload-images,
 body.infinite-scroll #toggle-header,
-body.infinite-scroll #toggle-double-mode {
+body.infinite-scroll #toggle-double-mode,
+body.infinite-scroll #toggle-first-portrait-damper {
   display: none;
 }
 

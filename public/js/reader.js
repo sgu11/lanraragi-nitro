@@ -11,6 +11,7 @@ Reader.previousPage = -1;
 Reader.currentPage = -1;
 Reader.currentChapter = null;
 Reader.showingSinglePage = true;
+Reader.firstPortraitPageDamper = false;
 Reader.pageThumbnails = [];
 Reader.preloadedImg = {};
 Reader.preloadedSizes = {};
@@ -53,6 +54,7 @@ Reader.initializeAll = function () {
 
     $(document).on("click.toggle-fit-mode", "#fit-mode input", Reader.toggleFitMode);
     $(document).on("click.toggle-double-mode", "#toggle-double-mode input", Reader.toggleDoublePageMode);
+    $(document).on("click.toggle-first-portrait-damper", "#toggle-first-portrait-damper input", Reader.toggleFirstPortraitPageDamper);
     $(document).on("click.toggle-manga-mode", "#toggle-manga-mode input, .reading-direction", Reader.toggleMangaMode);
     $(document).on("click.toggle-header", "#toggle-header input", Reader.toggleHeader);
     $(document).on("click.toggle-progress", "#toggle-progress input", Reader.toggleProgressTracking);
@@ -479,6 +481,9 @@ Reader.initializeSettings = function () {
 
     Reader.doublePageMode = localStorage.doublePageMode === "true" || false;
     Reader.doublePageMode ? $("#double-page").addClass("toggled") : $("#single-page").addClass("toggled");
+
+    Reader.firstPortraitPageDamper = localStorage.firstPortraitPageDamper === "true" || false;
+    $(Reader.firstPortraitPageDamper ? "#first-portrait-damper-on" : "#first-portrait-damper-off").addClass("toggled");
 
     Reader.ignoreProgress = localStorage.ignoreProgress === "true" || false;
     Reader.ignoreProgress ? $("#untrack-progress").addClass("toggled") : $("#track-progress").addClass("toggled");
@@ -936,6 +941,14 @@ Reader.updateMetadata = function () {
     $("#i3").removeClass("loading");
 };
 
+Reader.isPortraitPage = function (dimensions) {
+    return !!dimensions && dimensions.height > dimensions.width;
+};
+
+Reader.shouldUseFirstPortraitPageDamper = function (pageIndex, dimensions) {
+    return Reader.firstPortraitPageDamper && pageIndex === 1 && Reader.isPortraitPage(dimensions);
+};
+
 Reader.goToPage = async function (page) {
     Reader.previousPage = Reader.currentPage;
     Reader.currentPage = Math.min(Reader.maxPage, Math.max(0, +page));
@@ -954,14 +967,16 @@ Reader.goToPage = async function (page) {
             // If w > h on one of the images (pre-fabricated double page), show as single page
             const dims1 = Reader.preloadedDimensions[Reader.currentPage];
             const dims2 = Reader.preloadedDimensions[Reader.currentPage + 1];
-            if ((dims1 && dims1.width > dims1.height) || (dims2 && dims2.width > dims2.height)) {
+            const useFirstPortraitPageDamper = Reader.shouldUseFirstPortraitPageDamper(Reader.currentPage, dims1);
+            if (useFirstPortraitPageDamper || (dims1 && dims1.width > dims1.height) || (dims2 && dims2.width > dims2.height)) {
                 // Depending on whether we were going forward or backward, display img1 or img2
-                const wideSrc = Reader.previousPage > Reader.currentPage ? img2 : img1;
-                const wideFilename = Reader.previousPage > Reader.currentPage ? img2Filename : img1Filename;
+                const showFirstImage = useFirstPortraitPageDamper || Reader.previousPage <= Reader.currentPage;
+                const singleSrc = showFirstImage ? img1 : img2;
+                const singleFilename = showFirstImage ? img1Filename : img2Filename;
                 // Pre-decode before DOM update to prevent flash
-                await Reader.decodeImage(wideSrc);
-                $("#img").attr("src", wideSrc);
-                $("#img").attr("data-filename", wideFilename);
+                await Reader.decodeImage(singleSrc);
+                $("#img").attr("src", singleSrc);
+                $("#img").attr("data-filename", singleFilename);
                 $("#img_doublepage").attr("src", "");
                 $("#img_doublepage").attr("data-filename", "");
                 $("#display").removeClass("double-mode");
@@ -1169,6 +1184,13 @@ Reader.toggleDoublePageMode = function () {
     Reader.goToPage(Reader.currentPage);
 };
 
+Reader.toggleFirstPortraitPageDamper = function () {
+    if (Reader.infiniteScroll) { return; }
+    Reader.firstPortraitPageDamper = localStorage.firstPortraitPageDamper = !Reader.firstPortraitPageDamper;
+    $("#toggle-first-portrait-damper input").toggleClass("toggled");
+    if (Reader.doublePageMode) { Reader.goToPage(Reader.currentPage); }
+};
+
 Reader.toggleDoublePageOffset = function () {
     if (!Reader.doublePageMode || Reader.infiniteScroll) { return; }
     Reader.doublePageOffset = localStorage.doublePageOffset = !Reader.doublePageOffset;
@@ -1176,6 +1198,18 @@ Reader.toggleDoublePageOffset = function () {
     let dest = Reader.currentPage + (Reader.doublePageOffset ? 1 : -1);
     dest = Math.max(0, Math.min(dest, Reader.maxPage));
     Reader.goToPage(dest);
+};
+
+Reader.getPageNavigationOffset = function (targetPage) {
+    let offset = targetPage;
+    if (Reader.doublePageMode && !Reader.showingSinglePage && (Reader.currentPage > 0 || Reader.doublePageOffset)) {
+        offset *= 2;
+        if (targetPage < 0 && Reader.currentPage === 2 &&
+            Reader.shouldUseFirstPortraitPageDamper(1, Reader.preloadedDimensions[1])) {
+            offset = targetPage;
+        }
+    }
+    return offset;
 };
 
 Reader.toggleMangaMode = function () {
@@ -1503,10 +1537,7 @@ Reader.changePage = function (targetPage, resetAuto = false) {
     } else if (targetPage === "last") {
         destination = Reader.mangaMode ? 0 : Reader.maxPage;
     } else {
-        let offset = targetPage;
-        if (Reader.doublePageMode && !Reader.showingSinglePage && (Reader.currentPage > 0 || Reader.doublePageOffset)) {
-            offset *= 2;
-        }
+        const offset = Reader.getPageNavigationOffset(targetPage);
         destination = Reader.currentPage + (Reader.mangaMode ? -offset : offset);
     }
     Reader.goToPage(destination);
