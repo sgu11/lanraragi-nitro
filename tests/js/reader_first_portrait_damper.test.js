@@ -73,3 +73,18 @@ test("first portrait dampener makes the first double spread step back one page",
 
     assert.equal(Reader.getPageNavigationOffset(-1), -2);
 });
+
+test("first portrait dampener does not shorten manga-mode forward navigation", () => {
+    const Reader = loadReader();
+
+    Reader.doublePageMode = true;
+    Reader.doublePageOffset = false;
+    Reader.firstPortraitPageDamper = true;
+    Reader.mangaMode = true;
+    Reader.showingSinglePage = false;
+    Reader.currentPage = 2;
+    Reader.preloadedDimensions[1] = { width: 900, height: 1400 };
+
+    assert.equal(Reader.getPageNavigationOffset(-1), -2);
+    assert.equal(Reader.getPageNavigationOffset(1), 1);
+});

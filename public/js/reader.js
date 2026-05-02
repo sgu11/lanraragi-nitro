@@ -1204,7 +1204,8 @@ Reader.getPageNavigationOffset = function (targetPage) {
     let offset = targetPage;
     if (Reader.doublePageMode && !Reader.showingSinglePage && (Reader.currentPage > 0 || Reader.doublePageOffset)) {
         offset *= 2;
-        if (targetPage < 0 && Reader.currentPage === 2 &&
+        const movesTowardCover = Reader.mangaMode ? targetPage > 0 : targetPage < 0;
+        if (movesTowardCover && Reader.currentPage === 2 &&
             Reader.shouldUseFirstPortraitPageDamper(1, Reader.preloadedDimensions[1])) {
             offset = targetPage;
         }
