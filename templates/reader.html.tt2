@@ -192,7 +192,7 @@
                 <li>[% c.lh("M: toggle manga mode (right-to-left reading)") %]</li>
                 <li>[% c.lh("O: show advanced reader options.") %]</li>
                 <li>[% c.lh("P: toggle double page mode") %]</li>
-                <li>[% c.lh("J: toggle double page offset") %]</li>
+                <li>[% c.lh("J: cycle spread start mode (auto, cover+first, cover alone)") %]</li>
                 <li>[% c.lh("Q: bring up the thumbnail index and archive options.") %]</li>
                 <li>[% c.lh("R: open a random archive.") %]</li>
                 <li>[% c.lh("F: toggle fullscreen mode") %]</li>
@@ -245,6 +245,13 @@
     <h2 class="config-panel"> [% c.lh("Page Rendering") %] </h2>
     <input id="single-page" class="favtag-btn config-btn" type="button" value="[% c.lh('Single') %]">
     <input id="double-page" class="favtag-btn config-btn" type="button" value="[% c.lh('Double') %]">
+</div>
+
+<div id="toggle-spread-start">
+    <h2 class="config-panel"> [% c.lh("Spread Start") %] </h2>
+    <input id="spread-auto" class="favtag-btn config-btn" type="button" value="[% c.lh('Auto') %]">
+    <input id="spread-always" class="favtag-btn config-btn" type="button" value="[% c.lh('Cover + first') %]">
+    <input id="spread-none" class="favtag-btn config-btn" type="button" value="[% c.lh('Cover alone') %]">
 </div>
 
 <div id="toggle-manga-mode">

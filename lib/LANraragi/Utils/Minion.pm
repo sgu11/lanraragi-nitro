@@ -5,7 +5,7 @@ use warnings;
 
 use Encode;
 use File::Temp qw(tempdir);
-use Mojo::JSON qw(encode_json);
+use Mojo::JSON qw(encode_json decode_json);
 use Mojo::UserAgent;
 use MCE::Loop;
 use MCE::Shared;
@@ -37,6 +37,8 @@ sub _dedup_config_from_redis {
         pcount_tolerance_pct => ($h{pcount_tolerance_pct} // 20) + 0,
         loose_max_score      => ($h{loose_max_score}      // 40) + 0,
         candidate_pair_cap   => ($h{candidate_pair_cap}   // 10_000_000) + 0,
+        cover_algo_version   => ($h{cover_algo_version}   // 1)  + 0,
+        cover_max_hamming    => ($h{cover_max_hamming}    // 12) + 0,
     };
 }
 
@@ -383,6 +385,192 @@ sub add_tasks {
             ));
             if ($result->{truncated}) {
                 $logger->warn("find_duplicate_pairs: candidate cap reached; tighten pcount_tolerance_pct");
+            }
+            $job->finish($result);
+        }
+    );
+
+    # ----------------------------------------------------------------------
+    # Cover-only dedup pass.
+    # Mirrors the trio above (compute / backfill / find) but keys on a single
+    # pHash of page 0 instead of 5 spaced samples, and skips the page-count
+    # tolerance gate entirely. Picks up chapter-vs-volume style pairs that
+    # the pcount sweep is structurally unable to consider.
+    # ----------------------------------------------------------------------
+    $minion->add_task(
+        compute_coverhash => sub {
+            my ($job, $id) = @_;
+            my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+            my $redis  = LANraragi::Model::Config->get_redis;
+            my $cfg    = _dedup_config_from_redis($redis);
+
+            my $rc = LANraragi::Model::Dedup::compute_coverhash_for_archive($redis, $id, $cfg);
+            $redis->quit;
+
+            if ($rc < 0) {
+                $logger->warn("compute_coverhash failed for $id");
+            } elsif ($rc == 0) {
+                $logger->debug("compute_coverhash skip $id (already at v$cfg->{cover_algo_version})");
+            } else {
+                $logger->debug("compute_coverhash ok $id");
+            }
+            $job->finish({ rc => $rc });
+        }
+    );
+
+    $minion->add_task(
+        backfill_coverhashes => sub {
+            my ($job) = @_;
+            my $logger    = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+
+            my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+            my $total    = scalar @ids;
+            my $enqueued = 0;
+            my $skipped  = 0;
+            my $seen     = 0;
+            $logger->info("backfill_coverhashes: scanning $total archives (cover_algo_version=$cfg->{cover_algo_version})");
+            for my $id (@ids) {
+                $seen++;
+                my $v   = $redis->hget($id, "coverhash_v")   // '';
+                my $err = $redis->hget($id, "coverhash_err") // '';
+                if ($v eq $cfg->{cover_algo_version}) {
+                    $skipped++;
+                    next;
+                }
+                if ($err =~ /^\Q$cfg->{cover_algo_version}\E:/) {
+                    $skipped++;
+                    next;
+                }
+                LANraragi::Model::Config->get_minion->enqueue(
+                    compute_coverhash => [ $id ] => { priority => 0 }
+                );
+                $enqueued++;
+                $redis_cfg->set("LRR_DEDUP_COVER_BACKFILL_CURSOR", $id);
+                $logger->info("backfill_coverhashes: progress $seen/$total (enqueued=$enqueued skipped=$skipped)")
+                    if $seen % 500 == 0;
+            }
+            $redis->quit;
+            $redis_cfg->quit;
+            $logger->info("backfill_coverhashes: done enqueued=$enqueued skipped=$skipped total=$total");
+            $job->finish({ enqueued => $enqueued, skipped => $skipped, total => $total });
+        }
+    );
+
+    $minion->add_task(
+        find_cover_duplicates => sub {
+            my ($job, $threshold_arg) = @_;
+            my $logger    = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+
+            # Caller may pass a Hamming cap; otherwise use configured default.
+            # Cover Hamming has a different scale than the pcount-based score
+            # (raw 0..64 vs mean+pcount-penalty), so it has its own knob and
+            # its own cursor; we don't share `pair_cursor_threshold`.
+            my $threshold = defined $threshold_arg
+                ? $threshold_arg + 0
+                : $cfg->{cover_max_hamming};
+            $cfg->{cover_max_hamming} = $threshold;
+
+            my $prev_threshold = $redis_cfg->hget("LRR_DEDUP_CONFIG", "cover_cursor_threshold");
+            $prev_threshold = defined $prev_threshold ? $prev_threshold + 0 : -1;
+            my $threshold_changed = ($prev_threshold != $threshold);
+
+            if ($threshold_changed) {
+                # Trim cover-pass pairs above the new threshold. We can't
+                # use ZRANGEBYSCORE alone because the same zset also holds
+                # pcount-based pairs whose scores live on a different scale
+                # (≤40 by default, much higher than cover_max_hamming);
+                # filter by meta.pass to avoid wiping pcount results.
+                my @candidates = $redis_cfg->zrangebyscore(
+                    "LRR_DUPLICATE_PAIRS", "($threshold", "+inf"
+                );
+                my @to_remove;
+                for my $m (@candidates) {
+                    my $meta_json = $redis_cfg->hget("LRR_DUPLICATE_PAIR_META", $m) // '{}';
+                    my $meta = eval { decode_json($meta_json) } // {};
+                    push @to_remove, $m if ($meta->{pass} // '') eq 'cover';
+                }
+                if (@to_remove) {
+                    $redis_cfg->zrem("LRR_DUPLICATE_PAIRS",     @to_remove);
+                    $redis_cfg->hdel("LRR_DUPLICATE_PAIR_META", @to_remove);
+                    $logger->info(
+                        "find_cover_duplicates: trimmed " . scalar(@to_remove)
+                        . " cover pair(s) above new threshold $threshold"
+                    );
+                }
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "cover_cursor_i", 0);
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "cover_cursor_j", 0);
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "cover_cursor_threshold", $threshold);
+            }
+
+            my $DECK_TARGET = 100;
+            my $deck_size = $redis_cfg->zcard("LRR_DUPLICATE_PAIRS") + 0;
+            my $room      = $DECK_TARGET - $deck_size;
+            if ($room <= 0) {
+                $logger->info(
+                    "find_cover_duplicates: deck full ($deck_size/$DECK_TARGET) at cover threshold $threshold; review existing pairs first"
+                );
+                $redis->quit;
+                $redis_cfg->quit;
+                $job->finish({
+                    stored     => 0,
+                    deck_size  => $deck_size,
+                    deck_full  => 1,
+                    threshold  => $threshold,
+                });
+                return;
+            }
+
+            $cfg->{cur_i}        = ($redis_cfg->hget("LRR_DEDUP_CONFIG", "cover_cursor_i") // 0) + 0;
+            $cfg->{cur_j}        = ($redis_cfg->hget("LRR_DEDUP_CONFIG", "cover_cursor_j") // 0) + 0;
+            $cfg->{target_pairs} = $room;
+
+            # Pipelined HMGET for coverhash on every archive.
+            my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+            my @results;
+            for my $id (@ids) {
+                $redis->hmget($id, "coverhash", "coverhash_v",
+                    sub { push @results, [ $id, $_[0] ] });
+            }
+            $redis->wait_all_responses;
+            $redis->quit;
+
+            my %cover_data;
+            for my $r (@results) {
+                my ($id, $reply) = @$r;
+                my ($ch, $cv) = @{ $reply // [] };
+                next unless defined $ch && length($ch) == 16;
+                next unless defined $cv && $cv eq $cfg->{cover_algo_version};
+                $cover_data{$id} = $ch;
+            }
+
+            my $result = LANraragi::Model::Dedup::find_cover_duplicate_pairs_in_memory(\%cover_data, $redis_cfg, $cfg);
+            $redis_cfg->set("LRR_DEDUP_LAST_COVER_SCAN", time());
+
+            if ($result->{sweep_done}) {
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "cover_cursor_i", 0);
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "cover_cursor_j", 0);
+            } else {
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "cover_cursor_i", $result->{cur_i});
+                $redis_cfg->hset("LRR_DEDUP_CONFIG", "cover_cursor_j", $result->{cur_j});
+            }
+            $redis_cfg->quit;
+
+            $logger->info(sprintf(
+                "find_cover_duplicates: threshold=%g archives=%d candidates=%d stored=%d deck=%d/%d cursor=(%d,%d) sweep_done=%s",
+                $threshold,
+                scalar(keys %cover_data), $result->{candidates}, $result->{stored},
+                $deck_size + $result->{stored}, $DECK_TARGET,
+                $result->{cur_i}, $result->{cur_j},
+                $result->{sweep_done} ? "yes" : "no"
+            ));
+            if ($result->{truncated}) {
+                $logger->warn("find_cover_duplicates: candidate cap reached; will resume from cursor on next run");
             }
             $job->finish($result);
         }

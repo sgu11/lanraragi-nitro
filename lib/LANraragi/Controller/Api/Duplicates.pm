@@ -55,8 +55,10 @@ sub pairs {
             id_a             => $id_a,
             id_b             => $id_b,
             score            => $score + 0,
+            pass             => $meta->{pass} // 'pcount',
             per_page         => $meta->{per_page} // [],
             page_count_delta => $meta->{pcount_delta} // 0,
+            cover_hamming    => $meta->{cover_hamming},
             a                => _archive_brief($redis, $id_a),
             b                => _archive_brief($redis, $id_b),
         };
@@ -163,28 +165,32 @@ sub stats {
 
     my $total_pairs   = $redis_cfg->zcard("LRR_DUPLICATE_PAIRS") + 0;
     my %config        = $redis_cfg->hgetall("LRR_DEDUP_CONFIG");
-    my $last_scan_ts  = $redis_cfg->get("LRR_DEDUP_LAST_SCAN");
-    my $algo_version  = ($config{algo_version} // 1) + 0;
+    my $last_scan_ts       = $redis_cfg->get("LRR_DEDUP_LAST_SCAN");
+    my $last_cover_scan_ts = $redis_cfg->get("LRR_DEDUP_LAST_COVER_SCAN");
+    my $algo_version       = ($config{algo_version}       // 1) + 0;
+    my $cover_algo_version = ($config{cover_algo_version} // 1) + 0;
 
     my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
-    my $hashed  = 0;
-    my $errored = 0;
-    my $pending = 0;
-    # Pipelined HMGET in one round-trip per archive instead of two
+    my ($hashed, $errored, $pending) = (0, 0, 0);
+    my ($cover_hashed, $cover_errored, $cover_pending) = (0, 0, 0);
+    # Pipelined HMGET in one round-trip per archive instead of four
     # synchronous round-trips. On a 17k library this is ~30s vs ~3min.
     my @results;
     for my $id (@ids) {
-        $redis->hmget($id, "pagehashes_v", "pagehashes_err",
+        $redis->hmget($id, "pagehashes_v", "pagehashes_err", "coverhash_v", "coverhash_err",
             sub { push @results, $_[0] });
     }
     $redis->wait_all_responses;
     for my $reply (@results) {
-        my ($v, $err) = @{ $reply // [] };
-        $v   //= '';
-        $err //= '';
-        if ($v eq $algo_version) { $hashed++ }
-        elsif ($err =~ /^\Q$algo_version\E:/) { $errored++ }
-        else { $pending++ }
+        my ($v, $err, $cv, $cerr) = @{ $reply // [] };
+        $v    //= ''; $err  //= '';
+        $cv   //= ''; $cerr //= '';
+        if    ($v eq $algo_version)              { $hashed++ }
+        elsif ($err =~ /^\Q$algo_version\E:/)    { $errored++ }
+        else                                     { $pending++ }
+        if    ($cv eq $cover_algo_version)              { $cover_hashed++ }
+        elsif ($cerr =~ /^\Q$cover_algo_version\E:/)    { $cover_errored++ }
+        else                                            { $cover_pending++ }
     }
 
     $redis->quit;
@@ -197,6 +203,13 @@ sub stats {
         ? $config{pair_cursor_threshold} + 0
         : undef;
     my $sweep_done  = ($cursor_i == 0 && $cursor_j == 0) ? 1 : 0;
+
+    my $cover_cursor_i = ($config{cover_cursor_i} // 0) + 0;
+    my $cover_cursor_j = ($config{cover_cursor_j} // 0) + 0;
+    my $cover_cursor_threshold = defined $config{cover_cursor_threshold}
+        ? $config{cover_cursor_threshold} + 0
+        : undef;
+    my $cover_sweep_done = ($cover_cursor_i == 0 && $cover_cursor_j == 0) ? 1 : 0;
 
     $self->render(json => {
         total_pairs              => $total_pairs,
@@ -213,12 +226,23 @@ sub stats {
         archives_errored         => $errored,
         last_scan_ts             => defined $last_scan_ts ? $last_scan_ts + 0 : 0,
         algo_version             => $algo_version,
+        cover_algo_version       => $cover_algo_version,
+        archives_with_coverhashes => $cover_hashed,
+        archives_cover_pending    => $cover_pending,
+        archives_cover_errored    => $cover_errored,
+        cover_cursor_i            => $cover_cursor_i,
+        cover_cursor_j            => $cover_cursor_j,
+        cover_cursor_threshold    => $cover_cursor_threshold,
+        cover_sweep_done          => $cover_sweep_done,
+        last_cover_scan_ts        => defined $last_cover_scan_ts ? $last_cover_scan_ts + 0 : 0,
         config => {
             algo_version         => $algo_version,
             pages_sampled        => ($config{pages_sampled}        // 5)  + 0,
             pcount_tolerance_pct => ($config{pcount_tolerance_pct} // 20) + 0,
             loose_max_score      => ($config{loose_max_score}      // 40) + 0,
             candidate_pair_cap   => ($config{candidate_pair_cap}   // 10_000_000) + 0,
+            cover_algo_version   => $cover_algo_version,
+            cover_max_hamming    => ($config{cover_max_hamming}    // 12) + 0,
         },
     });
 }

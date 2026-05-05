@@ -18,6 +18,17 @@
     background: var(--card-bg, #222);
 }
 .dupe-score { font-weight: 600; margin-bottom: 6px; }
+.dupe-pass-badge {
+    display: inline-block;
+    font-size: 0.75em;
+    font-weight: 700;
+    padding: 1px 6px;
+    margin-right: 4px;
+    border-radius: 3px;
+    background: #6a4dd0;
+    color: #fff;
+    letter-spacing: 0.05em;
+}
 .dupe-row { display: flex; align-items: flex-start; gap: 12px; }
 .dupe-side { flex: 1; min-width: 0; }
 .dupe-middle { width: 220px; text-align: center; }

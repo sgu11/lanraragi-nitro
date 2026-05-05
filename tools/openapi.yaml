@@ -1757,6 +1757,91 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationResponse'
+  /archives/{id}/spreadstart:
+    put:
+      operationId: updateArchiveSpreadStart
+      x-mojo-to: api-archive#update_spreadstart
+      summary: Update double page spread start preference
+      description: |-
+        Store how double-page spreads should begin for a specific archive.
+        Controls whether the cover page is paired with the first interior page.
+      tags:
+        - archives
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the Archive to process.
+          schema:
+            type: string
+            minLength: 40
+            maxLength: 40
+        - name: value
+          in: query
+          required: true
+          description: >-
+            Spread start mode for this archive.
+            "auto" — auto-detect (if page 1 is portrait, cover stands alone; otherwise paired).
+            "none" — cover always stands alone, spreads start at page 1.
+            "always" — cover always paired with page 1.
+          schema:
+            type: string
+            enum:
+              - "auto"
+              - "none"
+              - "always"
+      responses:
+        '200':
+          description: Success response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    minLength: 40
+                    maxLength: 40
+                    description: ID of the archive updated
+                  operation:
+                    type: string
+                    description: Name of the operation
+                    enum:
+                      - update_spreadstart
+                  spreadstart:
+                    type: string
+                    description: Updated spread start value
+                    enum:
+                      - "auto"
+                      - "none"
+                      - "always"
+                  success:
+                    type: integer
+                    enum:
+                      - 0
+                      - 1
+                    description: Returns 1 if successful, else 0
+                example:
+                  id: 75d18ce470dc99f83dc355bdad66319d1f33c82b
+                  operation: update_spreadstart
+                  spreadstart: "auto"
+                  success: 1
+        '400':
+          description: Generic error response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+              example:
+                operation: update_spreadstart
+                error: Invalid spreadstart value.
+                success: 0
+        '423':
+          description: Locked resource response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/isnew:
     put:
       security:
@@ -3705,6 +3790,13 @@ components:
         toc:
           type: array
           description: Table of contents for the archive
+        spreadstart:
+          type: string
+          description: Double-page spread start mode ("auto", "none", or "always")
+          enum:
+            - "auto"
+            - "none"
+            - "always"
       example:
         arcid: 28697b96f0ac5858be2614ed10ca47742c9522fd
         isnew: false
@@ -3724,6 +3816,7 @@ components:
             page: 13
           - name: Chapter 3
             page: 25
+        spreadstart: "auto"
     CategoryMetadataJson:
       type: object
       description: >-
@@ -3823,6 +3916,15 @@ components:
         filename:
           type: string
           description: Filename of the archive
+        spreadstart:
+          type: string
+          nullable: true
+          description: Double-page spread start mode
+          enum:
+            - "auto"
+            - "none"
+            - "always"
+            - null
     BackupCategoryMetadataJson:
       type: object
       description: >-
