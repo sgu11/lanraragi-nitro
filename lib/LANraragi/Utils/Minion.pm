@@ -23,6 +23,7 @@ use LANraragi::Model::Upload;
 use LANraragi::Model::Config;
 use LANraragi::Model::Stats;
 use LANraragi::Model::Dedup;
+use LANraragi::Model::Backup;
 
 use constant IS_UNIX => ( $Config{osname} ne 'MSWin32' );
 
@@ -124,10 +125,12 @@ sub add_tasks {
                 if ( IS_UNIX ) {
                     MCE::Loop->init( { max_workers => $ENV{LRR_MCE_WORKERS} } ) if $ENV{LRR_MCE_WORKERS};
                     mce_loop {
-                        $sub->(@{ $_ });
-                    } \@keys;
+                        $sub->( @{$_} );
+                    }
+                    \@keys;
                     MCE::Loop->finish;
                 } else {
+
                     # libarchive does not support threading on Windows
                     $sub->(@keys);
                 }
@@ -140,7 +143,7 @@ sub add_tasks {
             $job->finish( { errors => \@err } );
 
             # Crashes on Windows so don't run it there
-            if ( IS_UNIX ) {
+            if (IS_UNIX) {
                 MCE::Shared->stop;
             }
         }
@@ -188,10 +191,12 @@ sub add_tasks {
                 if ( IS_UNIX ) {
                     MCE::Loop->init( { max_workers => $ENV{LRR_MCE_WORKERS} } ) if $ENV{LRR_MCE_WORKERS};
                     mce_loop {
-                        $sub->(@{ $_ });
-                    } \@keys;
+                        $sub->( @{$_} );
+                    }
+                    \@keys;
                     MCE::Loop->finish;
                 } else {
+
                     # libarchive does not support threading on Windows
                     $sub->(@keys);
                 }
@@ -201,7 +206,7 @@ sub add_tasks {
             $job->finish( { errors => \@err } );
 
             # Crashes on Windows so don't run it there
-            if ( IS_UNIX ) {
+            if (IS_UNIX) {
                 MCE::Shared->stop;
             }
         }
@@ -591,8 +596,8 @@ sub add_tasks {
 
             my $logger = get_logger( "Minion", "minion" );
 
-            if ( IS_UNIX ) {
-                $file = decode_utf8( $file );
+            if (IS_UNIX) {
+                $file = decode_utf8($file);
             }
 
             $logger->info("Processing uploaded file $file...");
@@ -644,7 +649,7 @@ sub add_tasks {
             if ($downloader) {
 
                 $logger->info( "Found downloader " . $downloader->{namespace} );
-                my $tempdir = tempdir(CLEANUP => 1);
+                my $tempdir = tempdir( CLEANUP => 1 );
 
                 # Use the downloader to transform the URL
                 my $plugname = $downloader->{namespace};
@@ -687,9 +692,10 @@ sub add_tasks {
                     );
                     return;
                 } else {
+
                     # Plugin provided a URL and User-Agent to download
                     $url = $plugin_result->{download_url};
-                    $ua = $plugin_result->{user_agent};
+                    $ua  = $plugin_result->{user_agent};
                     $logger->info("URL transformed by plugin to $url");
                 }
             } else {
@@ -711,7 +717,7 @@ sub add_tasks {
 
                 eval {
                     # Title might or might not be utf8 encoded
-                    $title = decode_utf8( $title );
+                    $title = decode_utf8($title);
                 };
 
                 $job->finish(
@@ -772,6 +778,70 @@ sub add_tasks {
                 $redis->hdel( $id, "thumbjob" );
             }
             $redis->quit;
+        }
+    );
+
+    $minion->add_task(
+        backup_json => sub {
+            my ( $job, @args ) = @_;
+
+            my $logger = get_logger( "Minion", "minion" );
+            $logger->info("Starting backup JSON generation...");
+
+            eval {
+                # Generate the backup JSON with progress reporting
+                my $json = LANraragi::Model::Backup::build_backup_JSON($job);
+
+                # Write JSON to temp file
+                my $tempdir  = get_temp();
+                my $filename = "backup_" . $job->id . ".json";
+                my $filepath = "$tempdir/$filename";
+
+                open my $fh, '>:encoding(UTF-8)', $filepath
+                  or die "Cannot write to $filepath: $!";
+                print $fh $json;
+                close $fh;
+
+                $logger->info("Backup JSON generated successfully at $filepath");
+
+                $job->finish(
+                    {   success  => 1,
+                        filename => $filename,
+                        path     => $filepath
+                    }
+                );
+            };
+
+            if ($@) {
+                my $error = "Error generating backup JSON: $@";
+                $logger->error($error);
+                $job->fail( { error => $error } );
+            }
+        }
+    );
+
+    $minion->add_task(
+        restore_backup => sub {
+            my ( $job, @args ) = @_;
+            my ($json_data) = @args;
+
+            my $logger = get_logger( "Minion", "minion" );
+            $logger->info("Starting backup restoration...");
+
+            eval {
+                # Restore from JSON with progress reporting
+                LANraragi::Model::Backup::restore_from_JSON( $json_data, $job );
+
+                $logger->info("Backup restored successfully");
+
+                $job->finish( { success => 1 } );
+            };
+
+            if ($@) {
+                my $error = "Error restoring backup: $@";
+                $logger->error($error);
+                $job->fail( { error => $error } );
+            }
         }
     );
 }

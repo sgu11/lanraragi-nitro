@@ -14,9 +14,11 @@ use LANraragi::Utils::Database qw(invalidate_cache set_title set_tags set_summar
 use LANraragi::Utils::Logging  qw(get_logger);
 use LANraragi::Utils::Redis    qw(redis_decode redis_encode);
 
-#build_backup_JSON()
+#build_backup_JSON($job)
 #Goes through the Redis archive IDs and builds a JSON string containing their metadata.
+#If $job is provided (Minion job), progress will be reported via job notes.
 sub build_backup_JSON {
+    my ($job)  = @_;
     my $redis  = LANraragi::Model::Config->get_redis;
     my $logger = get_logger( "Backup/Restore", "lanraragi" );
 
@@ -27,7 +29,9 @@ sub build_backup_JSON {
     );
 
     # Backup categories first
-    my @cats = LANraragi::Utils::Database::all_category_ids($redis);
+    my @cats       = LANraragi::Utils::Database::all_category_ids($redis);
+    my $cat_count  = 0;
+    my $total_cats = scalar @cats;
 
     # Parse the category list and add them to JSON.
     foreach my $key (@cats) {
@@ -52,11 +56,23 @@ sub build_backup_JSON {
         };
 
         $logger->trace("Backing up category $key: $@");
+        $cat_count++;
 
+        # Report progress if job is provided
+        if ($job) {
+            $job->note(
+                categories_processed => $cat_count,
+                total_categories     => $total_cats,
+                status               => "Processing categories..."
+            );
+        }
     }
 
     # Backup tanks
     my ( $total, $filtered, @tanks ) = LANraragi::Model::Tankoubon::get_tankoubon_list(-1);
+    my $tank_count  = 0;
+    my $total_tanks = scalar @tanks;
+
     foreach my $tank (@tanks) {
 
         my $tank_id       = %$tank{id};
@@ -70,15 +86,53 @@ sub build_backup_JSON {
         );
 
         push @{ $backup{tankoubons} }, \%tank;
+        $tank_count++;
+
+        # Report progress if job is provided
+        if ($job) {
+            $job->note(
+                categories_processed => $cat_count,
+                total_categories     => $total_cats,
+                tankoubons_processed => $tank_count,
+                total_tankoubons     => $total_tanks,
+                status               => "Processing tankoubons..."
+            );
+        }
+    }
+
+    # Backup stamps
+    my @stamp_ids = $redis->keys('STAMPS_*');
+
+    foreach my $stamp_id (@stamp_ids) {
+        eval {
+            my %stamp_hash = $redis->hgetall($stamp_id);
+            my ( $content, $position, $archive_id ) = @stamp_hash{qw(content position archive_id)};
+
+            ( $_ = redis_decode($_) ) for ( $content, $position, $archive_id );
+            ( $_ = trim_CRLF($_) )    for ( $content, $position, $archive_id );
+
+            my %stamp = (
+                stamp_id    => $stamp_id,
+                content     => $content,
+                position    => $position,
+                archive_id  => $archive_id
+            );
+
+            push @{ $backup{stamps} }, \%stamp;
+        };
+
+        $logger->trace("Backing up stamp $stamp_id: $@");
     }
 
     # Backup archives themselves next
-    my @keys = LANraragi::Utils::Database::all_archive_ids($redis);
+    my @keys       = LANraragi::Utils::Database::all_archive_ids($redis);
+    my $arc_count  = 0;
+    my $total_arcs = scalar @keys;
 
     # Pipelined HMGET — fetch only the 5 fields we need for backup, one round-trip instead of N.
     # Callback sig is (reply, error); use $_[0] for the arrayref of field values.
     my @hmget_results;
-    my @fields = qw(name title tags summary thumbhash spreadstart);
+    my @fields = qw(name title tags summary thumbhash spreadstart stamps);
     for my $id (@keys) {
         $redis->hmget( $id, @fields, sub { push @hmget_results, [ $id, $_[0] ] } );
     }
@@ -87,7 +141,7 @@ sub build_backup_JSON {
     for my $pair (@hmget_results) {
         my ( $id, $values ) = @$pair;
         eval {
-            my ( $name, $title, $tags, $summary, $thumbhash, $spreadstart ) = @$values;
+            my ( $name, $title, $tags, $summary, $thumbhash, $spreadstart, $stamps ) = @$values;
 
             ( $_ = redis_decode($_) ) for ( $name, $title, $tags, $summary );
             ( $_ = trim_CRLF($_) )    for ( $name, $title, $tags, $summary );
@@ -100,14 +154,42 @@ sub build_backup_JSON {
                 summary     => $summary,
                 thumbhash   => $thumbhash,
                 filename    => $name,
-                spreadstart => $spreadstart
+                spreadstart => $spreadstart,
+                stamps      => $stamps
             );
 
             push @{ $backup{archives} }, \%arc;
         };
 
         $logger->trace("Backing up archive $id: $@");
+        $arc_count++;
 
+        # Report progress every 100 archives if job is provided
+        if ( $job && $arc_count % 100 == 0 ) {
+            $job->note(
+                categories_processed => $cat_count,
+                total_categories     => $total_cats,
+                tankoubons_processed => $tank_count,
+                total_tankoubons     => $total_tanks,
+                archives_processed   => $arc_count,
+                total_archives       => $total_arcs,
+                status               => "Processing archives..."
+            );
+        }
+
+    }
+
+    # Final progress update
+    if ($job) {
+        $job->note(
+            categories_processed => $cat_count,
+            total_categories     => $total_cats,
+            tankoubons_processed => $tank_count,
+            total_tankoubons     => $total_tanks,
+            archives_processed   => $arc_count,
+            total_archives       => $total_arcs,
+            status               => "Finalizing backup..."
+        );
     }
 
     $redis->quit();
@@ -115,17 +197,26 @@ sub build_backup_JSON {
 
 }
 
-#restore_from_JSON(backupJSON)
+#restore_from_JSON(backupJSON, $job)
 #Restores metadata from a JSON to the Redis archive, for existing IDs.
+#If $job is provided (Minion job), progress will be reported via job notes.
 sub restore_from_JSON {
+    my ( $json_data, $job ) = @_;
     my $redis  = LANraragi::Model::Config->get_redis;
     my $logger = get_logger( "Backup/Restore", "lanraragi" );
-    my $json   = decode_json( $_[0] );
+    my $json   = decode_json($json_data);
 
     $logger->info("Received a JSON backup to restore.");
 
     # Clean the database before restoring from JSON
     LANraragi::Utils::Database::clean_database();
+
+    my $cat_count   = 0;
+    my $total_cats  = scalar @{ $json->{categories} };
+    my $tank_count  = 0;
+    my $total_tanks = $json->{tankoubons} ? scalar @{ $json->{tankoubons} } : 0;
+    my $arc_count   = 0;
+    my $total_arcs  = scalar @{ $json->{archives} };
 
     foreach my $category ( @{ $json->{categories} } ) {
 
@@ -145,6 +236,17 @@ sub restore_from_JSON {
         foreach my $arcid (@archives) {
             LANraragi::Model::Category::add_to_category( $cat_id, $arcid );
         }
+
+        $cat_count++;
+
+        # Report progress if job is provided
+        if ($job) {
+            $job->note(
+                categories_processed => $cat_count,
+                total_categories     => $total_cats,
+                status               => "Restoring categories..."
+            );
+        }
     }
 
     foreach my $tank ( @{ $json->{tankoubons} } ) {
@@ -159,6 +261,19 @@ sub restore_from_JSON {
 
         # Backups use the same data structure as tank updates, so we can just pass the data object as-is.
         LANraragi::Model::Tankoubon::update_archive_list( $tank_id, $tank );
+
+        $tank_count++;
+
+        # Report progress if job is provided
+        if ($job) {
+            $job->note(
+                categories_processed => $cat_count,
+                total_categories     => $total_cats,
+                tankoubons_processed => $tank_count,
+                total_tankoubons     => $total_tanks,
+                status               => "Restoring tankoubons..."
+            );
+        }
     }
 
     foreach my $archive ( @{ $json->{archives} } ) {
@@ -183,7 +298,60 @@ sub restore_from_JSON {
                 $redis->hset( $id, "thumbhash", $thumbhash );
             }
 
+            if ( defined $archive->{"stamps"} ) {
+                my $stamps = redis_encode( $archive->{"stamps"} );
+                $redis->hset( $id, "stamps", $stamps );
+            } else {
+                $redis->hset( $id, "stamps", "[]" );
+            }
+
         }
+    }
+
+    foreach my $stamp ( @{ $json->{stamps} } ) {
+        my $stamp_id = $stamp->{"stamp_id"};
+
+        my $content = $stamp->{"content"};
+        my $position = $stamp->{"position"};
+        my $archive_id = $stamp->{"archive_id"};
+
+        #If the archive exists, restore metadata.
+        if ( $redis->exists($archive_id) ) {
+
+            ( $_ = redis_encode($_) ) for ( $content, $position, $archive_id );
+
+            $redis->hset( $stamp_id, "content", $content);
+            $redis->hset( $stamp_id, "position", $position);
+            $redis->hset( $stamp_id, "archive_id", $archive_id);
+        }
+
+        $arc_count++;
+
+        # Report progress periodically (every 100 archives) if job is provided
+        if ( $job && $arc_count % 100 == 0 ) {
+            $job->note(
+                categories_processed => $cat_count,
+                total_categories     => $total_cats,
+                tankoubons_processed => $tank_count,
+                total_tankoubons     => $total_tanks,
+                archives_processed   => $arc_count,
+                total_archives       => $total_arcs,
+                status               => "Restoring archives..."
+            );
+        }
+    }
+
+    # Final progress update
+    if ($job) {
+        $job->note(
+            categories_processed => $cat_count,
+            total_categories     => $total_cats,
+            tankoubons_processed => $tank_count,
+            total_tankoubons     => $total_tanks,
+            archives_processed   => $arc_count,
+            total_archives       => $total_arcs,
+            status               => "Finalizing restore..."
+        );
     }
 
     # Force a refresh

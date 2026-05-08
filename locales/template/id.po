@@ -1206,9 +1206,6 @@ msgstr "Gulir Tanpa Batas"
 msgid "Display all images in a vertical view in the same page."
 msgstr "Tampilkan semua gambar dalam tampilan vertikal di halaman yang sama."
 
-msgid "Reader Settings"
-msgstr "Pengaturan Pembaca"
-
 msgid "Help"
 msgstr "Bantuan"
 
@@ -1333,6 +1330,15 @@ msgid "An error occured while restoring the backup.<br/> Please check the server
 msgstr ""
 "Terjadi galat memulihkan cadangan.<br/> Harap periksa pencatatan peladen dan "
 "pastikan JSON Anda diformat dengan benar."
+
+msgid "Backup generation in progress..."
+msgstr ""
+
+msgid "Uploading backup file..."
+msgstr ""
+
+msgid "Backup complete! Download will start automatically."
+msgstr ""
 
 msgid "Couldn't load the complete archive list! Please reload the page."
 msgstr "Tidak dapat memuat daftar arsip lengkap! Harap muat ulang halaman."

@@ -1178,9 +1178,6 @@ msgstr "Cuộn vô hạn"
 msgid "Display all images in a vertical view in the same page."
 msgstr "Hiển thị tất cả ảnh theo chiều dọc trên cùng một trang."
 
-msgid "Reader Settings"
-msgstr "Cài đặt Trình đọc"
-
 msgid "Help"
 msgstr "Trợ giúp"
 
@@ -1301,6 +1298,15 @@ msgid "An error occured while restoring the backup.<br/> Please check the server
 msgstr ""
 "Lỗi khi khôi phục sao lưu.<br/> Vui lòng kiểm tra nhật ký máy chủ và đảm bảo "
 "rằng tệp JSON của bạn được định dạng chính xác."
+
+msgid "Backup generation in progress..."
+msgstr ""
+
+msgid "Uploading backup file..."
+msgstr ""
+
+msgid "Backup complete! Download will start automatically."
+msgstr ""
 
 msgid "Couldn't load the complete archive list! Please reload the page."
 msgstr "Không thể tải danh sách truyện đầy đủ! Vui lòng tải lại trang."
