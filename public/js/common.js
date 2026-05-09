@@ -8,6 +8,7 @@ function _get_baseurl_cookie() {
     let cookies = document.cookie;
     let val = cookies.split("; ").find((r) => r.startsWith("lrr_baseurl="))?.split("=")[1];
     if (val === undefined) {
+        // eslint-disable-next-line no-console
         console.warn("lrr_baseurl cookie undefined, must be set by backend");
         val = "";
     }
@@ -37,6 +38,7 @@ LRR.apiURL = class {
             this.load_url = load_url;
         }
         if (!this.load_url.startsWith("/")) {
+            // eslint-disable-next-line no-console
             console.trace("passed non-absolute URL to apiURL");
             this.load_url = "/" + this.load_url;
         }
@@ -208,8 +210,8 @@ LRR.splitTagsByNamespace = function (tags) {
     }
 
     tags.split(/,\s?/).forEach((tag) => {
-        let nspce = null;
-        let val = null;
+        let nspce;
+        let val;
 
         // Split the tag from its namespace
         const arr = namespaceRegex.exec(tag);
@@ -418,7 +420,7 @@ LRR.getProgress = function (arcdata) {
     const id = arcdata.arcid;
 
     const pagecount = parseInt(arcdata.pagecount || 0, 10);
-    let progress = -1;
+    let progress;
 
     if (Index.isProgressLocal && !(Index.isProgressAuthenticated && LRR.isUserLogged())) {
         progress = parseInt(localStorage.getItem(`${id}-reader`) || 0, 10);

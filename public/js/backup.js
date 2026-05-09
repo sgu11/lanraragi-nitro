@@ -72,7 +72,7 @@ Backup.pollJob = function (jobId, isBackup) {
     Server.checkJobStatus(
         jobId,
         true,
-        (data) => {
+        (_data) => {
             // Job completed successfully
             $("#processing").attr("style", "display:none");
             $("#do-backup").prop("disabled", false);

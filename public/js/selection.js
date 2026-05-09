@@ -39,6 +39,7 @@ Selection.onChange = function (cb) {
 Selection._notify = function () {
     const { size } = Selection._set;
     for (let i = 0; i < Selection._observers.length; i++) {
+        // eslint-disable-next-line no-console
         try { Selection._observers[i](size); } catch (err) { console.error(err); }
     }
 };

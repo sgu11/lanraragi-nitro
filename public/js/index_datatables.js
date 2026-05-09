@@ -253,10 +253,10 @@ IndexTable.initializeThumbView = function () {
  * Modifications when a row is created
  * @param {HTMLElement} row matching DataTables row
  * @param {[] | object} data raw data
- * @param {number} dataIndex index of row
- * @param {Node[]} cells cells for the column
+ * @param {number} _dataIndex index of row
+ * @param {Node[]} _cells cells for the column
  */
-IndexTable.createdRow = function (row, data, dataIndex, cells) {
+IndexTable.createdRow = function (row, data, _dataIndex, _cells) {
     // Update row with id and context-menu class
     row.id = data.arcid || data.id;
     row.classList.add("context-menu");

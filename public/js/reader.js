@@ -131,8 +131,8 @@ Reader.initializeAll = function () {
 
         // Stop event propagation to avoid going to page
         e.stopPropagation();
-     });
-    $(document).on("click.edit-toc", ".edit-toc", (e) => Reader.addTocSection(Reader.currentChapter.startPage, Reader.currentChapter.name));
+    });
+    $(document).on("click.edit-toc", ".edit-toc", (_e) => Reader.addTocSection(Reader.currentChapter.startPage, Reader.currentChapter.name));
     $(document).on("click.remove-toc", ".remove-toc", Reader.removeTocSection);
 
     $(document).on("click.set-thumbnail", ".set-thumbnail", (e) => {
@@ -201,17 +201,17 @@ Reader.initializeAll = function () {
 
         $("#tagContainer").append(LRR.buildTagsDiv(Reader.content.tags));
 
-        const ratyEl = document.querySelector('[data-raty]');
+        const ratyEl = document.querySelector("[data-raty]");
         if (ratyEl) {
             const rating = LRR.splitTagsByNamespace(Reader.content.tags).rating?.at(0).length;
             new Raty(ratyEl, {
-                starType: 'i',
+                starType: "i",
                 cancelButton: true,
-                cancelClass: 'fas fa-trash raty-cancel',
+                cancelClass: "fas fa-trash raty-cancel",
                 cancelHint: I18N.ReaderClearRating,
-                cancelPlace: 'right',
+                cancelPlace: "right",
                 score: rating,
-                click: function(score, element, evt) {
+                click: function(score, _element, _evt) {
 
                     let tags = LRR.splitTagsByNamespace(Reader.content.tags);
                     let selectedRating = score;
@@ -612,13 +612,13 @@ Reader.handleShortcuts = function (e) {
         return;
     }
     switch (e.which) {
-    case 8: // backspace
-        document.location.href = $("#return-to-index").attr("href");
-        break;
-    case 27: // escape
-        LRR.closeOverlay();
-        break;
-    case 32: // spacebar
+        case 8: // backspace
+            document.location.href = $("#return-to-index").attr("href");
+            break;
+        case 27: // escape
+            LRR.closeOverlay();
+            break;
+        case 32: // spacebar
             Reader.spaceScrollProcessInput(e);
             break;
         case 37: // left arrow
@@ -641,12 +641,14 @@ Reader.handleShortcuts = function (e) {
             break;
 
         case 71: // g
+        {
             let page = parseInt(prompt(I18N.GoToPage), 10);
             // parseInt returns NaN for non-numbers; normal equality checks don't work to detect NaN
             if (!Number.isNaN(page)) {
                 Reader.goToPage(page - 1);
             }
             break;
+        }
         case 72: // h
             Reader.toggleHelp();
             break;
@@ -732,6 +734,7 @@ Reader.spaceScrollProcessInput = function (e) {
 
         // Go to next direction page if already at edge
         if ((direction > 0 ? st + h >= directionEdge - 3 : st <= directionEdge + 3) && !wasContinuousScroll) {
+            // eslint-disable-next-line no-console
             console.log(`PAGE TURN: ${cfg.scrollDist}% threshold reached`);
             Reader.changePage(direction, true);
             return;
@@ -743,6 +746,7 @@ Reader.spaceScrollProcessInput = function (e) {
             const overshootDistance = Math.abs(directionDist) - scrollDistPx;
 
             if (overshootDistance > overSnapPx) {
+                // eslint-disable-next-line no-console
                 console.log(`CONTINUOUS SNAP: ${overshootDistance.toFixed(1)}px > ${overSnapPx.toFixed(1)}px threshold`);
                 const adjImg = direction > 0 ? currentImg.nextElementSibling : currentImg.previousElementSibling;
                 if (adjImg) {
@@ -759,12 +763,14 @@ Reader.spaceScrollProcessInput = function (e) {
 
         // 3. Undershoot prevention
         if (directionDist <= scrollDistPx + underSnapPx) {
+            // eslint-disable-next-line no-console
             console.log(`UNDERSHOOT SNAP: ${cfg.underSnap}% (${Math.round(directionDist)}px <= ${Math.round(scrollDistPx + underSnapPx)}px)`);
             window.scrollTo({ top: directionEdge - (direction > 0 ? h : 0) });
             return;
         }
 
         // 4. Default scroll
+        // eslint-disable-next-line no-console
         console.log(`DEFAULT SCROLL (${Math.abs(directionDist).toFixed(1)}px)`);
         const scrollAmount = direction * scrollDistPx;
         window.scrollBy({ top: scrollAmount });
@@ -820,6 +826,7 @@ Reader.toggleHelp = function () {
 Reader.toggleBookmark = function (e) {
     e.preventDefault();
     if (!localStorage.getItem("bookmarkCategoryId")) {
+        // eslint-disable-next-line no-console
         console.error("No bookmark category ID found!");
         return;
     };
@@ -880,7 +887,7 @@ Reader.loadBookmarkStatus = function () {
 
 Reader.updateMetadata = function () {
     const img = $("#img")[0];
-    const filename = img.dataset.filename;
+    const {filename} = img.dataset;
 
     const imgDoublePage = $("#img_doublepage")[0];
     const filenameDoublePage = imgDoublePage.dataset.filename;
@@ -1344,7 +1351,7 @@ Reader.toggleMobileFullscreen = function () {
 };
 
 Reader.setImageQuality = function () {
-    const id = this.id;
+    const {id} = this;
     const map = { "quality-auto": "auto", "quality-high": "high-quality", "quality-sharp": "smooth-sharp", "quality-pixelated": "pixelated" };
     Reader.imageQuality = map[id] || "auto";
     localStorage.imageQuality = Reader.imageQuality;
@@ -1429,7 +1436,7 @@ Reader.updateArchiveOverlay = function (forceUpdate = false) {
         // Create <select> options for jumping to other chapters
         let chapterOptions = `<select class="favtag-btn" id="chapter-select">`;
         if (Reader.content.chapters) {
-            Reader.content.chapters.forEach((chapter, index) => {
+            Reader.content.chapters.forEach((chapter, _index) => {
                 const selected = (Reader.currentChapter && chapter.startPage === Reader.currentChapter.startPage) ? "selected" : "";
                 chapterOptions += `<option value="${chapter.startPage}" ${selected}>${chapter.name}</option>`;
             });
