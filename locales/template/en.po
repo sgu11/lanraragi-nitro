@@ -1037,8 +1037,8 @@ msgstr "Q: bring up the thumbnail index and archive options."
 msgid "R: open a random archive."
 msgstr "R: open a random archive."
 
-msgid "F: toggle fullscreen mode"
-msgstr "F: toggle fullscreen mode"
+msgid "F or Middle-click: toggle fullscreen mode"
+msgstr "F or Middle-click: toggle fullscreen mode"
 
 msgid "B: toggle bookmark"
 msgstr "B: toggle bookmark"

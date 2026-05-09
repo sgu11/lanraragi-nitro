@@ -1092,7 +1092,7 @@ msgstr "Q: tampilkan indeks keluku dan pengaturan arsip."
 msgid "R: open a random archive."
 msgstr "R: buka arsip acak."
 
-msgid "F: toggle fullscreen mode"
+msgid "F or Middle-click: toggle fullscreen mode"
 msgstr "F: beralih ke mode layar penuh"
 
 msgid "B: toggle bookmark"

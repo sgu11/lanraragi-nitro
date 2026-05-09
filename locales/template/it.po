@@ -1040,7 +1040,7 @@ msgstr ""
 msgid "R: open a random archive."
 msgstr ""
 
-msgid "F: toggle fullscreen mode"
+msgid "F or Middle-click: toggle fullscreen mode"
 msgstr ""
 
 msgid "B: toggle bookmark"
@@ -1853,3 +1853,27 @@ msgstr "Capitolo senza Titolo"
 #, fuzzy
 msgid "Automatic (browser default)"
 msgstr "Automatica (predefinita del browser)"
+
+msgid "Authenticated Progress Tracking"
+msgstr ""
+
+msgid "Clients will use this list to filter out noisy tags from autocomplete and tag clouds."
+msgstr ""
+
+msgid "Comma-separated list of tag namespaces to exclude from search suggestions and tag statistics."
+msgstr ""
+
+msgid "Disable OpenAPI Validation"
+msgstr ""
+
+msgid "Disables OpenAPI API schema validation. Turn this on if you are running into validation-related errors with old API clients."
+msgstr ""
+
+msgid "Enable Metrics"
+msgstr ""
+
+msgid "Enable metrics collection and serve them through the metrics endpoint in the Prometheus exposition format."
+msgstr ""
+
+msgid "Excluded Namespaces"
+msgstr ""

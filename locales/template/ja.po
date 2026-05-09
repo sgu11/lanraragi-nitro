@@ -967,7 +967,7 @@ msgstr ""
 msgid "R: open a random archive."
 msgstr ""
 
-msgid "F: toggle fullscreen mode"
+msgid "F or Middle-click: toggle fullscreen mode"
 msgstr ""
 
 msgid "B: toggle bookmark"
@@ -1697,3 +1697,39 @@ msgid "Searching for duplicates..."
 msgstr ""
 
 # ------End of Duplicates.html.tt2------
+
+msgid "Authenticated Progress Tracking"
+msgstr ""
+
+msgid "Automatic (browser default)"
+msgstr ""
+
+msgid "Clients will use this list to filter out noisy tags from autocomplete and tag clouds."
+msgstr ""
+
+msgid "Combine with clientside progress tracking to allow unauthenticated users to track progress locally."
+msgstr ""
+
+msgid "Comma-separated list of tag namespaces to exclude from search suggestions and tag statistics."
+msgstr ""
+
+msgid "Disable OpenAPI Validation"
+msgstr ""
+
+msgid "Disables OpenAPI API schema validation. Turn this on if you are running into validation-related errors with old API clients."
+msgstr ""
+
+msgid "Excluded Namespaces"
+msgstr ""
+
+msgid "If enabled, server-side progress will only be saved if you're logged in with a password, and will override clientside progress. This allows guests to browse without affecting the main user's progress."
+msgstr ""
+
+msgid "Select the language for the user interface. Set to Automatic to use your browser's language preference."
+msgstr ""
+
+msgid "The maximum value allowed is 4GB."
+msgstr ""
+
+msgid "Language"
+msgstr ""

@@ -949,7 +949,7 @@ msgstr "Q：调出缩略图索引和档案选项。"
 msgid "R: open a random archive."
 msgstr "R：打开一个随机档案。"
 
-msgid "F: toggle fullscreen mode"
+msgid "F or Middle-click: toggle fullscreen mode"
 msgstr "F：切换全屏模式"
 
 msgid "B: toggle bookmark"

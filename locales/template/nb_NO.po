@@ -1083,7 +1083,7 @@ msgstr "Q: Hent opp miniatyrbilde indeks og arkiv instillinger."
 msgid "R: open a random archive."
 msgstr "R: Åpne ett tilfeldig arkiv."
 
-msgid "F: toggle fullscreen mode"
+msgid "F or Middle-click: toggle fullscreen mode"
 msgstr "F: Aktiver fullskjerm modus"
 
 msgid "B: toggle bookmark"
@@ -1965,3 +1965,21 @@ msgstr "Feil ved tilføying/fjerning av kapittel:"
 
 msgid "Untitled Chapter"
 msgstr "Kapittel uten tittel"
+
+msgid "Clients will use this list to filter out noisy tags from autocomplete and tag clouds."
+msgstr ""
+
+msgid "Comma-separated list of tag namespaces to exclude from search suggestions and tag statistics."
+msgstr ""
+
+msgid "Disable OpenAPI Validation"
+msgstr ""
+
+msgid "Disables OpenAPI API schema validation. Turn this on if you are running into validation-related errors with old API clients."
+msgstr ""
+
+msgid "Excluded Namespaces"
+msgstr ""
+
+msgid "Language"
+msgstr ""

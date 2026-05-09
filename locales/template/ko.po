@@ -1007,7 +1007,7 @@ msgstr "Q: 섬네일 인덱스 및 아카이브 옵션 표시"
 msgid "R: open a random archive."
 msgstr "\"R: 랜덤 아카이브 열기."
 
-msgid "F: toggle fullscreen mode"
+msgid "F or Middle-click: toggle fullscreen mode"
 msgstr "F: 전체 화면 모드 전환"
 
 msgid "B: toggle bookmark"

@@ -1066,7 +1066,7 @@ msgstr "Q: mở danh sách ảnh thu nhỏ và các tùy chọn truyện."
 msgid "R: open a random archive."
 msgstr "R: mở truyện ngẫu nhiên."
 
-msgid "F: toggle fullscreen mode"
+msgid "F or Middle-click: toggle fullscreen mode"
 msgstr "F: bật/tắt chế độ toàn màn hình"
 
 msgid "B: toggle bookmark"
@@ -1952,3 +1952,18 @@ msgstr "Chương chưa có tiêu đề"
 
 msgid "Language"
 msgstr "Ngôn ngữ"
+
+msgid "Clients will use this list to filter out noisy tags from autocomplete and tag clouds."
+msgstr ""
+
+msgid "Comma-separated list of tag namespaces to exclude from search suggestions and tag statistics."
+msgstr ""
+
+msgid "Disable OpenAPI Validation"
+msgstr ""
+
+msgid "Disables OpenAPI API schema validation. Turn this on if you are running into validation-related errors with old API clients."
+msgstr ""
+
+msgid "Excluded Namespaces"
+msgstr ""

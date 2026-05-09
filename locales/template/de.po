@@ -1105,7 +1105,7 @@ msgstr ""
 msgid "R: open a random archive."
 msgstr ""
 
-msgid "F: toggle fullscreen mode"
+msgid "F or Middle-click: toggle fullscreen mode"
 msgstr ""
 
 msgid "B: toggle bookmark"
@@ -1892,3 +1892,6 @@ msgid "Comma-separated list of tag namespaces to exclude from search suggestions
 msgstr ""
 "Komma-getrennte Liste der Namespace Tags, welche von den Suchvorschlägen und "
 "Tag Statistiken ausgeschlossen sind."
+
+msgid "Clients will use this list to filter out noisy tags from autocomplete and tag clouds."
+msgstr ""
