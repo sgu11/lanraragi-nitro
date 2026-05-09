@@ -14,6 +14,7 @@ This fork is maintained by AI agents (Claude Code) under human direction. Change
 - **Image quality** options exposed in settings, with a working mobile toggle.
 - **Fit-height fix in fullscreen** — recomputes correct height on enter/exit instead of leaving stale layout.
 - **Double-page rendering** no longer flickers between page transitions.
+- **Middle-click toggles fullscreen** anywhere in the reader (same as pressing `F`).
 
 ### Library / Thumbnails
 

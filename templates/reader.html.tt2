@@ -195,7 +195,7 @@
                 <li>[% c.lh("J: cycle spread start mode (auto, cover+first, cover alone)") %]</li>
                 <li>[% c.lh("Q: bring up the thumbnail index and archive options.") %]</li>
                 <li>[% c.lh("R: open a random archive.") %]</li>
-                <li>[% c.lh("F: toggle fullscreen mode") %]</li>
+                <li>[% c.lh("F or Middle-click: toggle fullscreen mode") %]</li>
                 <li>[% c.lh("B: toggle bookmark") %]</li>
                 <li>[% c.lh("N: toggle auto next page") %]</li>
                 <li>[% c.lh("G: go to page number") %]</li>
