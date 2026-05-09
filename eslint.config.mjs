@@ -43,6 +43,7 @@ const config = {
             Stats: "readonly",
             // external packages
             Awesomplete: "readonly",
+            Raty: "readonly",
             marked: "readonly",
             Swiper: "readonly",
             tagger: "readonly",
@@ -85,4 +86,9 @@ const config = {
     },
 };
 
-export default defineConfig(config);
+export default defineConfig([
+    {
+        ignores: ["public/js/vendor/*.js"],
+    },
+    config,
+]);
