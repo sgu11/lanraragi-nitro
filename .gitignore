@@ -20,3 +20,7 @@ win-dist
 smoke-*.png
 
 .worktrees
+
+# Agent artifact files
+.sisyphus/
+*.original.md
