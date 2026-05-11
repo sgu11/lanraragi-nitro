@@ -153,9 +153,7 @@ sub compute_pagehashes_for_archive {
         return -1;
     }
 
-    $redis->hset($id, "pagehashes",   join(' ', @hashes));
-    $redis->hset($id, "pagehashes_v", $algo);
-    $redis->hset($id, "pagehashes_n", $n);
+    $redis->hmset($id, "pagehashes", join(' ', @hashes), "pagehashes_v", $algo, "pagehashes_n", $n);
     $redis->hdel($id, "pagehashes_err");
     return 1;
 }
@@ -218,8 +216,7 @@ sub compute_coverhash_for_archive {
         return -1;
     }
 
-    $redis->hset($id, "coverhash",   $hash);
-    $redis->hset($id, "coverhash_v", $algo);
+    $redis->hmset($id, "coverhash", $hash, "coverhash_v", $algo);
     $redis->hdel($id, "coverhash_err");
     return 1;
 }

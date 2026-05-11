@@ -11,6 +11,7 @@ use Sys::Hostname;
 use Config;
 use URI::Escape;
 use Time::HiRes qw(gettimeofday);
+use Compress::Zlib qw(memGzip);
 
 use LANraragi::Utils::Generic    qw(start_shinobu start_minion get_version);
 use LANraragi::Utils::Logging    qw(get_logger get_logdir);
@@ -240,6 +241,39 @@ sub startup {
             if ( $path =~ m{(?:^|/)(?:css|js|themes|img)/} ) {
                 $c->res->headers->cache_control("public, max-age=86400");
             }
+        }
+    );
+
+    # Response compression middleware: gzip HTML/JSON/text responses when the
+    # client advertises Accept-Encoding: gzip. Skips images, streaming responses,
+    # and already-compressed content. Compress::Zlib is already a dependency
+    # (used by the log rotator).
+    $self->hook(
+        after_dispatch => sub {
+            my $c = shift;
+
+            return unless $c->res->body;
+            return if $c->res->headers->content_encoding;
+
+            my $ae = $c->req->headers->accept_encoding // '';
+            return unless $ae =~ /gzip/;
+
+            my $content_type = $c->res->headers->content_type // '';
+            return if $content_type =~ m{^image/};
+            return if $content_type =~ m{^video/};
+            return if $content_type =~ m{^audio/};
+            return if $content_type =~ m{^application/(?:octet-stream|zip|x-rar|x-7z|x-tar)};
+
+            my $body = $c->res->body;
+            return if length($body) < 500;
+
+            my $compressed = memGzip($body);
+            return unless defined $compressed;
+
+            $c->res->body($compressed);
+            $c->res->headers->content_encoding('gzip');
+            $c->res->headers->content_length(length($compressed));
+            $c->res->headers->append('Vary', 'Accept-Encoding');
         }
     );
 

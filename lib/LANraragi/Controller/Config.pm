@@ -49,6 +49,7 @@ sub index {
         enablecryptofs     => $self->LRR_CONF->enable_cryptofs,
         hqthumbpages       => $self->LRR_CONF->get_hqthumbpages,
         jxlthumbpages      => $self->LRR_CONF->get_jxlthumbpages,
+        avifthumbpages     => $self->LRR_CONF->enable_avif_thumbnails,
         csshead            => generate_themes_header($self),
         csslist            => generate_css_detail,
         replacedupe        => $self->LRR_CONF->get_replacedupe,
@@ -98,6 +99,7 @@ sub save_config {
         enablecryptofs  => ( scalar $self->req->param('enablecryptofs')  ? '1' : '0' ),
         hqthumbpages    => ( scalar $self->req->param('hqthumbpages')    ? '1' : '0' ),
         jxlthumbpages   => ( scalar $self->req->param('jxlthumbpages')   ? '1' : '0' ),
+        avifthumbpages  => ( scalar $self->req->param('avifthumbpages')  ? '1' : '0' ),
         replacedupe     => ( scalar $self->req->param('replacedupe')     ? '1' : '0' ),
     );
 

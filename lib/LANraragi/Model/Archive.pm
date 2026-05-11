@@ -62,8 +62,9 @@ sub update_thumbnail {
     $page = 1 unless $page;
 
     my $thumbdir = LANraragi::Model::Config->get_thumbdir;
+    my $use_avif = LANraragi::Model::Config->enable_avif_thumbnails;
     my $use_jxl  = LANraragi::Model::Config->get_jxlthumbpages;
-    my $format   = $use_jxl ? 'jxl' : 'jpg';
+    my $format   = $use_avif ? 'avif' : $use_jxl ? 'jxl' : 'jpg';
 
     # Thumbnails are stored in the content directory, thumb subfolder.
     # Another subfolder with the first two characters of the id is used for FS optimization.
@@ -104,9 +105,10 @@ sub generate_page_thumbnails {
 
     my $logger   = get_logger( "Archives", "lanraragi" );
     my $thumbdir = LANraragi::Model::Config->get_thumbdir;
-    my $use_hq   = LANraragi::Model::Config->get_hqthumbpages;
+    my $use_avif = LANraragi::Model::Config->enable_avif_thumbnails;
     my $use_jxl  = LANraragi::Model::Config->get_jxlthumbpages;
-    my $format   = $use_jxl ? 'jxl' : 'jpg';
+    my $format   = $use_avif ? 'avif' : $use_jxl ? 'jxl' : 'jpg';
+    my $use_hq   = LANraragi::Model::Config->get_hqthumbpages;
 
     # Get the number of pages in the archive
     my $redis = LANraragi::Model::Config->get_redis;
@@ -209,29 +211,42 @@ sub serve_thumbnail {
     $no_fallback = ( $no_fallback && $no_fallback eq "true" ) || "0";    # Prevent undef warnings by checking the variable first
 
     my $thumbdir        = LANraragi::Model::Config->get_thumbdir;
+    my $use_avif        = LANraragi::Model::Config->enable_avif_thumbnails;
     my $use_jxl         = LANraragi::Model::Config->get_jxlthumbpages;
-    my $format          = $use_jxl         ? 'jxl' : 'jpg';
-    my $fallback_format = $format eq 'jxl' ? 'jpg' : 'jxl';
 
-    # Thumbnails are stored in the content directory, thumb subfolder.
-    # Another subfolder with the first two characters of the id is used for FS optimization.
     my $subfolder = substr( $id, 0, 2 );
+    my $thumbbase = ($is_first_page) ? "$thumbdir/$subfolder/$id" : "$thumbdir/$subfolder/$id/$page";
 
-    # Check for the page and set the appropriate thumbnail name and fallback thumbnail name
-    my $thumbbase          = ($is_first_page) ? "$thumbdir/$subfolder/$id" : "$thumbdir/$subfolder/$id/$page";
-    my $thumbname          = "$thumbbase.$format";
-    my $fallback_thumbname = "$thumbbase.$fallback_format";
+    # Search for an existing thumbnail file matching the best format the client
+    # supports: client-advertised formats first (avif > jxl), then all remaining,
+    # with jpg always last as universal fallback.
+    my $accept = $self->req->headers->accept // '';
+    my @accept_formats;
+    my @remaining;
+    for my $fmt (qw(avif jxl jpg)) {
+        if ($fmt eq 'jpg' || $accept =~ /image\/\Q$fmt\E/) {
+            push @accept_formats, $fmt;
+        } else {
+            push @remaining, $fmt;
+        }
+    }
+    push @accept_formats, @remaining;
 
-    # Check if the preferred format thumbnail exists, if not, try the alternate format
-    unless ( -e $thumbname ) {
-        $thumbname = $fallback_thumbname;
+    my $thumbname;
+    for my $fmt (@accept_formats) {
+        my $candidate = "$thumbbase.$fmt";
+        if ( -e $candidate ) {
+            $thumbname = $candidate;
+            last;
+        }
     }
 
-    unless ( -e $thumbname ) {
+    unless ($thumbname) {
 
         if ($no_fallback) {
 
-            # Queue a minion job to generate the thumbnail. Thumbnail jobs have the lowest priority.
+            # Queue a minion job to generate the thumbnail.
+            my $format = $use_avif ? 'avif' : $use_jxl ? 'jxl' : 'jpg';
             my $job_id = $self->minion->enqueue( thumbnail_task => [ $thumbdir, $id, $page ] => { priority => 0, attempts => 3 } );
             $self->render(
                 openapi => {
@@ -239,20 +254,17 @@ sub serve_thumbnail {
                     success   => 1,
                     job       => $job_id
                 },
-                status => 202    # 202 Accepted
+                status => 202
             );
         } else {
-
-            # If the thumbnail doesn't exist, serve the default thumbnail.
             $self->render_file( filepath => "./public/img/noThumb.png" );
         }
         return;
-    } else {
-
-        # Thumbnails are immutable once generated — cache aggressively.
-        $self->res->headers->cache_control('public, max-age=2592000, immutable');
-        $self->render_file( filepath => $thumbname );
     }
+
+    $self->res->headers->cache_control('public, max-age=2592000, immutable');
+    $self->res->headers->header('Vary', 'Accept');
+    $self->render_file( filepath => $thumbname );
 }
 
 sub get_page_data ( $id, $path ) {
@@ -460,6 +472,9 @@ sub delete_archive ($id) {
 
         my $jxl_thumbname = "$thumbdir/$subfolder/$id.jxl";
         unlink $jxl_thumbname;
+
+        my $avif_thumbname = "$thumbdir/$subfolder/$id.avif";
+        unlink $avif_thumbname;
 
         # Delete the thumbpages folder
         remove_tree("$thumbdir/$subfolder/$id/");

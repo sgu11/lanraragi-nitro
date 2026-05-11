@@ -87,8 +87,9 @@ sub add_tasks {
             my $use_hq   = LANraragi::Model::Config->get_hqthumbpages;
             my $thumbdir = LANraragi::Model::Config->get_thumbdir;
 
+            my $use_avif  = LANraragi::Model::Config->enable_avif_thumbnails;
             my $use_jxl   = LANraragi::Model::Config->get_jxlthumbpages;
-            my $format    = $use_jxl ? 'jxl' : 'jpg';
+            my $format    = $use_avif ? 'avif' : $use_jxl ? 'jxl' : 'jpg';
             my $subfolder = substr( $id, 0, 2 );
 
             my $errors = MCE::Shared->array;
@@ -168,8 +169,9 @@ sub add_tasks {
 
                 foreach my $id (@keys) {
 
+                    my $use_avif  = LANraragi::Model::Config->enable_avif_thumbnails;
                     my $use_jxl   = LANraragi::Model::Config->get_jxlthumbpages;
-                    my $format    = $use_jxl ? 'jxl' : 'jpg';
+                    my $format    = $use_avif ? 'avif' : $use_jxl ? 'jxl' : 'jpg';
                     my $subfolder = substr( $id, 0, 2 );
                     my $thumbname = "$thumbdir/$subfolder/$id.$format";
 
@@ -246,6 +248,7 @@ sub add_tasks {
             my $enqueued = 0;
             my $skipped  = 0;
             my $seen     = 0;
+            $redis_cfg->del("LRR_DEDUP_BACKFILL_CURSOR");
             $logger->info("backfill_pagehashes: scanning $total archives (algo_version=$cfg->{algo_version})");
             for my $id (@ids) {
                 $seen++;

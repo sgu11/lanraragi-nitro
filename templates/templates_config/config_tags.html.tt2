@@ -28,6 +28,21 @@
 
 <tr>
     <td class="option-td">
+        <h2 class="ih"> [% c.lh("Use AVIF for thumbnails") %] </h2>
+    </td>
+    <td class="config-td">
+        [% IF avifthumbpages %]
+        <input id="avifthumbpages" name="avifthumbpages" class="fa" type="checkbox" checked> [% ELSE %]
+        <input id="avifthumbpages" name="avifthumbpages" class="fa" type="checkbox"> [% END %]
+        <label for="avifthumbpages">
+            <br>[% c.lh("Generate AVIF thumbnails instead of JPEG. ~30% smaller than JPEG with modern browser support.") %]
+            <br>[% c.lh("Requires libvips with HEIF support. Takes priority over JPEG XL.") %]
+        </label>
+    </td>
+</tr>
+
+<tr>
+    <td class="option-td">
         <h2 class="ih"> [% c.lh("Use JPEG XL for thumbnails") %] </h2>
     </td>
     <td class="config-td">
@@ -35,8 +50,8 @@
         <input id="jxlthumbpages" name="jxlthumbpages" class="fa" type="checkbox" checked> [% ELSE %]
         <input id="jxlthumbpages" name="jxlthumbpages" class="fa" type="checkbox"> [% END %]
         <label for="jxlthumbpages">
-            <br>[% c.lh("LANraragi generates JPEG thumbnails for compatibility and performance reasons.") %]
-            <br>[% c.lh("If this option is checked, it will instead generate thumbnails using JPEG XL.") %]
+            <br>[% c.lh("Generate JPEG XL thumbnails instead of JPEG.") %]
+            <br>[% c.lh("When AVIF is also enabled, AVIF takes priority.") %]
         </label>
     </td>
 </tr>

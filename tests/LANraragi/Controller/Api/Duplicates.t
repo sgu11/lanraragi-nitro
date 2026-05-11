@@ -80,6 +80,31 @@ note("DELETE /api/duplicates/pairs adds member to dismissed set and removes from
     ok($body->{dismissed}, "response reports dismissed:true");
 }
 
+note("DELETE /api/duplicates/pairs returns 400 for malformed pair");
+{
+    package FakeRedis400 {
+        sub new { bless {}, shift }
+        sub quit { 1 }
+    }
+    $controller_module->redefine('_get_redis_config', sub { FakeRedis400->new });
+
+    my $t = Mojolicious::Lite->new;
+    $t->routes->any('/api/duplicates/pairs')->to('api-duplicates#delete_pair');
+
+    my $tx = Mojo::Transaction::HTTP->new;
+    my $c  = Mojolicious::Controller->new(app => $t, tx => $tx);
+    $c->req->method('DELETE');
+    $c->req->url->parse('/api/duplicates/pairs');
+    $c->req->headers->content_type('application/json');
+    $c->req->body('{"pair":"not-valid"}');
+
+    LANraragi::Controller::Api::Duplicates::delete_pair($c);
+
+    is($c->res->code, 400, "malformed pair returns 400");
+    my $body = decode_json($c->res->body);
+    ok($body->{error}, "error key present in 400 response");
+}
+
 note("GET /api/duplicates/stats reports counts and config");
 {
     package FakeRedis3 {

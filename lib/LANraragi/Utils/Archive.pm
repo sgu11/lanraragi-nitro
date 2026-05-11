@@ -46,12 +46,12 @@ sub is_pdf {
 
 # use a resizer to make a thumbnail, height = 500px (view in index is 280px tall)
 # If use_hq is true, highest-quality resizing will be used (if the resizer support different quality levels).
-# If use_jxl is true, JPEG XL will be used instead of JPEG.
-sub generate_thumbnail ( $data, $thumb_path, $use_hq, $use_jxl ) {
+# $format should be "avif", "jxl", or "jpg".
+sub generate_thumbnail ( $data, $thumb_path, $use_hq, $format ) {
     my $quality = 50;
     $quality = 80 if $use_hq;
 
-    my $resized = get_resizer()->resize_thumbnail( $data, $quality, $use_hq, $use_jxl ? "jxl" : "jpg" );
+    my $resized = get_resizer()->resize_thumbnail( $data, $quality, $use_hq, $format );
     if ( defined($resized) ) {
         open my $fh, '>:raw', $thumb_path or die "Cannot write to '$thumb_path': $!";
         print $fh $resized;
@@ -97,9 +97,10 @@ sub extract_thumbnail ( $thumbdir, $id, $page, $set_cover, $use_hq ) {
 
     my $logger = get_logger( "Archive", "lanraragi" );
 
-    # JPG is used for thumbnails by default
-    my $use_jxl = LANraragi::Model::Config->get_jxlthumbpages;
-    my $format  = $use_jxl ? 'jxl' : 'jpg';
+    # JPG is used for thumbnails by default; AVIF and JXL are alternative formats.
+    my $use_avif = LANraragi::Model::Config->enable_avif_thumbnails;
+    my $use_jxl  = LANraragi::Model::Config->get_jxlthumbpages;
+    my $format   = $use_avif ? 'avif' : $use_jxl ? 'jxl' : 'jpg';
 
     # Another subfolder with the first two characters of the id is used for FS optimization.
     my $subfolder = substr( $id, 0, 2 );
@@ -139,7 +140,7 @@ sub extract_thumbnail ( $thumbdir, $id, $page, $set_cover, $use_hq ) {
     # Thumbnail generation
     no warnings 'experimental::try';
     try {
-        generate_thumbnail( $arcimg, $thumbname, $use_hq, $use_jxl );
+        generate_thumbnail( $arcimg, $thumbname, $use_hq, $format );
     } catch ($e) {
         $logger->error("Thumbnail generation failed for archive '$file' entry '$requested_image' -> '$thumbname': $e");
         die $e;

@@ -217,7 +217,7 @@ sub get_disable_openapi {
 sub get_htmltitle        { return xml_escape( &get_redis_conf( "htmltitle", "LANraragi" ) ) }
 sub get_motd             { return xml_escape( &get_redis_conf( "motd",      "Welcome to this Library running LANraragi!" ) ) }
 sub get_tempmaxsize      { return &get_redis_conf( "tempmaxsize",     "500" ) }
-sub get_pagesize         { return &get_redis_conf( "pagesize",        "100" ) }
+sub get_pagesize         { return &get_redis_conf( "pagesize",        "30" ) }
 sub enable_pass          { return &get_redis_conf( "enablepass",      "1" ) }
 sub enable_nofun         { return &get_redis_conf( "nofunmode",       "0" ) }
 sub enable_cors          { return &get_redis_conf( "enablecors",      "0" ) }
@@ -235,6 +235,7 @@ sub use_lastmodified     { return &get_redis_conf( "usedatemodified", "0" ) }
 sub enable_cryptofs      { return &get_redis_conf( "enablecryptofs",  "0" ) }
 sub get_hqthumbpages     { return &get_redis_conf( "hqthumbpages",    "0" ) }
 sub get_jxlthumbpages    { return &get_redis_conf( "jxlthumbpages",   "0" ) }
+sub enable_avif_thumbnails { return &get_redis_conf( "avifthumbpages", "0" ) }
 sub get_replacedupe      { return &get_redis_conf( "replacedupe",     "0" ) }
 sub can_replacetitles    { return &get_redis_conf( "replacetitles",   "1" ) }
 sub get_language         { return &get_redis_conf( "language",        "auto" ) }

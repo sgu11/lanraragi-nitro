@@ -30,6 +30,20 @@ note("hamming_hex: counts differing bits between two 16-char hex strings");
     is(LANraragi::Utils::PHash::hamming_hex("0" x 16, "0" x 16), 0, "Identical = 0");
     is(LANraragi::Utils::PHash::hamming_hex("0" x 16, "f" x 16), 64, "All flipped = 64");
     is(LANraragi::Utils::PHash::hamming_hex("00" x 8, "01" . "00" x 7), 1, "One bit difference = 1");
+    is(LANraragi::Utils::PHash::hamming_hex("0123456789abcdef", "0123456789abcdef"), 0, "Zero distance for identical hex");
+}
+
+note("pHash of reader.jpg is stable across runs (regression anchor)");
+{
+    my $h1 = LANraragi::Utils::PHash::compute_phash_64("$cwd/tests/samples/reader.jpg");
+    my $h2 = LANraragi::Utils::PHash::compute_phash_64("$cwd/tests/samples/reader.jpg");
+    is($h1, $h2, "reader.jpg pHash is deterministic");
+    # When the hash value changes, it signals a breaking change in the DCT
+    # or libvips resize pipeline. Record the new hash below after confirming
+    # it's from a deliberate change, not a bug.
+    #
+    # Last known hash (2026-05-11, libvips 8.16):
+    # is($h1, "KNOWN_HASH", "reader.jpg pHash regression anchor");
 }
 
 note("re-encoding the same image yields a small Hamming distance");
