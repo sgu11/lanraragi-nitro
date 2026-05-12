@@ -1848,6 +1848,27 @@ msgstr "Searching for duplicates..."
 msgid "No duplicates found!"
 msgstr "No duplicates found!"
 
+msgid "Find more pairs (next deck)"
+msgstr "Find more pairs (next deck)"
+
+msgid "Refresh deck"
+msgstr "Refresh deck"
+
+msgid "Run backfill"
+msgstr "Run backfill"
+
+msgid "Find by cover"
+msgstr "Find by cover"
+
+msgid "Threshold:"
+msgstr "Threshold:"
+
+msgid "Not a duplicate"
+msgstr "Not a duplicate"
+
+msgid "Delete this side"
+msgstr "Delete this side"
+
 # ------End of Duplicates.html.tt2------
 
 # ------Start of index.html.tt2 (carousel + bulk actions)------

@@ -43,13 +43,59 @@ sub pairs {
     my @raw = $redis_cfg->zrangebyscore("LRR_DUPLICATE_PAIRS", 0, $cap, "WITHSCORES", "LIMIT", $offset, $limit);
     my $total = $redis_cfg->zcount("LRR_DUPLICATE_PAIRS", 0, $cap) + 0;
 
-    my @pairs;
+    # Collect unique archive IDs and pair members for batched fetches.
+    my @pair_tuples;
+    my %seen_ids;
     while (@raw) {
         my $member = shift @raw;
         my $score  = shift @raw;
         my ($id_a, $id_b) = split /\|/, $member, 2;
-        my $meta_json = $redis_cfg->hget("LRR_DUPLICATE_PAIR_META", $member) // '{}';
-        my $meta      = eval { decode_json($meta_json) } // {};
+        push @pair_tuples, [$member, $score, $id_a, $id_b];
+        $seen_ids{$id_a} = 1;
+        $seen_ids{$id_b} = 1;
+    }
+
+    # Batched meta fetch: pipeline HMGET for all pair metas in one round-trip.
+    my %meta_cache;
+    if (@pair_tuples) {
+        my @meta_results;
+        for my $t (@pair_tuples) {
+            $redis_cfg->hmget("LRR_DUPLICATE_PAIR_META", $t->[0],
+                sub { push @meta_results, [ $t->[0], $_[0] ] });
+        }
+        $redis_cfg->wait_all_responses;
+        for my $r (@meta_results) {
+            my ($member, $reply) = @$r;
+            my $json = ($reply && ref $reply eq 'ARRAY' && $reply->[0]) ? $reply->[0] : '{}';
+            $meta_cache{$member} = eval { decode_json($json) } // {};
+        }
+    }
+
+    # Batched archive brief: pipeline HMGET for all archive fields in one round-trip.
+    my %brief_cache;
+    my @brief_fields = qw(title name tags pagecount arcsize);
+    {
+        my @brief_results;
+        for my $id (keys %seen_ids) {
+            $redis->hmget($id, @brief_fields,
+                sub { push @brief_results, [ $id, $_[0] ] });
+        }
+        $redis->wait_all_responses;
+        for my $r (@brief_results) {
+            my ($id, $reply) = @$r;
+            my @vals = @{ $reply // [] };
+            my %h;
+            for my $i (0 .. $#brief_fields) {
+                $h{$brief_fields[$i]} = $vals[$i] // '';
+            }
+            $brief_cache{$id} = _archive_brief_from_hash($id, \%h);
+        }
+    }
+
+    my @pairs;
+    for my $t (@pair_tuples) {
+        my ($member, $score, $id_a, $id_b) = @$t;
+        my $meta = $meta_cache{$member} // {};
 
         push @pairs, {
             id_a             => $id_a,
@@ -59,8 +105,8 @@ sub pairs {
             per_page         => $meta->{per_page} // [],
             page_count_delta => $meta->{pcount_delta} // 0,
             cover_hamming    => $meta->{cover_hamming},
-            a                => _archive_brief($redis, $id_a),
-            b                => _archive_brief($redis, $id_b),
+            a                => $brief_cache{$id_a}  // {},
+            b                => $brief_cache{$id_b}  // {},
         };
     }
 
@@ -70,11 +116,10 @@ sub pairs {
     $self->render(json => { pairs => \@pairs, total => $total });
 }
 
-sub _archive_brief {
-    my ($redis, $id) = @_;
-    my %h = $redis->hgetall($id);
-    return {} unless %h;
-    my $tags  = redis_decode($h{tags} // '');
+sub _archive_brief_from_hash {
+    my ($id, $h) = @_;
+    return {} unless $h && %$h;
+    my $tags  = redis_decode($h->{tags} // '');
     my $tag_count = 0;
     my $language  = '';
     my $date_added = '';
@@ -89,11 +134,11 @@ sub _archive_brief {
     }
     return {
         arcid      => $id,
-        title      => redis_decode($h{title} // ''),
-        name       => redis_decode($h{name}  // ''),
+        title      => redis_decode($h->{title} // ''),
+        name       => redis_decode($h->{name}  // ''),
         tags       => $tags,
-        pagecount  => ($h{pagecount} // 0) + 0,
-        arcsize    => ($h{arcsize}   // 0) + 0,
+        pagecount  => ($h->{pagecount} // 0) + 0,
+        arcsize    => ($h->{arcsize}   // 0) + 0,
         tag_count  => $tag_count,
         language   => $language,
         date_added => $date_added,
@@ -124,11 +169,15 @@ sub refresh {
     my $redis_cfg = _get_redis_config();
     my $redis     = _get_redis();
 
-    my @members  = $redis_cfg->zrange("LRR_DUPLICATE_PAIRS", 0, -1);
+    # Cap scan to 2x deck target to bound memory on oversized decks.
+    my $SCAN_CAP = 200;
+    my @members  = $redis_cfg->zrange("LRR_DUPLICATE_PAIRS", 0, $SCAN_CAP - 1);
     my $orphans  = 0;
     my $dismissed_leftover = 0;
     my @to_remove;
 
+    # Collect unique IDs for batched existence check.
+    my %check_ids;
     for my $member (@members) {
         if ($redis_cfg->sismember("LRR_DEDUP_DISMISSED", $member)) {
             push @to_remove, $member;
@@ -136,7 +185,26 @@ sub refresh {
             next;
         }
         my ($a, $b) = split /\|/, $member, 2;
-        if (!$redis->exists($a) || !$redis->exists($b)) {
+        $check_ids{$a} = [];
+        $check_ids{$b} = [];
+    }
+
+    # Pipelined EXISTS for all unique archive IDs.
+    if (%check_ids) {
+        my @exists_results;
+        for my $id (keys %check_ids) {
+            $redis->exists($id, sub { push @exists_results, [ $id, $_[0] ] });
+        }
+        $redis->wait_all_responses;
+        for my $r (@exists_results) {
+            $check_ids{$r->[0]} = $r->[1];
+        }
+    }
+
+    for my $member (@members) {
+        next if $redis_cfg->sismember("LRR_DEDUP_DISMISSED", $member);
+        my ($a, $b) = split /\|/, $member, 2;
+        if (!($check_ids{$a} // 0) || !($check_ids{$b} // 0)) {
             push @to_remove, $member;
             $orphans++;
         }

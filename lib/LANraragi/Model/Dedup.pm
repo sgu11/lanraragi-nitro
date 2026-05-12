@@ -57,7 +57,8 @@ sub score_pair {
         $valid++;
     }
 
-    my $mean_hamming = $valid > 0 ? $total / $valid : 64;
+    return (64 + PCOUNT_WEIGHT, [], abs($n_a - $n_b)) if $valid == 0;
+    my $mean_hamming = $total / $valid;
     my $max_n = ($n_a > $n_b) ? $n_a : $n_b;
     my $pcount_delta_abs = abs($n_a - $n_b);
     my $pcount_delta_frac = $max_n > 0 ? $pcount_delta_abs / $max_n : 0;

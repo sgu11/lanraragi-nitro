@@ -107,6 +107,7 @@ Duplicates.loadPairs = function () {
         `?max_score=${encodeURIComponent(Duplicates.state.threshold)}` +
         `&limit=${Duplicates.state.limit}`;
 
+    $("#dupes-list").html('<div class="dupes-loading"><i class="fas fa-spinner fa-spin"></i> Loading pairs…</div>');
     fetch(url)
         .then((r) => r.json())
         .then((data) => {

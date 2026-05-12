@@ -37,20 +37,20 @@
                 <i class="fas fa-arrow-left"></i> [% c.lh("Return to Library") %]
             </button>
             <button id="run-find" class="stdbtn" type="button">
-                <i class="fas fa-search"></i> Find more pairs (next deck)
+                <i class="fas fa-search"></i> [% c.lh("Find more pairs (next deck)") %]
             </button>
             <button id="run-refresh" class="stdbtn" type="button">
-                <i class="fas fa-sync"></i> Refresh deck
+                <i class="fas fa-sync"></i> [% c.lh("Refresh deck") %]
             </button>
             <button id="run-backfill" class="stdbtn" type="button">
-                <i class="fas fa-cogs"></i> Run backfill
+                <i class="fas fa-cogs"></i> [% c.lh("Run backfill") %]
             </button>
             <button id="run-find-cover" class="stdbtn" type="button" title="Cover-only pass: ignores page-count gap, surfaces chapter↔volume style matches.">
-                <i class="fas fa-image"></i> Find by cover
+                <i class="fas fa-image"></i> [% c.lh("Find by cover") %]
             </button>
             <span id="dupes-stats" class="dupes-stats">Loading…</span>
             <label class="dupes-threshold-label">
-                Threshold:
+                [% c.lh("Threshold:") %]
                 <input id="threshold-slider" type="range" min="12" max="25" step="1" value="22" />
                 <span id="threshold-value">22</span>
                 <select id="preset-select">

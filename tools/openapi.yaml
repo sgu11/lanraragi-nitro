@@ -2936,6 +2936,9 @@ paths:
               - backfill_pagehashes
               - compute_pagehashes
               - find_duplicate_pairs
+              - compute_coverhash
+              - backfill_coverhashes
+              - find_cover_duplicates
               - build_stat_hashes
               - handle_upload
               - download_url

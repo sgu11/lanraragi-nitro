@@ -487,15 +487,18 @@ sub add_new_file ( $id, $file ) {
         my $thumbdir = LANraragi::Model::Config->get_thumbdir;
         extract_thumbnail( $thumbdir, $id, 1, 1, 1 );
 
-        # Enqueue page-hash computation for the new deduplicator.
+        # Enqueue page-hash and cover-hash computation for the new deduplicator.
         # Lowest priority so it never delays user-visible work.
         eval {
             LANraragi::Model::Config->get_minion->enqueue(
                 compute_pagehashes => [ $id ] => { priority => 0 }
             );
+            LANraragi::Model::Config->get_minion->enqueue(
+                compute_coverhash => [ $id ] => { priority => 0 }
+            );
         };
         if ($@) {
-            $logger->warn("Failed to enqueue compute_pagehashes for $id: $@");
+            $logger->warn("Failed to enqueue dedup hashes for $id: $@");
         }
 
         # AutoTagging using enabled plugins goes here!

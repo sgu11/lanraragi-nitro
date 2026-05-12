@@ -439,6 +439,7 @@ sub add_tasks {
             my $enqueued = 0;
             my $skipped  = 0;
             my $seen     = 0;
+            $redis_cfg->del("LRR_DEDUP_COVER_BACKFILL_CURSOR");
             $logger->info("backfill_coverhashes: scanning $total archives (cover_algo_version=$cfg->{cover_algo_version})");
             for my $id (@ids) {
                 $seen++;
@@ -555,6 +556,11 @@ sub add_tasks {
                 next unless defined $ch && length($ch) == 16;
                 next unless defined $cv && $cv eq $cfg->{cover_algo_version};
                 $cover_data{$id} = $ch;
+            }
+
+            my $n_cover = scalar keys %cover_data;
+            if ($n_cover > 5000) {
+                $logger->warn("find_cover_duplicates: $n_cover archives with cover hashes — O(N²) sweep may take a while");
             }
 
             my $result = LANraragi::Model::Dedup::find_cover_duplicate_pairs_in_memory(\%cover_data, $redis_cfg, $cfg);

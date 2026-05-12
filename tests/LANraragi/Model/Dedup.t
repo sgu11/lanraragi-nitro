@@ -71,6 +71,16 @@ note("score_pair: aggregates Hamming distance across slots");
     cmp_ok(abs($score - 1.0), "<", 0.01, "mean Hamming = 1, no pcount delta -> score 1");
 }
 
+note("score_pair: all-sentinel slots return high score (64 + PCOUNT_WEIGHT)");
+{
+    my $a = { hashes => ["-", "-"], n => 100 };
+    my $b = { hashes => ["-", "-"], n => 100 };
+    my ($score, $per_page, $delta) = LANraragi::Model::Dedup::score_pair($a, $b);
+    is($score, 64 + 20, "all-sentinel score = 64 + PCOUNT_WEIGHT");
+    is_deeply($per_page, [], "no per-page distances for sentinel-only pair");
+    is($delta, 0, "page count delta is 0");
+}
+
 note("compute_pagehashes_for_archive: writes pagehashes/_v/_n and clears _err");
 {
     use Test::MockModule qw(strict);

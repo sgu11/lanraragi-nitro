@@ -19,9 +19,29 @@ package FakeRedis {
     sub new { bless {}, shift }
     sub zrangebyscore { my ($self, $key, $min, $max, @rest) = @_; ('id_a|id_b', 4.5, 'id_c|id_d', 12.0) }
     sub zcount { 2 }
-    sub hget   { my ($self, $k, $f) = @_; '{"per_page":[1,2,3,4,5],"pcount_delta":3,"algo_version":1,"ts":1}' }
-    sub hgetall { my ($self, $k) = @_; (title => "Title", name => "name", tags => "t", filename => "n.zip", pagecount => 100) }
     sub quit { 1 }
+    sub wait_all_responses { 1 }
+    sub hmget {
+        my $self = shift;
+        my $cb = ref($_[-1]) eq 'CODE' ? pop @_ : undef;
+        my ($k, @fields) = @_;
+        # For pair meta HMGET, return per_page/pcount_delta JSON.
+        if ($k eq 'LRR_DUPLICATE_PAIR_META') {
+            my $json = '{"per_page":[1,2,3,4,5],"pcount_delta":3,"algo_version":1,"ts":1}';
+            $cb->([$json], undef) if $cb;
+            return [$json];
+        }
+        # For archive HMGET, return title/name/tags/pagecount/arcsize.
+        my @vals = map {
+            $_ eq 'title'     ? "Title" :
+            $_ eq 'name'      ? "name"  :
+            $_ eq 'tags'      ? "t"     :
+            $_ eq 'pagecount' ? "100"   :
+            $_ eq 'arcsize'   ? "0"     : ""
+        } @fields;
+        $cb->(\@vals, undef) if $cb;
+        return \@vals;
+    }
 }
 
 my $controller_module = Test::MockModule->new('LANraragi::Controller::Api::Duplicates');
