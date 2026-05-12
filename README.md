@@ -78,7 +78,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 
 ### Docs / Ops
 
-- [`CLAUDE.md`](CLAUDE.md) documents the architecture, build, plugin contract, and code style for AI agents working in this repo.
+- [`AGENTS.md`](AGENTS.md) documents the architecture, build, plugin contract, and code style for AI agents working in this repo.
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) documents the three-tier deployment procedure to the production instance (hot code-swap, compose edit, image rebuild) with pre-flight, verification, and rollback steps.
 
 ---
