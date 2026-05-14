@@ -16,7 +16,7 @@ sub process_upload {
     #Receive uploaded file.
     my $file     = $self->req->upload('file');
     my $catid    = $self->req->param('catid');
-    my $filename = encode_utf8( $file->filename );
+    my $filename = $file->filename;
 
     my $uploadMime = $file->headers->content_type;
 

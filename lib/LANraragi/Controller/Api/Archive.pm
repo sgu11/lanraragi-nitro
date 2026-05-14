@@ -145,7 +145,7 @@ sub create_archive {
         }
     }
 
-    my $filename   = encode_utf8( $upload->filename );
+    my $filename   = $upload->filename;
     my $uploadMime = $upload->headers->content_type;
 
     return unless exec_with_lock(
@@ -213,10 +213,6 @@ sub create_archive {
                     },
                     status => 500
                 );
-            }
-
-            if (IS_UNIX) {
-                $tempfile = decode_utf8($tempfile);
             }
 
             my ( $status_code, $id, $response_title, $message ) =
