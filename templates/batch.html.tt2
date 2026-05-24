@@ -59,7 +59,6 @@
 									<option value="plugin">🧩 [% c.lh("Use Plugin") %]</option>
 									<option value="clearnew">🆕 [% c.lh("Remove New Flag") %]</option>
 									<option value="tagrules">📏 [% c.lh("Apply Tag Rules") %]</option>
-									<option value="addcat">📚 [% c.lh("Add To Category") %]</option>
 									<option value="delete">🗑️ [% c.lh("Delete Archive") %]</option>
 								</select>
 							</td>
@@ -121,17 +120,6 @@
 								<td colspan="2" style="text-align: center;">
 									[% c.lh("This removes the \"new\" flag from the selected archives.") %]
 									<br>
-								</td>
-							</tr>
-
-							<tr class="operation addcat-operation">
-								<td>[% c.lh("Add to Category :") %]</td>
-								<td>
-									<select id="category" class="favtag-btn">
-										[% FOREACH categories %]
-										<option value="[% id %]">[% name %]</option>
-										[% END %]
-									</select>
 								</td>
 							</tr>
 
