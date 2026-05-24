@@ -153,7 +153,6 @@
 							<button type="button" id="bulk-actions-toggle" class="bulk-btn">[% c.lh('Actions') %] &#x25BE;</button>
 							<ul id="bulk-actions-menu" hidden>
 								<li data-action="delete"><i class="fas fa-trash-alt"></i> [% c.lh('Delete from library') %]</li>
-								<li data-action="addcat"><i class="fas fa-search-plus"></i> [% c.lh('Add to category') %]</li>
 							</ul>
 						</span>
 					</span>
