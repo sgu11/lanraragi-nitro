@@ -10,6 +10,14 @@ td.itd {
   white-space: nowrap;
 }
 
+#category-container {
+  margin-bottom: 12px;
+}
+
+.searchbtn {
+  margin-top: 4px !important;
+}
+
 .itdc {
   min-width: 35px;
 }
@@ -167,6 +175,12 @@ table thead .sorting_disabled a:after {
   margin-top: -10px;
 }
 
+
+#msm-selection-count {
+  font-weight: bold;
+  vertical-align: center;
+}
+
 .carousel-prev {
   position: absolute;
   top: 136px;
@@ -304,6 +318,38 @@ p#nb {
   user-select: none;
   align-self: center;
   cursor: pointer;
+  z-index: 22;
+}
+
+.marker {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+
+  background-image: url('../favicon.ico');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  filter:
+		drop-shadow(0 0 1px black)
+		drop-shadow(0 0 1px black)
+		drop-shadow(0 0 1px black);
+
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  z-index: 23;
+  cursor: pointer;
+}
+
+.focus-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 21;
+  display: none;
 }
 
 .caption-reader {
@@ -379,12 +425,12 @@ li {
   height: 480px;
   overflow: auto;
   text-align: left;
-  margin-left: -30px;
+  margin-left: 10px;
   margin-right: 5px;
   font-size: 9pt;
 }
 
-.checklist>li {
+.checklist li {
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -727,9 +773,27 @@ body.swal2-shown>[aria-hidden="true"] {
   height: 90vh;
 }
 
+.overlay-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.overlay-bar #overlay-section {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.overlay-bar-left {
+  flex: 1;
+  text-align: left;
+  padding-left: 32px;
+}
+
 .chapter-selector {
+  flex: 1;
   text-align: right;
-  margin: -40px 32px 8px 0px;
+  padding-right: 32px;
 }
 
 .archive-summary {
@@ -755,6 +819,7 @@ body.swal2-shown>[aria-hidden="true"] {
 
 #changelog>*>img {
   max-width: 400px;
+  height: auto;
 }
 
 /* Infinite Scrolling Reader */
@@ -810,7 +875,7 @@ div.fullscreen img {
 }
 
 .fullscreen #display {
-    height: 100%;
+  height: 100%;
 }
 
 .fullscreen-infinite {

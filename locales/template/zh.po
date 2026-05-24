@@ -680,7 +680,7 @@ msgstr "启用后，无法放入标准 A4 页面的缩略图将被裁剪，仅�
 msgid "Hide completed"
 msgstr "隐藏已读完"
 
-msgid "If enabled, archives you've already completed will be hidden from the list."
+msgid "If enabled, Archives you've already completed will be hidden from the list."
 msgstr "启用后，您已经读完的档案将从列表中隐藏。"
 
 msgid "Go to Page:"
@@ -745,6 +745,18 @@ msgstr ""
 "使用默认密码\"kamimamita\"<a href=\"/login\">登录</a><br/>然后立刻<a href="
 "\"/config\">改掉这坨史一样的密码</a>。<br/>...或者干脆禁用掉! <br/"
 ">为什么不顺便检查一下配置选项呢？"
+
+msgid "Select Archives"
+msgstr ""
+
+msgid "Run Batch Operations on selection"
+msgstr ""
+
+msgid "Clear selection"
+msgstr ""
+
+msgid "Select All in Page"
+msgstr ""
 
 # ------End of Index.html.tt2------
 # ------Start of Login.html.tt2------

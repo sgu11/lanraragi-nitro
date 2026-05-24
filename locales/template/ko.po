@@ -3,8 +3,8 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-05-06 17:24+0200\n"
-"PO-Revision-Date: 2026-03-23 13:12+0000\n"
-"Last-Translator: 안세훈 <on9686@gmail.com>\n"
+"PO-Revision-Date: 2026-05-10 22:41+0000\n"
+"Last-Translator: on9686 <on9686@gmail.com>\n"
 "Language-Team: Korean <https://hosted.weblate.org/projects/lanraragi/"
 "lanraragi-source/ko/>\n"
 "Language: ko\n"
@@ -12,7 +12,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
-"X-Generator: Weblate 5.17-dev\n"
+"X-Generator: Weblate 2026.5-dev\n"
 
 # Sample Data
 # ------Start of Backup.html.tt2------
@@ -715,12 +715,14 @@ msgstr "섬네일 자르기"
 
 msgid "If enabled, thumbnails that don't fit a regular A4 page will be cropped to only show the left side."
 msgstr ""
+"활성화하면 일반 A4 용지 크기에 맞지 않는 썸네일은 왼쪽 부분만 표시하도록 "
+"잘립니다."
 
 msgid "Hide completed"
-msgstr ""
+msgstr "읽음 숨기기"
 
-msgid "If enabled, archives you've already completed will be hidden from the list."
-msgstr ""
+msgid "If enabled, Archives you've already completed will be hidden from the list."
+msgstr "활성화하면 다 읽은 항목은 목록에서 숨겨집니다."
 
 msgid "Go to Page:"
 msgstr "페이지로 이동:"
@@ -784,6 +786,18 @@ msgstr ""
 "비밀번호 \"kamimamita\"로 <a href=\"/login\">로그인</a>하고 비밀번호 <a href="
 "\"/config\">좀 바꾸세요</a>.<br/> ...아니면 그냥 비활성화 하세요! <br/"
 ">비밀번호를 바꾸고 이왕 하는 김에 설정 옵션도 확인해 보는 것은 어때요? "
+
+msgid "Select Archives"
+msgstr "아카이브 선택"
+
+msgid "Run Batch Operations on selection"
+msgstr "선택 항목에 일괄 작업 실행"
+
+msgid "Clear selection"
+msgstr "선택 해제"
+
+msgid "Select All in Page"
+msgstr "페이지 내 모든 항목 선택"
 
 # ------End of Index.html.tt2------
 # ------Start of Login.html.tt2------
@@ -1233,13 +1247,13 @@ msgstr "백업 복원 중 오류가 발생했습니다.<br/> 서버 로그를 �
 "올바른지 확인하세요."
 
 msgid "Backup generation in progress..."
-msgstr ""
+msgstr "백업 생성 진행중..."
 
 msgid "Uploading backup file..."
-msgstr ""
+msgstr "백업 파일 업로드 중..."
 
 msgid "Backup complete! Download will start automatically."
-msgstr ""
+msgstr "백업 완료! 자동으로 다운로드가 시작됩니다."
 
 msgid "Couldn't load the complete archive list! Please reload the page."
 msgstr "완전한 아카이브 목록을 로드할 수 없습니다! 페이지를 새로고침하세요."
@@ -1881,3 +1895,71 @@ msgstr ""
 
 msgid "Clear rating"
 msgstr "평점 제거"
+
+msgid "Archives with no tags or from your last selection have been pre-checked."
+msgstr "태그가 없거나 마지막으로 선택한 아카이브는 미리 선택되어 있습니다."
+
+msgid "Discard Selection"
+msgstr "선택 해제"
+
+msgid "Displaying ${n} Archives from previous selection."
+msgstr "이전에 선택한 항목에서 ${n}개의 아카이브를 표시합니다."
+
+msgid "Tankoubons"
+msgstr "단행본"
+
+msgid "No Tankoubons in your library yet."
+msgstr "라이브러리에 아직 단행본이 없습니다."
+
+msgid "Archives"
+msgstr "아카이브"
+
+msgid "No Archives in your library yet."
+msgstr "라이브러리에 아직 아카이브가 없습니다."
+
+msgid "Group Tankoubons"
+msgstr "단행본 그룹"
+
+msgid "If enabled, Archives belonging to a Tankoubon will show as a single item."
+msgstr "활성화하면 단행본에 속하는 아카이브는 하나의 항목으로 표시됩니다."
+
+msgid "Index Settings"
+msgstr "인덱스 설정"
+
+msgid "Display Mode"
+msgstr "디스플레이 모드"
+
+msgid "Compact"
+msgstr "축약"
+
+msgid "Thumbnail"
+msgstr "썸네일"
+
+msgid "G: go to page number"
+msgstr "G: 페이지 번호로 이동"
+
+msgid "Go to page:"
+msgstr "페이지 이동:"
+
+msgid "Selection"
+msgstr "선택"
+
+msgid "\${n} selected"
+msgstr "${n}개 선택됨"
+
+msgid "Click Archives to add them to the selection. Your selection carries over across searches."
+msgstr ""
+"선택 항목에 추가하려면 아카이브를 클릭하십시오. 선택 항목이 검색 전반에 "
+"전달됩니다."
+
+msgid "Exit selection mode? Your current selection will be lost. "
+msgstr "선택 모드에서 나가시겠습니까? 현재 선택 항목이 사라집니다. "
+
+msgid "Add to selection"
+msgstr "선택 항목에 추가"
+
+msgid "Remove from selection"
+msgstr "선택 항목에서 제거"
+
+msgid "Hide completed Archives"
+msgstr "완결된 아카이브 숨기기"

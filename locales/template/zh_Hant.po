@@ -686,7 +686,7 @@ msgstr ""
 msgid "Hide completed"
 msgstr ""
 
-msgid "If enabled, archives you've already completed will be hidden from the list."
+msgid "If enabled, Archives you've already completed will be hidden from the list."
 msgstr ""
 
 msgid "Go to Page:"
@@ -751,6 +751,18 @@ msgstr ""
 "請使用預設密碼 \"kamimamita\" <a href=\"/login\">登入</a>然後立刻把這密碼<a "
 "href=\"/config\">改掉</a>。<br/"
 ">...或者乾脆關掉密碼功能！順便去查看其他設定選項也不錯？。 "
+
+msgid "Select Archives"
+msgstr ""
+
+msgid "Run Batch Operations on selection"
+msgstr ""
+
+msgid "Clear selection"
+msgstr ""
+
+msgid "Select All in Page"
+msgstr ""
 
 # ------End of Index.html.tt2------
 # ------Start of Login.html.tt2------

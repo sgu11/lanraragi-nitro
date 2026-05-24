@@ -801,7 +801,7 @@ msgstr ""
 msgid "Hide completed"
 msgstr "Ausblendung erfolgreich"
 
-msgid "If enabled, archives you've already completed will be hidden from the list."
+msgid "If enabled, Archives you've already completed will be hidden from the list."
 msgstr ""
 "Wenn diese Option aktiviert ist, werden Archive, welche du bereits "
 "abgeschlossen hast, von der Liste ausgeblendet."
@@ -873,6 +873,18 @@ msgstr ""
 "\"/config\">ändere den Scheiß</a> dalli dalli.<br/>...Oder deaktiviere es "
 "einfach!<br/>Warum schaust du dir nicht die Einstellungsoptionen an, wenn du "
 "schon dabei bist? "
+
+msgid "Select Archives"
+msgstr ""
+
+msgid "Run Batch Operations on selection"
+msgstr ""
+
+msgid "Clear selection"
+msgstr ""
+
+msgid "Select All in Page"
+msgstr ""
 
 # ------End of Index.html.tt2------
 # ------Start of Login.html.tt2------

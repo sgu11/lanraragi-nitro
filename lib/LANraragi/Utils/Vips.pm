@@ -80,7 +80,7 @@ if ($VIPS_LOADED) {
     $vips_ffi->attach( vips_crop => ['VipsImage', 'VipsImage*', 'int', 'int', 'int', 'int'] => ['opaque'] => 'int' );
     $vips_ffi->attach( vips_colourspace => ['VipsImage', 'VipsImage*', 'int'] => ['opaque'] => 'int' );
     $vips_ffi->attach( vips_pngsave => ['VipsImage', 'string'] => ['opaque'] => 'int' );
-    $vips_ffi->attach( vips_thumbnail_buffer => ['string', 'uint64', 'VipsImage*', 'int'] => ['string', 'int', 'string', 'int', 'opaque'] => 'int' );
+    $vips_ffi->attach( vips_thumbnail_buffer => ['string', 'size_t', 'VipsImage*', 'int'] => ['string', 'int', 'string', 'int', 'opaque'] => 'int' );
     $vips_ffi->attach( vips_image_write_to_memory => ['VipsImage', 'size_t*'] => 'opaque' );
     $vips_ffi->attach( vips_cast => ['VipsImage', 'VipsImage*', 'int'] => ['opaque'] => 'int' );
 } else {
@@ -193,7 +193,7 @@ sub fit_resize($buffer, $target_width, $target_height) {
 # Resize the image, respecting aspect ratio and cropping if needed (focus on center)
 sub cover_resize($buffer, $target_width, $target_height) {
     my $out;
-    my $func = $vips_ffi->function( 'vips_thumbnail_buffer' => ['string', 'uint64', 'VipsImage*', 'int'] => ['string', 'int', 'string', 'int', 'opaque'] => 'int' );
+    my $func = $vips_ffi->function( 'vips_thumbnail_buffer' => ['string', 'size_t', 'VipsImage*', 'int'] => ['string', 'int', 'string', 'int', 'opaque'] => 'int' );
 
     my $ret = $func->call($buffer, length($buffer), \$out, $target_width, 'height', $target_height, 'crop', VIPS_INTERESTING_CENTRE, undef);
     die "Error resizing image to width: ".fetch_and_clear_error() if ($ret != 0);
@@ -203,7 +203,7 @@ sub cover_resize($buffer, $target_width, $target_height) {
 # Resize the image, respecting aspect ratio
 sub resize_to_width($buffer, $target_width) {
     my $out;
-    my $func = $vips_ffi->function( 'vips_thumbnail_buffer' => ['string', 'uint64', 'VipsImage*', 'int'] => ['opaque'] => 'int' );
+    my $func = $vips_ffi->function( 'vips_thumbnail_buffer' => ['string', 'size_t', 'VipsImage*', 'int'] => ['opaque'] => 'int' );
 
     my $ret = $func->call($buffer, length($buffer), \$out, $target_width, undef);
     die "Error resizing image to width: ".fetch_and_clear_error() if ($ret != 0);

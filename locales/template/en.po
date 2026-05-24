@@ -42,8 +42,8 @@ msgstr "You can apply modifications to multiple archives in one go here."
 msgid "Select what you'd like to do, check archives you want to use it on, and get rolling!"
 msgstr "Select what you'd like to do, check archives you want to use it on, and get rolling!"
 
-msgid "Archives with no tags have been pre-checked."
-msgstr "Archives with no tags have been pre-checked."
+msgid "Archives with no tags or from your last selection have been pre-checked."
+msgstr "Archives with no tags or from your last selection have been pre-checked."
 
 msgid "Task :"
 msgstr "Task :"
@@ -120,6 +120,12 @@ msgstr "Plugin Configuration"
 msgid "Return to Library"
 msgstr "Return to Library"
 
+msgid "Discard Selection"
+msgstr "Discard Selection"
+
+msgid "Displaying ${n} Archives from previous selection."
+msgstr "Displaying ${n} Archives from previous selection."
+
 # ------End of Batch.html.tt2------
 
 # ------Start of Category.html.tt2------
@@ -186,6 +192,18 @@ msgstr "New Static Category"
 
 msgid "New Dynamic Category"
 msgstr "New Dynamic Category"
+
+msgid "Tankoubons"
+msgstr "Tankoubons"
+
+msgid "No Tankoubons in your library yet."
+msgstr "No Tankoubons in your library yet."
+
+msgid "Archives"
+msgstr "Archives"
+
+msgid "No Archives in your library yet."
+msgstr "No Archives in your library yet."
 
 # ------End of Category.html.tt2------
 
@@ -718,14 +736,14 @@ msgstr "If enabled, thumbnails that don't fit a regular A4 page will be cropped 
 msgid "Hide completed"
 msgstr "Hide completed"
 
-msgid "If enabled, archives you've already completed will be hidden from the list."
-msgstr "If enabled, archives you've already completed will be hidden from the list."
+msgid "If enabled, Archives you've already completed will be hidden from the list."
+msgstr "If enabled, Archives you've already completed will be hidden from the list."
 
 msgid "Group Tankoubons"
 msgstr "Group Tankoubons"
 
-msgid "If enabled, archives belonging to a Tankoubon will show as a single item."
-msgstr "If enabled, archives belonging to a Tankoubon will show as a single item."
+msgid "If enabled, Archives belonging to a Tankoubon will show as a single item."
+msgstr "If enabled, Archives belonging to a Tankoubon will show as a single item."
 
 msgid "Go to Page:"
 msgstr "Go to Page:"
@@ -795,6 +813,21 @@ msgstr "You\'re using the default password and that\'s super baka of you"
 
 msgid "Login with password \"kamimamita\" and change that shit on the double. ...Or just disable it! Why not check the configuration options afterwards, while you\'re at it?"
 msgstr "<a href=\"/login\">Login</a> with password \"kamimamita\" and <a href=\"/config\">change that shit</a> on the double.<br/>...Or just disable it! <br/>Why not check the configuration options afterwards, while you&#39;re at it? "
+
+msgid "Select Archives"
+msgstr "Select Archives"
+
+msgid "Run Batch Operations on selection"
+msgstr "Run Batch Operations on selection"
+
+msgid "Merge Archives into Tankoubon"
+msgstr "Merge Archives into Tankoubon"
+
+msgid "Clear selection"
+msgstr "Clear selection"
+
+msgid "Select All in Page"
+msgstr "Select All in Page"
 
 # ------End of Index.html.tt2------
 
@@ -1049,6 +1082,9 @@ msgstr "N: toggle auto next page"
 msgid "G: go to page number"
 msgstr "G: go to page number"
 
+msgid "S: set a Stamp"
+msgstr "S: set a Stamp"
+
 msgid "To return to the archive index, touch the arrow pointing down or use Backspace."
 msgstr "To return to the archive index, touch the arrow pointing down or use Backspace."
 
@@ -1192,6 +1228,15 @@ msgstr "FullScreen"
 
 msgid "Toggle Bookmark"
 msgstr "Toggle Bookmark"
+
+msgid "Toggle Stamps"
+msgstr "Toggle Stamps"
+
+msgid "Set Stamp"
+msgstr "Set Stamp"
+
+msgid "Filter stamped pages"
+msgstr "Filter stamped pages"
 # ------End of Reader.html.tt2------
 
 # ------Start of Stats.html.tt2------
@@ -1425,6 +1470,21 @@ msgstr "Writing a Predicate"
 
 msgid "Predicates follow the same syntax as searches in the Archive Index. Check the Documentation for more information."
 msgstr "Predicates follow the same syntax as searches in the Archive Index. Check the <a href=\"https://sugoi.gitbook.io/lanraragi/basic-operations/searching\">Documentation</a> for more information."
+
+msgid "New archive"
+msgstr "New archive"
+
+msgid "Archive read"
+msgstr "Archive read"
+
+msgid "Tankoubon (collection)"
+msgstr "Tankoubon (collection)"
+
+msgid "Pages read / Total pages"
+msgstr "Pages read / Total pages"
+
+msgid "Pages read / Total pages / Archives in Tankoubon"
+msgstr "Pages read / Total pages / Archives in Tankoubon"
 
 msgid "Background Worker restarted!"
 msgstr "Background Worker restarted!"
@@ -1777,6 +1837,57 @@ msgstr "Error sending job to Minion"
 
 msgid "Go to page:"
 msgstr "Go to page:"
+
+msgid "Selection"
+msgstr "Selection"
+
+msgid "\${n} selected"
+msgstr "\${n} selected"
+
+msgid "Click Archives to add them to the selection. Your selection carries over across searches."
+msgstr "Click Archives to add them to the selection. Your selection carries over across searches."
+
+msgid "Exit selection mode? Your current selection will be lost. "
+msgstr "Exit selection mode? Your current selection will be lost. "
+
+msgid "Add to selection"
+msgstr "Add to selection"
+
+msgid "Remove from selection"
+msgstr "Remove from selection"
+
+msgid "Enter a name for the new Tankoubon."
+msgstr "Enter a name for the new Tankoubon."
+
+msgid "This will contain all the selected Archives as a single item in your Library."
+msgstr "This will contain all the selected Archives as a single item in your Library."
+
+msgid "Please enter a name."
+msgstr "Please enter a name."
+
+msgid "Added \${n} Archives to \${tank}!"
+msgstr "Added \${n} Archives to \${tank}!"
+
+msgid "Error creating Tankoubon"
+msgstr "Error creating Tankoubon"
+
+msgid "Error adding archives to Tankoubon"
+msgstr "Error adding archives to Tankoubon"
+
+msgid "Merge selection into a Tankoubon"
+msgstr "Merge selection into a Tankoubon"
+
+msgid "Hide completed Archives"
+msgstr "Hide completed Archives"
+
+msgid "Enter Stamp name:"
+msgstr "Enter Stamp name:"
+
+msgid "Stamp name"
+msgstr "Stamp name"
+
+msgid "Error setting up the Stamp"
+msgstr "Error setting up the Stamp"
 
 # ------End of i18n.html.tt2------
 

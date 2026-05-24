@@ -792,7 +792,7 @@ msgstr ""
 msgid "Hide completed"
 msgstr ""
 
-msgid "If enabled, archives you've already completed will be hidden from the list."
+msgid "If enabled, Archives you've already completed will be hidden from the list."
 msgstr ""
 
 msgid "Go to Page:"
@@ -862,6 +862,18 @@ msgstr ""
 "\"/config\">mude essa porcaria</a> na hora.<br/>...Ou simplesmente "
 "desabilite! <br/>Por que não verificar as opções de configuração, enquanto "
 "você está nela? "
+
+msgid "Select Archives"
+msgstr ""
+
+msgid "Run Batch Operations on selection"
+msgstr ""
+
+msgid "Clear selection"
+msgstr ""
+
+msgid "Select All in Page"
+msgstr ""
 
 # ------End of Index.html.tt2------
 # ------Start of Login.html.tt2------
