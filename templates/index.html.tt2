@@ -240,8 +240,7 @@
 							callback: function (key) { Index.handleBulkAction(key); },
 							items: {
 								[% IF userlogged %]
-								"delete": { name: "[% c.lh('Delete') %] (" + Selection.size() + ")", icon: "fas fa-trash-alt" },
-								"addcat": { name: "[% c.lh('Add to Category') %] (" + Selection.size() + ")", icon: "fas fa-search-plus" }
+								"delete": { name: "[% c.lh('Delete') %] (" + Selection.size() + ")", icon: "fas fa-trash-alt" }
 								[% ELSE %]
 								"noop": { name: "[% c.lh('Log in to perform bulk actions') %]", icon: "fas fa-lock" }
 								[% END %]
