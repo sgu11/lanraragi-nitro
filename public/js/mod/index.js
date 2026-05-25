@@ -99,26 +99,9 @@ Index.initializeAll = function () {
         });
     });
 
-    // Banner Actions dropdown: toggle menu, close on outside click, dispatch on item click.
-    $(document).on("click.bulk-actions-toggle", "#bulk-actions-toggle", function (e) {
-        e.stopPropagation();
-        const menu = document.getElementById("bulk-actions-menu");
-        if (!menu) return;
-        menu.hidden = !menu.hidden;
-    });
-
-    $(document).on("click.bulk-actions-outside", function (e) {
-        const menu = document.getElementById("bulk-actions-menu");
-        if (!menu || menu.hidden) return;
-        if (e.target.closest("#bulk-actions-menu") || e.target.closest("#bulk-actions-toggle")) return;
-        menu.hidden = true;
-    });
-
-    $(document).on("click.bulk-actions-item", "#bulk-actions-menu li", function () {
-        const action = this.getAttribute("data-action");
-        const menu = document.getElementById("bulk-actions-menu");
-        if (menu) menu.hidden = true;
-        Index.handleBulkAction(action);
+    // Bulk delete button
+    $(document).on("click.bulk-delete", "#bulk-delete", function () {
+        Index.handleBulkAction("delete");
     });
 
     // 0 = List view

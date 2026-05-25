@@ -149,12 +149,7 @@
 						<span class="bulk-count">0 [% c.lh('selected') %]</span>
 						<button type="button" id="bulk-select-page" class="bulk-btn">[% c.lh('Select page') %]</button>
 						<button type="button" id="bulk-clear" class="bulk-btn">[% c.lh('Clear') %]</button>
-						<span class="bulk-actions-dropdown">
-							<button type="button" id="bulk-actions-toggle" class="bulk-btn">[% c.lh('Actions') %] &#x25BE;</button>
-							<ul id="bulk-actions-menu" hidden>
-								<li data-action="delete"><i class="fas fa-trash-alt"></i> [% c.lh('Delete from library') %]</li>
-							</ul>
-						</span>
+						<button type="button" id="bulk-delete" class="bulk-btn"><i class="fas fa-trash-alt"></i> [% c.lh('Delete') %]</button>
 					</span>
 					[% END %]
 				</div>
