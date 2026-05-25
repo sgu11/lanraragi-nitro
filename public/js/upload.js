@@ -1,10 +1,8 @@
 /**
  * Scripting for the Upload page
+ * @global
 */
-
-import * as LRR from "mod/common";
-import * as Server from "mod/server";
-import I18N from "i18n";
+const Upload = {};
 
 let processingArchives = 0;
 let completedArchives = 0;
@@ -12,10 +10,10 @@ let failedArchives = 0;
 let totalUploads = 0;
 
 // Set up jqueryfileupload.
-export function initializeAll() {
+Upload.initializeAll = function () {
     // bind events to DOM
-    $(document).on("click.download-url", "#download-url", downloadUrl);
-    $(document).on("click.return", "#return", () => { window.location.href = new LRR.ApiURL("/"); });
+    $(document).on("click.download-url", "#download-url", Upload.downloadUrl);
+    $(document).on("click.return", "#return", () => { window.location.href = new LRR.apiURL("/"); });
 
     $("#fileupload").fileupload({
         dataType: "json",
@@ -44,14 +42,14 @@ export function initializeAll() {
 
             totalUploads += 1;
             processingArchives += 1;
-            updateUploadCounters();
+            Upload.updateUploadCounters();
 
             // Check minion job state periodically to update the result
             Server.checkJobStatus(
                 data.result.job,
                 true,
-                (d) => handleCompletedUpload(data.result.job, d),
-                (error) => handleFailedUpload(data.result.job, error),
+                (d) => Upload.handleCompletedUpload(data.result.job, d),
+                (error) => Upload.handleFailedUpload(data.result.job, error),
             );
         },
 
@@ -64,7 +62,7 @@ export function initializeAll() {
 
             totalUploads += 1;
             failedArchives += 1;
-            updateUploadCounters();
+            Upload.updateUploadCounters();
         },
 
         progressall(e, data) {
@@ -73,10 +71,10 @@ export function initializeAll() {
         },
 
     });
-}
+};
 
 // Handle updating the upload counters.
-function updateUploadCounters() {
+Upload.updateUploadCounters = function () {
     $("#progressCount").html(`🤔 ${I18N.UploadResume1} : ${processingArchives} 🙌 ${I18N.UploadResume2} : ${completedArchives} 👹 ${I18N.UploadResume3} : ${failedArchives}`);
 
     let icon;
@@ -91,16 +89,16 @@ function updateUploadCounters() {
 
     // At the end of the upload job, dump the search cache!
     if (processingArchives === 0) { Server.invalidateCache(); }
-}
+};
 
 // Handle a completed job from minion.
 // Update the line in upload results with the title, ID, message.
-function handleCompletedUpload(jobID, d) {
+Upload.handleCompletedUpload = function (jobID, d) {
     $(`#${jobID}-name`).html(d.result.title);
 
     if (d.result.id) {
-        $(`#${jobID}-name`).attr("href", new LRR.ApiURL(`/reader?id=${d.result.id}`));
-        $(`#${jobID}-link`).attr("href", new LRR.ApiURL(`/edit?id=${d.result.id}`));
+        $(`#${jobID}-name`).attr("href", new LRR.apiURL(`/reader?id=${d.result.id}`));
+        $(`#${jobID}-link`).attr("href", new LRR.apiURL(`/edit?id=${d.result.id}`));
     }
 
     if (d.result.success) {
@@ -114,20 +112,20 @@ function handleCompletedUpload(jobID, d) {
     }
 
     processingArchives -= 1;
-    updateUploadCounters();
-}
+    Upload.updateUploadCounters();
+};
 
-function handleFailedUpload(jobID, d) {
+Upload.handleFailedUpload = function (jobID, d) {
     $(`#${jobID}-link`).html(`${I18N.UploadError}<br>(${LRR.encodeHTML(d)})`);
     $(`#${jobID}-icon`).attr("class", "fa fa-exclamation-circle");
 
     failedArchives += 1;
     processingArchives -= 1;
-    updateUploadCounters();
-}
+    Upload.updateUploadCounters();
+};
 
 // Send URLs to the Download API and add a Server.checkJobStatus to track its progress.
-function downloadUrl() {
+Upload.downloadUrl = function () {
     const categoryID = document.getElementById("category").value;
 
     // One fetch job per non-empty line of the form
@@ -141,7 +139,7 @@ function downloadUrl() {
             formData.append("catid", categoryID);
         }
 
-        fetch(new LRR.ApiURL("/api/download_url"), {
+        fetch(new LRR.apiURL("/api/download_url"), {
             method: "POST",
             body: formData,
         })
@@ -160,14 +158,14 @@ function downloadUrl() {
 
                     totalUploads += 1;
                     processingArchives += 1;
-                    updateUploadCounters();
+                    Upload.updateUploadCounters();
 
                     // Check minion job state periodically to update the result
                     Server.checkJobStatus(
                         data.job,
                         true,
-                        (d) => handleCompletedUpload(data.job, d),
-                        (error) => handleFailedUpload(data.job, error),
+                        (d) => Upload.handleCompletedUpload(data.job, d),
+                        (error) => Upload.handleFailedUpload(data.job, error),
                     );
                 } else {
                     throw new Error(data.message);
@@ -175,4 +173,8 @@ function downloadUrl() {
             })
             .catch((error) => LRR.showErrorToast(I18N.DownloadError, error));
     });
-}
+};
+
+jQuery(() => {
+    Upload.initializeAll();
+});

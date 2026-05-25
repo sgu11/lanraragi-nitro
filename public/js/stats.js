@@ -1,10 +1,7 @@
 /**
  * Stats Operations
+ * @global
  */
-import * as Server from "mod/server";
-import * as LRR from "mod/common";
-import I18N from "i18n";
-
 const Stats = {};
 
 Stats.initializeAll = function () {

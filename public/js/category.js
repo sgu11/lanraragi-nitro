@@ -1,16 +1,12 @@
 /**
  * Category Operations
+ * @global
  */
-
-import * as LRR from "mod/common";
-import * as Server from "mod/server";
-import I18N from "i18n";
-
 const Category = {};
 
 Category.categories = [];
 
-export function initializeAll() {
+Category.initializeAll = function () {
 
     Server.loadBookmarkCategoryId().then(_ => {
         Category.loadCategories();
@@ -26,7 +22,7 @@ export function initializeAll() {
     $(document).on("click.new-dynamic", "#new-dynamic", () => Category.addNewCategory(true));
     $(document).on("click.predicate-help", "#predicate-help", Category.predicateHelp);
     $(document).on("click.delete", "#delete", Category.deleteSelectedCategory);
-    $(document).on("click.return", "#return", () => { window.location.href = new LRR.ApiURL("/"); });
+    $(document).on("click.return", "#return", () => { window.location.href = new LRR.apiURL("/"); });
 
 };
 
@@ -63,7 +59,7 @@ Category.addNewCategory = function (isDynamic) {
 };
 
 Category.loadCategories = function (selectedID) {
-    fetch(new LRR.ApiURL("/api/categories"))
+    fetch(new LRR.apiURL("/api/categories"))
         .then((response) => response.json())
         .then((data) => {
             // Save data clientside for reference in later functions
@@ -91,7 +87,7 @@ Category.updateCategoryDetails = function () {
     const categoryID = document.getElementById("category").value;
     const category = Category.categories.find((x) => x.id === categoryID);
 
-    $("#staticcontent").hide();
+    $("#archivelist").hide();
     $("#bookmarklinkfield").hide();
     $("#dynamicplaceholder").show();
 
@@ -104,33 +100,29 @@ Category.updateCategoryDetails = function () {
     document.getElementById("pinned").checked = category.pinned === "1";
 
     if (category.search === "") {
-        // Show tankoubons and archives if static and check the matching IDs
+        // Show archives if static and check the matching IDs
         document.getElementById("bookmark-link").checked = (localStorage.getItem("bookmarkCategoryId") === category.id);
-        $("#staticcontent").show();
+        $("#archivelist").show();
         $("#bookmarklinkfield").show();
         $("#dynamicplaceholder").hide();
         $("#predicatefield").hide();
-
-        // Sort tankoubon list alphabetically
-        const tanklist = $("#tankoubonlist");
-        tanklist.find("li").sort((a, b) => {
-            const upA = $(a).find("label").text().toUpperCase();
-            const upB = $(b).find("label").text().toUpperCase();
-            return upA < upB ? -1 : (upA > upB ? 1 : 0);
-        }).appendTo("#tankoubonlist");
 
         // Sort archive list alphabetically
         const arclist = $("#archivelist");
         arclist.find("li").sort((a, b) => {
             const upA = $(a).find("label").text().toUpperCase();
             const upB = $(b).find("label").text().toUpperCase();
-            return upA < upB ? -1 : (upA > upB ? 1 : 0);
+            if (upA < upB) {
+                return -1;
+            } else if (upA > upB) {
+                return 1;
+            } else {
+                return 0;
+            }
         }).appendTo("#archivelist");
 
         // Uncheck all
-        $("#staticcontent input:checkbox").prop("checked", false);
-
-        // Check items that are in the category (works for both archives and tankoubons)
+        $(".checklist > * > input:checkbox").prop("checked", false);
         category.archives.forEach((id) => {
             const checkbox = document.getElementById(id);
 
@@ -204,7 +196,7 @@ Category.updateBookmarkLink = function () {
     }
 };
 
-export function updateArchiveInCategory(id, checked) {
+Category.updateArchiveInCategory = function (id, checked) {
     const categoryID = document.getElementById("category").value;
     Category.indicateSaving();
     // PUT/DELETE api/categories/catID/archiveID
@@ -256,3 +248,7 @@ Category.predicateHelp = function () {
         hideAfter: 20000,
     });
 };
+
+jQuery(() => {
+    Category.initializeAll();
+});

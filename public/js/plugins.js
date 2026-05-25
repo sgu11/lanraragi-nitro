@@ -1,16 +1,13 @@
 /**
  * Plugins Operations
+ * @global
  */
-import * as Server from "mod/server";
-import * as LRR from "mod/common";
-import I18N from "i18n";
-
 const Plugins = {};
 
 Plugins.initializeAll = function () {
     // bind events to DOM
     $(document).on("click.save", "#save", () => Server.saveFormData("#editPluginForm"));
-    $(document).on("click.return", "#return", () => { window.location.href = new LRR.ApiURL("/"); });
+    $(document).on("click.return", "#return", () => { window.location.href = new LRR.apiURL("/"); });
 
     // Handler for file uploading.
     $("#fileupload").fileupload({
