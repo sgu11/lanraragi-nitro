@@ -312,8 +312,10 @@ sub add_tasks {
         compute_pagehashes => sub {
             my ($job, $id) = @_;
             my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
-            my $redis  = LANraragi::Model::Config->get_redis;
-            my $cfg    = _dedup_config_from_redis($redis);
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+            $redis_cfg->quit;
 
             my $rc = LANraragi::Model::Dedup::compute_pagehashes_for_archive($redis, $id, $cfg);
             $redis->quit;
@@ -503,8 +505,10 @@ sub add_tasks {
         compute_coverhash => sub {
             my ($job, $id) = @_;
             my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
-            my $redis  = LANraragi::Model::Config->get_redis;
-            my $cfg    = _dedup_config_from_redis($redis);
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+            $redis_cfg->quit;
 
             my $rc = LANraragi::Model::Dedup::compute_coverhash_for_archive($redis, $id, $cfg);
             $redis->quit;
@@ -524,8 +528,10 @@ sub add_tasks {
         compute_dedup_signals => sub {
             my ($job, $id) = @_;
             my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
-            my $redis  = LANraragi::Model::Config->get_redis;
-            my $cfg    = _dedup_config_from_redis($redis);
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+            $redis_cfg->quit;
 
             my $rc = LANraragi::Model::Dedup::compute_leadhashes_for_archive($redis, $id, $cfg);
             if ($rc >= 0) {
@@ -772,7 +778,7 @@ sub add_tasks {
             for my $id (@ids) {
                 $redis->hmget(
                     $id,
-                    qw(title name tags pagecount arcsize lead_hashes lead_hashes_v),
+                    qw(title name tags pagecount arcsize lead_hashes lead_hashes_v lead_hashes_err),
                     sub { push @results, [ $id, $_[0] ] }
                 );
             }
@@ -780,23 +786,35 @@ sub add_tasks {
             $redis->quit;
 
             my %signals;
+            my $pending_signals = 0;
             for my $r (@results) {
                 my ($id, $reply) = @$r;
                 my @vals = @{ $reply // [] };
                 my %h;
-                @h{qw(title name tags pagecount arcsize lead_hashes lead_hashes_v)} = @vals;
-                next unless ($h{lead_hashes_v} // '') eq $cfg->{lead_algo_version};
-                $signals{$id} = {
-                    title       => $h{title} // '',
-                    name        => $h{name} // '',
-                    tags        => $h{tags} // '',
-                    pagecount   => ($h{pagecount} // 0) + 0,
-                    arcsize     => ($h{arcsize} // 0) + 0,
-                    lead_hashes => [ split / /, ($h{lead_hashes} // '') ],
-                };
+                @h{qw(title name tags pagecount arcsize lead_hashes lead_hashes_v lead_hashes_err)} = @vals;
+                if (($h{lead_hashes_v} // '') eq $cfg->{lead_algo_version}) {
+                    $signals{$id} = {
+                        title       => $h{title} // '',
+                        name        => $h{name} // '',
+                        tags        => $h{tags} // '',
+                        pagecount   => ($h{pagecount} // 0) + 0,
+                        arcsize     => ($h{arcsize} // 0) + 0,
+                        lead_hashes => [ split / /, ($h{lead_hashes} // '') ],
+                    };
+                } elsif (($h{lead_hashes_err} // '') =~ /^\Q$cfg->{lead_algo_version}\E:/) {
+                    # Errored at the current algo version: this archive can
+                    # never produce a signal, so it must not block the pass
+                    # forever. The stats endpoint counts these as errored, not
+                    # pending, for the same reason.
+                } else {
+                    $pending_signals++;
+                }
             }
 
-            my $pending_signals = scalar(@ids) - scalar(keys %signals);
+            # Block only while archives are genuinely in flight (neither hashed
+            # nor errored). This mirrors archives_lead_pending in the stats API,
+            # which gates the Find button — so an enabled button always means
+            # the pass will actually run instead of silently aborting.
             if ($pending_signals > 0) {
                 $redis_cfg->quit;
                 $logger->info(
