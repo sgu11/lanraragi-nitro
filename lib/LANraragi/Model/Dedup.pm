@@ -361,7 +361,7 @@ sub compute_leadhashes_for_archive {
 sub _has_korean {
     my ($language) = @_;
     $language //= '';
-    return $language =~ /\A(?:korean|ko)\z/i ? 1 : 0;
+    return $language =~ /\A(?:korean|ko)(?:[_-].*)?\z/i ? 1 : 0;
 }
 
 sub _quality_ratio {
@@ -574,6 +574,7 @@ sub find_relation_duplicates_in_memory {
         next if ($meta->{relation} // 'none') eq 'none';
 
         $meta->{algo_version} = $algo;
+        $meta->{pass} = "relation";
         $meta->{ts} = time();
         my $distance_score = 1 - ($meta->{confidence} // 0);
         $redis->zadd("LRR_DUPLICATE_PAIRS", $distance_score, $member);

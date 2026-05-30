@@ -245,6 +245,13 @@ note("relation classifier: duplicate, translation, subset, risk flags");
     is($translation->{relation}, "translation_variant", "different languages classify as translation variant");
     is($translation->{suggested_keep}, "b", "Korean archive is suggested keep when quality comparable");
 
+    my $locale_translation = LANraragi::Model::Dedup::classify_dedup_pair(
+        $base_a,
+        { %$base_b, tags => "artist:x, language:ko-kr" },
+        {}
+    );
+    is($locale_translation->{suggested_keep}, "b", "Korean locale tags are treated as Korean");
+
     my $subset = LANraragi::Model::Dedup::classify_dedup_pair(
         { %$base_a, id => "small", pagecount => 20, arcsize => 500_000_000, tags => "artist:x, language:korean" },
         { %$base_b, id => "large", pagecount => 100, arcsize => 1_000_000_000, tags => "artist:x, language:japanese" },

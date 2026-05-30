@@ -202,6 +202,7 @@ note("relation matcher: block candidates and store relation metadata");
     is($zadds[0][2], "large|small", "stores canonical sorted pair id");
     like($hsets[0][2], qr/"relation":"subset"/, "meta stores subset relation");
     like($hsets[0][2], qr/"suggested_delete":"small"/, "meta stores suggested delete");
+    like($hsets[0][2], qr/"pass":"relation"/, "meta stores relation pass");
 }
 
 done_testing();

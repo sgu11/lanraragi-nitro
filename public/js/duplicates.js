@@ -73,7 +73,7 @@ Duplicates.refreshStats = function () {
             // Find stays enabled while the deck threshold is stale: clicking
             // it triggers a server-side rebuild. Only block when the deck is
             // full AND already matches the slider's threshold.
-            $("#run-find").prop("disabled", false);
+            $("#run-find").prop("disabled", leadPending > 0);
             // Auto-poll while either backfill is in flight; stop once both reach 0.
             const anyPending = pending > 0 || coverPending > 0 || leadPending > 0;
             if (anyPending && Duplicates._poller === null) {
@@ -319,8 +319,7 @@ $(function () {
     });
 
     $("#run-find").on("click", function () {
-        Duplicates.queueBackfill()
-            .then(() => Duplicates.queueFind())
+        Duplicates.queueFind()
             .then(() => {
                 setTimeout(() => {
                     Duplicates.refreshStats();

@@ -796,6 +796,22 @@ sub add_tasks {
                 };
             }
 
+            my $pending_signals = scalar(@ids) - scalar(keys %signals);
+            if ($pending_signals > 0) {
+                $redis_cfg->quit;
+                $logger->info(
+                    "find_relation_duplicates: skipped; $pending_signals/" . scalar(@ids) . " archives still need lead dedup signals"
+                );
+                $job->finish({
+                    stored          => 0,
+                    candidates      => 0,
+                    truncated       => 0,
+                    archives        => scalar(keys %signals),
+                    pending_signals => $pending_signals,
+                });
+                return;
+            }
+
             # Relation matching replaces the review deck contents. Dismissed
             # pairs are preserved in LRR_DEDUP_DISMISSED and still skipped by
             # the in-memory matcher.
