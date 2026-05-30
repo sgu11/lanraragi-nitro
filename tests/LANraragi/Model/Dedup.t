@@ -94,6 +94,7 @@ note("compute_pagehashes_for_archive: writes pagehashes/_v/_n and clears _err");
     my @writes;
     my $redis_mock = Test::MockObject->new();
     $redis_mock->mock('hset', sub { shift; push @writes, ['hset', @_]; 1 });
+    $redis_mock->mock('hmset', sub { shift; push @writes, ['hmset', @_]; 1 });
     $redis_mock->mock('hdel', sub { shift; push @writes, ['hdel', @_]; 1 });
     $redis_mock->mock('hget', sub { undef });
     $redis_mock->mock('quit', sub { 1 });
@@ -107,13 +108,74 @@ note("compute_pagehashes_for_archive: writes pagehashes/_v/_n and clears _err");
 
     LANraragi::Model::Dedup::compute_pagehashes_for_archive($redis_mock, "abc123", { algo_version => 1, pages_sampled => 5 });
 
-    my %seen = map { $_->[1] . "|" . $_->[2] => $_->[3] } grep { $_->[0] eq 'hset' } @writes;
+    my %seen;
+    for my $write (grep { $_->[0] eq 'hset' } @writes) {
+        $seen{ $write->[1] . "|" . $write->[2] } = $write->[3];
+    }
+    for my $write (grep { $_->[0] eq 'hmset' } @writes) {
+        my ($op, $id, @fields) = @$write;
+        while (@fields) {
+            my ($field, $value) = splice @fields, 0, 2;
+            $seen{"$id|$field"} = $value;
+        }
+    }
     is($seen{"abc123|pagehashes"},   "aaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaa", "writes 5 hashes");
     is($seen{"abc123|pagehashes_v"}, 1, "writes algo version");
     is($seen{"abc123|pagehashes_n"}, 10, "writes page count");
 
     my $hdel_seen = grep { $_->[0] eq 'hdel' && $_->[1] eq 'abc123' && $_->[2] eq 'pagehashes_err' } @writes;
     ok($hdel_seen, "clears pagehashes_err on success");
+}
+
+note("dedup title normalization and source extraction");
+{
+    is(
+        LANraragi::Model::Dedup::normalize_title_for_dedup(
+            "[Circle] My Manga Ch. 01 [Korean] [DL].cbz"
+        ),
+        "my manga ch 01",
+        "normalizes bracket metadata, suffixes, extension, and spacing"
+    );
+
+    is(
+        LANraragi::Model::Dedup::work_key_for_dedup("My Manga Chapter 12"),
+        "my manga",
+        "work key strips chapter suffix"
+    );
+
+    is(
+        LANraragi::Model::Dedup::dedup_source_key_from_tags(
+            "artist:a, source:https://gallery_source.org/g/3196863/25acc1dc92/, language:korean"
+        ),
+        "gallery_source:3196863",
+        "extracts EH source id"
+    );
+
+    is(
+        LANraragi::Model::Dedup::dedup_source_key_from_tags(
+            "source:gallery_source.net/g/52249, language:english"
+        ),
+        "gallery_source:52249",
+        "extracts gallery_source source id"
+    );
+
+    is(
+        LANraragi::Model::Dedup::dedup_language_from_tags("artist:a, language: Korean"),
+        "korean",
+        "extracts normalized language tag"
+    );
+
+    is_deeply(
+        [LANraragi::Model::Dedup::dedup_stable_tags("artist:a, temp:x, group:g, language:korean")],
+        ["artist:a", "group:g", "language:korean"],
+        "keeps only stable tag namespaces for scoring"
+    );
+
+    is(
+        LANraragi::Model::Dedup::quality_proxy({ arcsize => 104857600, pagecount => 100 }),
+        1048576,
+        "quality proxy is bytes per page"
+    );
 }
 
 done_testing();

@@ -5,10 +5,81 @@ use strict;
 use warnings;
 
 use LANraragi::Utils::PHash qw(hamming_hex);
+use LANraragi::Utils::String qw(clean_title trim);
+use String::Similarity;
 
 # Page-count-delta weight in the score formula. 20 means a 100% page-count
 # mismatch contributes 20 to the score.
 use constant PCOUNT_WEIGHT => 20;
+
+my %STABLE_TAG_NS = map { $_ => 1 } qw(artist group parody character series language);
+
+sub normalize_title_for_dedup {
+    my ($title) = @_;
+    $title = lc(trim($title // ''));
+    $title =~ s/\.[a-z0-9]{2,5}\z//i;
+    $title =~ s/\[[^\]]*\]//g;
+    $title =~ s/\([Cc]\d+[^)]*\)//g;
+    $title =~ s/\b(?:dl|digital|scan|scanned|korean|english|japanese|raw|translated)\b//ig;
+    $title =~ s/\b(?:e[- ]?gallery source|gallery_source|gallery_source|gallery_source)\b[\w:\/.-]*//ig;
+    $title =~ s/[_.,;:|+~!-]+/ /g;
+    $title =~ s/\s+/ /g;
+    return trim(clean_title($title));
+}
+
+sub work_key_for_dedup {
+    my ($title) = @_;
+    my $key = normalize_title_for_dedup($title);
+    $key =~ s/\b(?:ch(?:apter)?|vol(?:ume)?|episode|ep)\s*\d+\b//ig;
+    $key =~ s/\b\d+\z//;
+    $key =~ s/\s+/ /g;
+    return trim($key);
+}
+
+sub dedup_source_key_from_tags {
+    my ($tags) = @_;
+    $tags //= '';
+    return "gallery_source:$1" if $tags =~ m{source:\s*https?://(?:gallery_source|gallery_source)\.org/g/(\d+)/}i;
+    return "gallery_source:$1" if $tags =~ m{source:\s*(?:gallery_source|gallery_source)\.org/g/(\d+)/}i;
+    return "gallery_source:$1" if $tags =~ m{source:\s*https?://gallery_source\.net/g/(\d+)}i;
+    return "gallery_source:$1" if $tags =~ m{source:\s*gallery_source\.net/g/(\d+)}i;
+    return "gallery_source:$1"  if $tags =~ m{source:\s*https?://gallery_source\.la/[^,]*?(\d+)\.html}i;
+    return "gallery_source:$1"  if $tags =~ m{source:\s*gallery_source\.la/[^,]*?(\d+)\.html}i;
+    return '';
+}
+
+sub dedup_language_from_tags {
+    my ($tags) = @_;
+    $tags //= '';
+    return lc(trim($1)) if $tags =~ /(?:^|,)\s*language:\s*([^,]+)/i;
+    return '';
+}
+
+sub dedup_stable_tags {
+    my ($tags) = @_;
+    $tags //= '';
+    my @stable;
+    for my $tag (split /,/, lc($tags)) {
+        $tag = trim($tag);
+        next unless $tag =~ /^([^:]+):(.+)$/;
+        push @stable, $tag if $STABLE_TAG_NS{$1};
+    }
+    return sort @stable;
+}
+
+sub title_similarity_for_dedup {
+    my ($a, $b) = @_;
+    return 0 if !length($a // '') || !length($b // '');
+    return similarity($a, $b) + 0;
+}
+
+sub quality_proxy {
+    my ($archive) = @_;
+    my $pagecount = ($archive->{pagecount} // $archive->{n} // 0) + 0;
+    my $arcsize   = ($archive->{arcsize}   // 0) + 0;
+    return 0 if $pagecount <= 0;
+    return int($arcsize / $pagecount);
+}
 
 # Returns the list of zero-based page indices to sample for an archive of $n
 # pages, asking for $k samples. Cell-center sampling: int(n*(i+0.5)/k), then
