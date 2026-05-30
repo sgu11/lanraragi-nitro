@@ -31,6 +31,7 @@ sub work_key_for_dedup {
     my ($title) = @_;
     my $key = normalize_title_for_dedup($title);
     $key =~ s/\b(?:ch(?:apter)?|vol(?:ume)?|episode|ep)\s*\d+\b//ig;
+    $key =~ s/\b(?:complete|full|set|collection)\b//ig;
     $key =~ s/\b\d+\z//;
     $key =~ s/\s+/ /g;
     return trim($key);
@@ -476,6 +477,111 @@ sub classify_dedup_pair {
     }
 
     return \%out;
+}
+
+sub lead_hash_blocks {
+    my ($hash) = @_;
+    return () unless _valid_hash($hash);
+    return map { substr(lc($hash), $_ * 4, 4) } 0 .. 3;
+}
+
+sub _pair_member {
+    my ($a, $b) = @_;
+    my ($x, $y) = sort ($a, $b);
+    return "$x|$y";
+}
+
+sub _add_pair_count {
+    my ($counts, $a, $b) = @_;
+    return if $a eq $b;
+    $counts->{_pair_member($a, $b)}++;
+}
+
+sub _candidate_members_from_signals {
+    my ($signals, $config) = @_;
+    $config //= {};
+    my $block_need = $config->{candidate_block_match_count} // 2;
+    my %pair_counts;
+    my %bucket;
+
+    for my $id (sort keys %$signals) {
+        my $lead = $signals->{$id}{lead_hashes} // [];
+        for my $slot (0 .. $#$lead) {
+            my @blocks = lead_hash_blocks($lead->[$slot]);
+            for my $i (0 .. $#blocks) {
+                push @{ $bucket{"lead:$slot:$i:$blocks[$i]"} }, $id;
+            }
+        }
+    }
+
+    for my $ids (values %bucket) {
+        for my $i (0 .. $#$ids - 1) {
+            for my $j ($i + 1 .. $#$ids) {
+                _add_pair_count(\%pair_counts, $ids->[$i], $ids->[$j]);
+            }
+        }
+    }
+
+    my %candidates = map { $_ => 1 } grep { $pair_counts{$_} >= $block_need } keys %pair_counts;
+
+    my %source_bucket;
+    my %title_bucket;
+    for my $id (sort keys %$signals) {
+        my $source = dedup_source_key_from_tags($signals->{$id}{tags});
+        push @{ $source_bucket{$source} }, $id if length $source;
+
+        my $work_key = work_key_for_dedup($signals->{$id}{title} // $signals->{$id}{name});
+        my @tokens = grep { length($_) >= 4 } split /\s+/, $work_key;
+        push @{ $title_bucket{$_} }, $id for @tokens;
+    }
+
+    for my $ids (values %source_bucket, values %title_bucket) {
+        next unless @$ids > 1;
+        for my $i (0 .. $#$ids - 1) {
+            for my $j ($i + 1 .. $#$ids) {
+                $candidates{_pair_member($ids->[$i], $ids->[$j])} = 1;
+            }
+        }
+    }
+
+    return sort keys %candidates;
+}
+
+sub find_relation_duplicates_in_memory {
+    my ($signals, $redis, $config) = @_;
+    $config //= {};
+    my $cap = $config->{candidate_pair_cap} // 10_000_000;
+    my $algo = $config->{matcher_version} // 2;
+    my $stored = 0;
+    my $candidates_seen = 0;
+    my $truncated = 0;
+
+    for my $member (_candidate_members_from_signals($signals, $config)) {
+        if ($candidates_seen >= $cap) {
+            $truncated = 1;
+            last;
+        }
+        $candidates_seen++;
+        next if $redis->sismember("LRR_DEDUP_DISMISSED", $member);
+        next if defined $redis->zscore("LRR_DUPLICATE_PAIRS", $member);
+
+        my ($a, $b) = split /\|/, $member, 2;
+        my $meta = classify_dedup_pair(
+            { %{ $signals->{$a} }, id => $a },
+            { %{ $signals->{$b} }, id => $b },
+            $config
+        );
+        next if ($meta->{relation} // 'none') eq 'none';
+
+        $meta->{algo_version} = $algo;
+        $meta->{ts} = time();
+        my $distance_score = 1 - ($meta->{confidence} // 0);
+        $redis->zadd("LRR_DUPLICATE_PAIRS", $distance_score, $member);
+        $redis->hset("LRR_DUPLICATE_PAIR_META", $member, encode_json($meta));
+        $stored++;
+    }
+
+    return { stored => $stored, candidates => $candidates_seen, truncated => $truncated };
 }
 
 # Pure matcher driver for the cover-only pass.

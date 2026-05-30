@@ -169,4 +169,39 @@ note("match: zscore guard skips pairs already in the deck");
     is($r->{stored}, 0, "no zadd when pair already in deck");
 }
 
+note("relation matcher: block candidates and store relation metadata");
+{
+    my %signals = (
+        small => {
+            id => "small", title => "Same Work ch 01", tags => "artist:x, language:korean",
+            pagecount => 20, arcsize => 500_000_000,
+            lead_hashes => ["0000000000000000"],
+        },
+        large => {
+            id => "large", title => "Same Work complete", tags => "artist:x, language:japanese",
+            pagecount => 100, arcsize => 1_000_000_000,
+            lead_hashes => ["0000000000000001"],
+        },
+        other => {
+            id => "other", title => "Different Work", tags => "artist:y",
+            pagecount => 100, arcsize => 1_000_000_000,
+            lead_hashes => ["ffffffffffffffff"],
+        },
+    );
+
+    my @zadds;
+    my @hsets;
+    my $redis = Test::MockObject->new();
+    $redis->mock('zadd',      sub { shift; push @zadds, [ @_ ]; 1 });
+    $redis->mock('hset',      sub { shift; push @hsets, [ @_ ]; 1 });
+    $redis->mock('sismember', sub { 0 });
+    $redis->mock('zscore',    sub { undef });
+
+    my $result = LANraragi::Model::Dedup::find_relation_duplicates_in_memory(\%signals, $redis, {});
+    is($result->{stored}, 1, "stores one relation pair");
+    is($zadds[0][2], "large|small", "stores canonical sorted pair id");
+    like($hsets[0][2], qr/"relation":"subset"/, "meta stores subset relation");
+    like($hsets[0][2], qr/"suggested_delete":"small"/, "meta stores suggested delete");
+}
+
 done_testing();
