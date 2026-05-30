@@ -29,8 +29,36 @@
     color: #fff;
     letter-spacing: 0.05em;
 }
+.dupe-relation-badge {
+    display: inline-block;
+    font-size: 0.78em;
+    font-weight: 700;
+    padding: 1px 6px;
+    margin-right: 4px;
+    border-radius: 3px;
+    background: #2b7a78;
+    color: #fff;
+}
+.dupe-risk {
+    margin-bottom: 6px;
+    color: #ffd27d;
+    font-size: 0.9em;
+}
 .dupe-row { display: flex; align-items: flex-start; gap: 12px; }
-.dupe-side { flex: 1; min-width: 0; }
+.dupe-side {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 4px;
+}
+.dupe-suggest-delete { border-color: #c45151; }
+.dupe-suggest-keep { border-color: #4f9d69; }
+.dupe-side-role {
+    font-size: 0.82em;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
 .dupe-middle { width: 220px; text-align: center; }
 .dupe-thumb { max-width: 200px; max-height: 280px; }
 .dupe-title { font-weight: 600; margin-top: 4px; word-break: break-word; }

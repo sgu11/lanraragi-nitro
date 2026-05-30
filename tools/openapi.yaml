@@ -2936,6 +2936,9 @@ paths:
               - compute_coverhash
               - backfill_coverhashes
               - find_cover_duplicates
+              - compute_dedup_signals
+              - backfill_dedup_signals
+              - find_relation_duplicates
               - build_stat_hashes
               - handle_upload
               - download_url
@@ -3931,9 +3934,23 @@ paths:
         - in: query
           name: limit
           schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: relation
+          schema:
+            type: string
+            enum: [duplicate, translation_variant, subset, related_low_confidence]
+          description: Optional relation filter.
+        - in: query
+          name: min_confidence
+          schema: { type: number, minimum: 0, maximum: 1 }
+          description: Optional minimum confidence for relation-aware pairs.
       responses:
         '200':
           description: List of pairs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuplicatePairsResponse'
       x-mojo-to: 'api-duplicates#pairs'
     delete:
       summary: Mark a pair as not-a-duplicate
@@ -4276,6 +4293,58 @@ components:
           enum:
             - 0
             - 1
+    DuplicateArchiveBrief:
+      type: object
+      properties:
+        arcid: { type: string }
+        title: { type: string }
+        name: { type: string }
+        tags: { type: string }
+        pagecount: { type: integer }
+        arcsize: { type: integer }
+        tag_count: { type: integer }
+        language: { type: string }
+        date_added: { type: string }
+    DuplicatePair:
+      type: object
+      properties:
+        id_a: { type: string }
+        id_b: { type: string }
+        score: { type: number }
+        pass: { type: string }
+        relation:
+          type: string
+          enum: [duplicate, translation_variant, subset, related_low_confidence]
+        confidence: { type: number }
+        suggested_action: { type: string }
+        suggested_delete: { type: string }
+        suggested_keep: { type: string }
+        risk_flags:
+          type: array
+          items: { type: string }
+        lead_hamming: { type: integer }
+        title_score: { type: number }
+        tag_score: { type: number }
+        page_ratio: { type: number }
+        quality_ratio: { type: number }
+        per_page:
+          type: array
+          items: { type: integer }
+        page_count_delta: { type: integer }
+        cover_hamming: { type: integer }
+        a:
+          $ref: '#/components/schemas/DuplicateArchiveBrief'
+        b:
+          $ref: '#/components/schemas/DuplicateArchiveBrief'
+    DuplicatePairsResponse:
+      type: object
+      properties:
+        pairs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DuplicatePair'
+        total: { type: integer }
+        filtered_total: { type: integer }
     MinionJobResponse:
       type: object
       description: JSON object for a queued Minion job.
