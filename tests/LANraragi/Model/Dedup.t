@@ -178,4 +178,54 @@ note("dedup title normalization and source extraction");
     );
 }
 
+note("lead hashes: compute first N pages and compare by minimum hamming");
+{
+    use Test::MockModule qw(strict);
+    my @writes;
+    my $redis_mock = Test::MockObject->new();
+    $redis_mock->mock('hset', sub { shift; push @writes, ['hset', @_]; 1 });
+    $redis_mock->mock('hmset', sub { shift; push @writes, ['hmset', @_]; 1 });
+    $redis_mock->mock('hdel', sub { shift; push @writes, ['hdel', @_]; 1 });
+    $redis_mock->mock('hget', sub { undef });
+    $redis_mock->mock('quit', sub { 1 });
+
+    my $dedup_mod = Test::MockModule->new('LANraragi::Model::Dedup');
+    $dedup_mod->redefine('_get_archive_path', sub { $0 });
+    $dedup_mod->redefine('_get_filelist',     sub { ('cover.jpg','splash.jpg','page3.jpg','page4.jpg') });
+    $dedup_mod->redefine('_extract_page',     sub { '/tmp/page_x.jpg' });
+    $dedup_mod->redefine('_unlink_temp',      sub { 1 });
+    my @hashes = qw(0000000000000000 ffffffffffffffff 0000000000000001);
+    $dedup_mod->redefine('_compute_phash',    sub { shift @hashes });
+
+    my $rc = LANraragi::Model::Dedup::compute_leadhashes_for_archive(
+        $redis_mock, "abc123", { lead_algo_version => 2, lead_pages_sampled => 3 }
+    );
+    is($rc, 1, "compute_leadhashes succeeds");
+
+    my %seen;
+    for my $write (grep { $_->[0] eq 'hset' } @writes) {
+        $seen{ $write->[1] . "|" . $write->[2] } = $write->[3];
+    }
+    for my $write (grep { $_->[0] eq 'hmset' } @writes) {
+        my ($op, $id, @fields) = @$write;
+        while (@fields) {
+            my ($field, $value) = splice @fields, 0, 2;
+            $seen{"$id|$field"} = $value;
+        }
+    }
+
+    is($seen{"abc123|lead_hashes"}, "0000000000000000 ffffffffffffffff 0000000000000001", "writes three lead hashes");
+    is($seen{"abc123|lead_hashes_v"}, 2, "writes lead version");
+    is($seen{"abc123|lead_hashes_n"}, 3, "writes lead hash count");
+
+    is(
+        LANraragi::Model::Dedup::lead_hamming(
+            ["ffffffffffffffff", "0000000000000000"],
+            ["0000000000000001"]
+        ),
+        1,
+        "lead_hamming returns minimum distance across lead candidates"
+    );
+}
+
 done_testing();

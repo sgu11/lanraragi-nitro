@@ -168,6 +168,11 @@ sub _unlink_temp {
 }
 sub _compute_phash    { LANraragi::Utils::PHash::compute_phash_64(@_) }
 
+sub _valid_hash {
+    my ($hash) = @_;
+    return defined $hash && $hash =~ /\A[0-9a-f]{16}\z/i;
+}
+
 # Computes pHashes for $id and writes them to Redis. Idempotent.
 # $config is { algo_version => N, pages_sampled => K }.
 # Behavior:
@@ -290,6 +295,65 @@ sub compute_coverhash_for_archive {
 
     $redis->hmset($id, "coverhash", $hash, "coverhash_v", $algo);
     $redis->hdel($id, "coverhash_err");
+    return 1;
+}
+
+sub lead_hamming {
+    my ($a_hashes, $b_hashes) = @_;
+    my $best;
+    for my $ha (@{ $a_hashes // [] }) {
+        next unless _valid_hash($ha);
+        for my $hb (@{ $b_hashes // [] }) {
+            next unless _valid_hash($hb);
+            my $d = hamming_hex($ha, $hb);
+            $best = $d if !defined($best) || $d < $best;
+        }
+    }
+    return defined($best) ? $best : 65;
+}
+
+sub compute_leadhashes_for_archive {
+    my ($redis, $id, $config) = @_;
+    my $algo = $config->{lead_algo_version} // 2;
+    my $k    = $config->{lead_pages_sampled} // 3;
+    $k = 1 if $k <= 0;
+
+    my $existing_v = $redis->hget($id, "lead_hashes_v");
+    return 0 if defined $existing_v && $existing_v eq $algo;
+
+    my $file = _get_archive_path($redis, $id);
+    unless ($file && -e $file) {
+        $redis->hset($id, "lead_hashes_err", "$algo:archive_missing");
+        return -1;
+    }
+
+    my @filelist = _get_filelist($file, $id);
+    if (!@filelist) {
+        $redis->hset($id, "lead_hashes_err", "$algo:empty_archive");
+        return -1;
+    }
+
+    my $last = $#filelist < $k - 1 ? $#filelist : $k - 1;
+    my @hashes;
+    for my $page (@filelist[0 .. $last]) {
+        my ($extracted, $extracted_dir);
+        my $hash;
+        eval {
+            ($extracted, $extracted_dir) = _extract_page($file, $page);
+            $hash = _compute_phash($extracted);
+        };
+        push @hashes, (_valid_hash($hash) ? lc($hash) : "-");
+        _unlink_temp($extracted, $extracted_dir) if $extracted || $extracted_dir;
+    }
+
+    my @valid = grep { _valid_hash($_) } @hashes;
+    unless (@valid) {
+        $redis->hset($id, "lead_hashes_err", "$algo:all_extractions_failed");
+        return -1;
+    }
+
+    $redis->hmset($id, "lead_hashes", join(' ', @hashes), "lead_hashes_v", $algo, "lead_hashes_n", scalar(@valid));
+    $redis->hdel($id, "lead_hashes_err");
     return 1;
 }
 
