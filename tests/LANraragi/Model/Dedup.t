@@ -228,4 +228,39 @@ note("lead hashes: compute first N pages and compare by minimum hamming");
     );
 }
 
+note("relation classifier: duplicate, translation, subset, risk flags");
+{
+    my $base_a = {
+        id => "a", title => "Same Work", tags => "artist:x, language:japanese",
+        pagecount => 30, arcsize => 300_000_000,
+        lead_hashes => ["0000000000000000"]
+    };
+    my $base_b = {
+        id => "b", title => "Same Work Korean", tags => "artist:x, language:korean",
+        pagecount => 32, arcsize => 320_000_000,
+        lead_hashes => ["0000000000000001"]
+    };
+
+    my $translation = LANraragi::Model::Dedup::classify_dedup_pair($base_a, $base_b, {});
+    is($translation->{relation}, "translation_variant", "different languages classify as translation variant");
+    is($translation->{suggested_keep}, "b", "Korean archive is suggested keep when quality comparable");
+
+    my $subset = LANraragi::Model::Dedup::classify_dedup_pair(
+        { %$base_a, id => "small", pagecount => 20, arcsize => 500_000_000, tags => "artist:x, language:korean" },
+        { %$base_b, id => "large", pagecount => 100, arcsize => 1_000_000_000, tags => "artist:x, language:japanese" },
+        {}
+    );
+    is($subset->{relation}, "subset", "low page ratio classifies as subset");
+    is($subset->{suggested_delete}, "small", "subset suggests deleting smaller archive");
+    ok(grep { $_ eq "deleting_preferred_language_subset" } @{ $subset->{risk_flags} }, "flags Korean subset deletion");
+    ok(grep { $_ eq "deleting_higher_quality_subset" } @{ $subset->{risk_flags} }, "flags higher-quality subset deletion");
+
+    my $text_only = LANraragi::Model::Dedup::classify_dedup_pair(
+        { %$base_a, lead_hashes => ["0000000000000000"] },
+        { %$base_b, lead_hashes => ["ffffffffffffffff"] },
+        {}
+    );
+    isnt($text_only->{relation}, "duplicate", "text-only match is not deletion-eligible");
+}
+
 done_testing();

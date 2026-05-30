@@ -357,6 +357,127 @@ sub compute_leadhashes_for_archive {
     return 1;
 }
 
+sub _has_korean {
+    my ($language) = @_;
+    $language //= '';
+    return $language =~ /\A(?:korean|ko)\z/i ? 1 : 0;
+}
+
+sub _quality_ratio {
+    my ($a, $b) = @_;
+    my $qa = quality_proxy($a);
+    my $qb = quality_proxy($b);
+    return 0 if $qa <= 0 || $qb <= 0;
+    my $min = $qa < $qb ? $qa : $qb;
+    my $max = $qa > $qb ? $qa : $qb;
+    return $min / $max;
+}
+
+sub _stable_tag_jaccard {
+    my ($a_tags, $b_tags) = @_;
+    my %a = map { $_ => 1 } dedup_stable_tags($a_tags);
+    my %b = map { $_ => 1 } dedup_stable_tags($b_tags);
+    my %union = (%a, %b);
+    return 0 unless %union;
+    my $intersection = 0;
+    $intersection++ for grep { $b{$_} } keys %a;
+    return $intersection / scalar(keys %union);
+}
+
+sub classify_dedup_pair {
+    my ($a, $b, $config) = @_;
+    $config //= {};
+    my $strong_hamming = $config->{strong_visual_hamming}             // 16;
+    my $weak_hamming   = $config->{weak_visual_hamming}               // 24;
+    my $title_strong   = $config->{strong_title_score}                // 0.78;
+    my $title_vstrong  = $config->{very_strong_title_score}           // 0.90;
+    my $subset_ratio   = $config->{subset_page_ratio}                 // 0.70;
+    my $quality_floor  = $config->{preferred_language_quality_floor}  // 0.70;
+    my $subset_quality_warn = $config->{high_quality_subset_warning_ratio} // 1.30;
+
+    my $lead = lead_hamming($a->{lead_hashes}, $b->{lead_hashes});
+    my $a_work = work_key_for_dedup($a->{title} // $a->{name});
+    my $b_work = work_key_for_dedup($b->{title} // $b->{name});
+    my $title_score = title_similarity_for_dedup($a_work, $b_work);
+
+    my $source_a = dedup_source_key_from_tags($a->{tags});
+    my $source_b = dedup_source_key_from_tags($b->{tags});
+    my $same_source = length($source_a) && length($source_b) && $source_a eq $source_b;
+    my $tag_score = _stable_tag_jaccard($a->{tags}, $b->{tags});
+    my $title_or_source_strong = $same_source || $title_score >= $title_strong;
+    my $title_or_source_vstrong = $same_source || ($title_score >= $title_vstrong && $tag_score > 0);
+
+    my $pa = ($a->{pagecount} // $a->{n} // 0) + 0;
+    my $pb = ($b->{pagecount} // $b->{n} // 0) + 0;
+    my $maxp = $pa > $pb ? $pa : $pb;
+    my $minp = $pa < $pb ? $pa : $pb;
+    my $page_ratio = $maxp > 0 ? $minp / $maxp : 0;
+
+    my @risk_flags;
+    my %out = (
+        relation         => "none",
+        confidence       => 0,
+        lead_hamming     => $lead,
+        title_score      => $title_score + 0,
+        tag_score        => $tag_score + 0,
+        page_ratio       => $page_ratio + 0,
+        quality_ratio    => _quality_ratio($a, $b) + 0,
+        suggested_action => "review",
+        risk_flags       => \@risk_flags,
+    );
+
+    if ($lead <= $strong_hamming && $title_or_source_strong && $page_ratio < $subset_ratio) {
+        my ($smaller, $larger) = $pa <= $pb ? ($a, $b) : ($b, $a);
+        my $small_lang = dedup_language_from_tags($smaller->{tags});
+        my $large_lang = dedup_language_from_tags($larger->{tags});
+        push @risk_flags, "deleting_preferred_language_subset" if _has_korean($small_lang) && !_has_korean($large_lang);
+        my $small_q = quality_proxy($smaller);
+        my $large_q = quality_proxy($larger);
+        push @risk_flags, "deleting_higher_quality_subset" if $large_q > 0 && $small_q / $large_q >= $subset_quality_warn;
+        @out{qw(relation suggested_action suggested_delete suggested_keep confidence)} =
+            ("subset", "delete_subset", $smaller->{id}, $larger->{id}, 0.90);
+        return \%out;
+    }
+
+    if ($lead <= $strong_hamming && $title_or_source_strong) {
+        my $lang_a = dedup_language_from_tags($a->{tags});
+        my $lang_b = dedup_language_from_tags($b->{tags});
+        if (length($lang_a) && length($lang_b) && $lang_a ne $lang_b) {
+            $out{relation} = "translation_variant";
+            my ($ko, $other) = _has_korean($lang_a) ? ($a, $b) : _has_korean($lang_b) ? ($b, $a) : ();
+            if ($ko && (quality_proxy($other) == 0 || quality_proxy($ko) >= $quality_floor * quality_proxy($other))) {
+                $out{suggested_keep} = $ko->{id};
+                $out{suggested_delete} = $other->{id};
+                $out{suggested_action} = "delete_non_preferred";
+            } else {
+                $out{suggested_action} = "review";
+                push @risk_flags, "quality_warning" if $ko;
+            }
+            $out{confidence} = 0.85;
+            return \%out;
+        }
+
+        my $qa = quality_proxy($a);
+        my $qb = quality_proxy($b);
+        my ($delete, $keep) = $qa <= $qb ? ($a, $b) : ($b, $a);
+        @out{qw(relation suggested_action suggested_delete suggested_keep confidence)} =
+            ("duplicate", "delete_lower_quality", $delete->{id}, $keep->{id}, 0.82);
+        return \%out;
+    }
+
+    if ($lead <= $weak_hamming && $title_or_source_vstrong) {
+        @out{qw(relation confidence)} = ("related_low_confidence", 0.55);
+        return \%out;
+    }
+
+    if ($same_source || $title_score >= $title_vstrong) {
+        @out{qw(relation confidence)} = ("related_low_confidence", 0.45);
+        return \%out;
+    }
+
+    return \%out;
+}
+
 # Pure matcher driver for the cover-only pass.
 #
 # %cover_data maps id -> "<16-hex>" cover hash.
