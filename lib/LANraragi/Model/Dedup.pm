@@ -159,7 +159,12 @@ sub _get_filelist     { my @list = LANraragi::Utils::Archive::get_filelist($_[0]
 sub _extract_page {
     my ($archive, $page) = @_;
     my $dir = tempdir(CLEANUP => 0);
-    my $file = LANraragi::Utils::Archive::extract_single_file_to_file($archive, $page, $dir);
+    # Capture extraction failure here instead of letting it propagate: if the
+    # die escaped, the caller's list assignment would abort and $dir would
+    # never reach _unlink_temp, leaking the dir (CLEANUP => 0 never reaps it).
+    # On failure $file is undef; the caller's _compute_phash(undef) then dies
+    # cleanly and the slot becomes a sentinel, while $dir is still cleaned up.
+    my $file = eval { LANraragi::Utils::Archive::extract_single_file_to_file($archive, $page, $dir) };
     return ($file, $dir);
 }
 sub _unlink_temp {
@@ -397,8 +402,8 @@ sub classify_dedup_pair {
     my $subset_quality_warn = $config->{high_quality_subset_warning_ratio} // 1.30;
 
     my $lead = lead_hamming($a->{lead_hashes}, $b->{lead_hashes});
-    my $a_work = work_key_for_dedup($a->{title} // $a->{name});
-    my $b_work = work_key_for_dedup($b->{title} // $b->{name});
+    my $a_work = work_key_for_dedup($a->{title} || $a->{name});
+    my $b_work = work_key_for_dedup($b->{title} || $b->{name});
     my $title_score = title_similarity_for_dedup($a_work, $b_work);
 
     my $source_a = dedup_source_key_from_tags($a->{tags});
@@ -530,7 +535,7 @@ sub _candidate_members_from_signals {
         my $source = dedup_source_key_from_tags($signals->{$id}{tags});
         push @{ $source_bucket{$source} }, $id if length $source;
 
-        my $work_key = work_key_for_dedup($signals->{$id}{title} // $signals->{$id}{name});
+        my $work_key = work_key_for_dedup($signals->{$id}{title} || $signals->{$id}{name});
         my @tokens = grep { length($_) >= 4 } split /\s+/, $work_key;
         push @{ $title_bucket{$_} }, $id for @tokens;
     }
