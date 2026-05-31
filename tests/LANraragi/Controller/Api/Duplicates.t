@@ -86,6 +86,25 @@ note("GET /api/duplicates/pairs supports relation filtering");
     is($body->{pairs}[0]{relation}, "duplicate", "duplicate relation returned");
 }
 
+note("GET /api/duplicates/pairs filters by review status (default new)");
+{
+    # Mock meta carries no status field -> treated as 'new'.
+    for my $case (
+        [ '',                'new pairs returned by default',        2 ],
+        [ '&status=new',     'status=new returns the new pairs',     2 ],
+        [ '&status=all',     'status=all bypasses the filter',       2 ],
+        [ '&status=dismissed','status=dismissed excludes new pairs', 0 ],
+    ) {
+        my ($q, $desc, $want) = @$case;
+        my $tx = Mojo::Transaction::HTTP->new;
+        my $c  = Mojolicious::Controller->new(app => $t, tx => $tx);
+        $c->req->url->parse("/api/duplicates/pairs?max_score=20$q");
+        LANraragi::Controller::Api::Duplicates::pairs($c);
+        my $b = decode_json($c->res->body);
+        is(scalar @{$b->{pairs}}, $want, $desc);
+    }
+}
+
 note("DELETE /api/duplicates/pairs adds member to dismissed set and removes from index");
 {
     my @sadd_seen;

@@ -169,7 +169,25 @@ note("match: zscore guard skips pairs already in the deck");
     is($r->{stored}, 0, "no zadd when pair already in deck");
 }
 
-note("relation matcher: block candidates and store relation metadata");
+# Stateful mock Redis backing the relation deck (zset + meta hash), so the
+# matcher's upsert + GC paths can be exercised.
+sub stateful_redis {
+    my (%seed) = @_;
+    my %zset = %{ $seed{zset} // {} };
+    my %meta = %{ $seed{meta} // {} };
+    my $r = Test::MockObject->new();
+    $r->mock('zadd',      sub { shift; my ($k, $s, $m) = @_; $zset{$m} = $s; 1 });
+    $r->mock('hset',      sub { shift; my ($k, $m, $v) = @_; $meta{$m} = $v; 1 });
+    $r->mock('hget',      sub { shift; my ($k, $m) = @_; $meta{$m} });
+    $r->mock('hdel',      sub { shift; my ($k, @ms) = @_; delete $meta{$_} for @ms; 1 });
+    $r->mock('zscore',    sub { shift; my ($k, $m) = @_; exists $zset{$m} ? $zset{$m} : undef });
+    $r->mock('zrange',    sub { shift; sort keys %zset });
+    $r->mock('zrem',      sub { shift; my ($k, @ms) = @_; delete $zset{$_} for @ms; 1 });
+    $r->mock('sismember', sub { 0 });
+    return ($r, \%zset, \%meta);
+}
+
+note("relation matcher: store metadata, then upsert + preserve status on re-run");
 {
     my %signals = (
         small => {
@@ -189,20 +207,52 @@ note("relation matcher: block candidates and store relation metadata");
         },
     );
 
-    my @zadds;
-    my @hsets;
-    my $redis = Test::MockObject->new();
-    $redis->mock('zadd',      sub { shift; push @zadds, [ @_ ]; 1 });
-    $redis->mock('hset',      sub { shift; push @hsets, [ @_ ]; 1 });
-    $redis->mock('sismember', sub { 0 });
-    $redis->mock('zscore',    sub { undef });
+    my ($redis, $zset, $meta) = stateful_redis();
 
-    my $result = LANraragi::Model::Dedup::find_relation_duplicates_in_memory(\%signals, $redis, {});
-    is($result->{stored}, 1, "stores one relation pair");
-    is($zadds[0][2], "large|small", "stores canonical sorted pair id");
-    like($hsets[0][2], qr/"relation":"subset"/, "meta stores subset relation");
-    like($hsets[0][2], qr/"suggested_delete":"small"/, "meta stores suggested delete");
-    like($hsets[0][2], qr/"pass":"relation"/, "meta stores relation pass");
+    my $r1 = LANraragi::Model::Dedup::find_relation_duplicates_in_memory(\%signals, $redis, {});
+    is($r1->{stored},  1, "first run stores one relation pair");
+    is($r1->{updated}, 0, "nothing to update on first run");
+    is($r1->{removed}, 0, "nothing to GC on first run");
+    ok(exists $zset->{"large|small"}, "stores canonical sorted pair id");
+    like($meta->{"large|small"}, qr/"relation":"subset"/,        "meta stores subset relation");
+    like($meta->{"large|small"}, qr/"suggested_delete":"small"/, "meta stores suggested delete");
+    like($meta->{"large|small"}, qr/"pass":"relation"/,          "meta stores relation pass");
+    like($meta->{"large|small"}, qr/"status":"new"/,             "fresh pair gets status new");
+
+    # Re-run is non-destructive: the pair is refreshed in place, not wiped.
+    my $r2 = LANraragi::Model::Dedup::find_relation_duplicates_in_memory(\%signals, $redis, {});
+    is($r2->{stored},  0, "re-run adds no new pair");
+    is($r2->{updated}, 1, "re-run refreshes the existing pair in place");
+    is($r2->{removed}, 0, "re-run GCs nothing while the pair still classifies");
+    ok(exists $zset->{"large|small"}, "pair survives the re-run (no wholesale wipe)");
+
+    # A status set by a later phase must survive subsequent matcher runs.
+    $meta->{"large|small"} =~ s/"status":"new"/"status":"reviewed"/;
+    LANraragi::Model::Dedup::find_relation_duplicates_in_memory(\%signals, $redis, {});
+    like($meta->{"large|small"}, qr/"status":"reviewed"/, "re-run preserves existing review status");
+}
+
+note("relation matcher: GC drops stale relation pairs, keeps other passes");
+{
+    my %signals = (
+        keepA => { id => "keepA", title => "Work ch 1", tags => "artist:x", pagecount => 20,  arcsize => 5e8, lead_hashes => ["0000000000000000"] },
+        keepB => { id => "keepB", title => "Work full",  tags => "artist:x", pagecount => 100, arcsize => 1e9, lead_hashes => ["0000000000000001"] },
+    );
+    # Seed: a stale relation pair (archives gone) and a cover-pass pair that
+    # must be left untouched.
+    my ($redis, $zset, $meta) = stateful_redis(
+        zset => { "ghost|gone" => 0.1, "cov1|cov2" => 5 },
+        meta => {
+            "ghost|gone" => '{"pass":"relation","relation":"duplicate","status":"new"}',
+            "cov1|cov2"  => '{"pass":"cover","cover_hamming":5}',
+        },
+    );
+
+    my $r = LANraragi::Model::Dedup::find_relation_duplicates_in_memory(\%signals, $redis, {});
+    ok(!exists $zset->{"ghost|gone"}, "stale relation pair GC'd from deck");
+    ok(!exists $meta->{"ghost|gone"}, "stale relation pair meta removed");
+    ok(exists $zset->{"cov1|cov2"},   "cover-pass pair left untouched by relation GC");
+    is($r->{removed}, 1, "removed count reflects only the stale relation pair");
 }
 
 done_testing();
