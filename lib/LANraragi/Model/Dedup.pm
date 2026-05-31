@@ -502,12 +502,22 @@ sub _add_pair_count {
     $counts->{_pair_member($a, $b)}++;
 }
 
+# Returns (\@members, \%stats). Buckets keyed on a lead-hash block, a source
+# key, or a >=4-char title token group candidate pairs. A bucket of N ids
+# generates O(N^2) pairs, so an over-generic bucket (a common title token, a
+# solid-colour lead block) can explode candidate generation on a large
+# library. Skip any bucket larger than candidate_bucket_cap and report how
+# many were dropped (and the largest seen) in \%stats so the cap is never
+# silent — the caller logs it.
 sub _candidate_members_from_signals {
     my ($signals, $config) = @_;
     $config //= {};
-    my $block_need = $config->{candidate_block_match_count} // 2;
+    my $block_need  = $config->{candidate_block_match_count} // 2;
+    my $bucket_cap  = $config->{candidate_bucket_cap}        // 100;
     my %pair_counts;
     my %bucket;
+    my $dropped_buckets = 0;
+    my $largest_bucket  = 0;
 
     for my $id (sort keys %$signals) {
         my $lead = $signals->{$id}{lead_hashes} // [];
@@ -520,6 +530,8 @@ sub _candidate_members_from_signals {
     }
 
     for my $ids (values %bucket) {
+        $largest_bucket = scalar @$ids if @$ids > $largest_bucket;
+        if (@$ids > $bucket_cap) { $dropped_buckets++; next; }
         for my $i (0 .. $#$ids - 1) {
             for my $j ($i + 1 .. $#$ids) {
                 _add_pair_count(\%pair_counts, $ids->[$i], $ids->[$j]);
@@ -542,6 +554,8 @@ sub _candidate_members_from_signals {
 
     for my $ids (values %source_bucket, values %title_bucket) {
         next unless @$ids > 1;
+        $largest_bucket = scalar @$ids if @$ids > $largest_bucket;
+        if (@$ids > $bucket_cap) { $dropped_buckets++; next; }
         for my $i (0 .. $#$ids - 1) {
             for my $j ($i + 1 .. $#$ids) {
                 $candidates{_pair_member($ids->[$i], $ids->[$j])} = 1;
@@ -549,7 +563,8 @@ sub _candidate_members_from_signals {
         }
     }
 
-    return sort keys %candidates;
+    my @members = sort keys %candidates;
+    return (\@members, { dropped_buckets => $dropped_buckets, largest_bucket => $largest_bucket });
 }
 
 sub find_relation_duplicates_in_memory {
@@ -561,7 +576,8 @@ sub find_relation_duplicates_in_memory {
     my $candidates_seen = 0;
     my $truncated = 0;
 
-    for my $member (_candidate_members_from_signals($signals, $config)) {
+    my ($members, $bucket_stats) = _candidate_members_from_signals($signals, $config);
+    for my $member (@$members) {
         if ($candidates_seen >= $cap) {
             $truncated = 1;
             last;
@@ -587,7 +603,13 @@ sub find_relation_duplicates_in_memory {
         $stored++;
     }
 
-    return { stored => $stored, candidates => $candidates_seen, truncated => $truncated };
+    return {
+        stored          => $stored,
+        candidates      => $candidates_seen,
+        truncated       => $truncated,
+        dropped_buckets => $bucket_stats->{dropped_buckets},
+        largest_bucket  => $bucket_stats->{largest_bucket},
+    };
 }
 
 # Pure matcher driver for the cover-only pass.

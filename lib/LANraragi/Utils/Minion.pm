@@ -53,6 +53,7 @@ sub _dedup_config_from_redis {
         preferred_language_quality_floor    => ($h{preferred_language_quality_floor}    // 0.70) + 0,
         high_quality_subset_warning_ratio   => ($h{high_quality_subset_warning_ratio}   // 1.30) + 0,
         candidate_block_match_count         => ($h{candidate_block_match_count}         // 2)    + 0,
+        candidate_bucket_cap                => ($h{candidate_bucket_cap}                // 100)  + 0,
     };
 }
 
@@ -399,18 +400,27 @@ sub add_tasks {
             my $threshold_changed = ($prev_threshold != $threshold);
 
             if ($threshold_changed) {
-                # Trim pairs above the new threshold so the deck reflects it.
-                # ZREMRANGEBYSCORE doesn't return the removed members, so
-                # collect them first to also clear LRR_DUPLICATE_PAIR_META.
-                my @above = $redis_cfg->zrangebyscore(
+                # Trim pcount-pass pairs above the new threshold so the deck
+                # reflects it. The same zset also holds cover/relation pairs
+                # whose scores live on different scales (cover 0..64, relation
+                # <1), so filter by meta.pass to avoid wiping them — mirrors
+                # find_cover_duplicates. pcount pairs carry no `pass` key, so
+                # an absent pass counts as 'pcount'.
+                my @candidates = $redis_cfg->zrangebyscore(
                     "LRR_DUPLICATE_PAIRS", "($threshold", "+inf"
                 );
+                my @above;
+                for my $m (@candidates) {
+                    my $meta_json = $redis_cfg->hget("LRR_DUPLICATE_PAIR_META", $m) // '{}';
+                    my $meta = eval { decode_json($meta_json) } // {};
+                    push @above, $m if ($meta->{pass} // 'pcount') eq 'pcount';
+                }
                 if (@above) {
                     $redis_cfg->zrem("LRR_DUPLICATE_PAIRS", @above);
                     $redis_cfg->hdel("LRR_DUPLICATE_PAIR_META", @above);
                     $logger->info(
                         "find_duplicate_pairs: trimmed " . scalar(@above)
-                        . " pair(s) above new threshold $threshold"
+                        . " pcount pair(s) above new threshold $threshold"
                     );
                 }
                 $redis_cfg->hset("LRR_DEDUP_CONFIG", "pair_cursor_i", 0);
@@ -842,9 +852,17 @@ sub add_tasks {
             $logger->info(
                 "find_relation_duplicates: archives=" . scalar(keys %signals)
                 . " candidates=$result->{candidates} stored=$result->{stored}"
+                . " dropped_buckets=" . ($result->{dropped_buckets} // 0)
+                . " largest_bucket=" . ($result->{largest_bucket} // 0)
             );
             if ($result->{truncated}) {
                 $logger->warn("find_relation_duplicates: candidate cap reached; tighten relation candidate settings");
+            }
+            if (($result->{dropped_buckets} // 0) > 0) {
+                $logger->warn(
+                    "find_relation_duplicates: skipped $result->{dropped_buckets} over-generic bucket(s) "
+                    . "(largest=$result->{largest_bucket} > candidate_bucket_cap); those pairs were not generated"
+                );
             }
             $job->finish($result);
         }

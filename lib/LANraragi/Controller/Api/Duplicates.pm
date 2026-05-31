@@ -363,6 +363,7 @@ sub stats {
             preferred_language_quality_floor    => ($config{preferred_language_quality_floor}    // 0.70) + 0,
             high_quality_subset_warning_ratio   => ($config{high_quality_subset_warning_ratio}   // 1.30) + 0,
             candidate_block_match_count         => ($config{candidate_block_match_count}         // 2)    + 0,
+            candidate_bucket_cap                => ($config{candidate_bucket_cap}                // 100)  + 0,
         },
     });
 }
