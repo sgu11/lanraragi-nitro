@@ -1968,8 +1968,32 @@ msgstr "Refresh deck"
 msgid "Run backfill"
 msgstr "Run backfill"
 
+msgid "Find relation pairs"
+msgstr "Find relation pairs"
+
+msgid "Run signal backfill"
+msgstr "Run signal backfill"
+
 msgid "Find by cover"
 msgstr "Find by cover"
+
+msgid "Relation:"
+msgstr "Relation:"
+
+msgid "All"
+msgstr "All"
+
+msgid "Duplicate"
+msgstr "Duplicate"
+
+msgid "Translation variant"
+msgstr "Translation variant"
+
+msgid "Subset"
+msgstr "Subset"
+
+msgid "Review"
+msgstr "Review"
 
 msgid "Threshold:"
 msgstr "Threshold:"
