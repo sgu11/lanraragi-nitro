@@ -176,7 +176,7 @@ sub stateful_redis {
     my %zset = %{ $seed{zset} // {} };
     my %meta = %{ $seed{meta} // {} };
     my $r = Test::MockObject->new();
-    $r->mock('zadd',      sub { shift; my ($s, $m) = @_; $zset{$m} = $s; 1 });
+    $r->mock('zadd',      sub { shift; my ($k, $s, $m) = @_; $zset{$m} = $s; 1 });
     $r->mock('hset',      sub { shift; my ($k, $m, $v) = @_; $meta{$m} = $v; 1 });
     $r->mock('hget',      sub { shift; my ($k, $m) = @_; $meta{$m} });
     $r->mock('hdel',      sub { shift; my ($k, @ms) = @_; delete $meta{$_} for @ms; 1 });
