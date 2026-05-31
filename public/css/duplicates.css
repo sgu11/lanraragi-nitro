@@ -1,5 +1,49 @@
-.dupes-stats { margin-left: 12px; opacity: 0.85; }
-.dupes-threshold-label { margin-left: 16px; }
+#dupes-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+#dupes-toolbar .stdbtn {
+    margin: 0;
+}
+
+.dupes-stats {
+    flex: 1 1 100%;
+    margin: 2px 0;
+    opacity: 0.85;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    text-align: center;
+}
+
+.dupes-threshold-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 0;
+    white-space: nowrap;
+}
+
+#threshold-slider {
+    width: 150px;
+}
+
+#preset-select,
+#relation-select {
+    max-width: 180px;
+}
+
+@media (max-width: 720px) {
+    .dupes-threshold-label {
+        flex-wrap: wrap;
+        justify-content: center;
+        white-space: normal;
+    }
+}
 
 #dupes-list {
     display: grid;
