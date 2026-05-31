@@ -42,6 +42,17 @@ sub _dedup_config_from_redis {
         candidate_pair_cap   => ($h{candidate_pair_cap}   // 10_000_000) + 0,
         cover_algo_version   => ($h{cover_algo_version}   // 1)  + 0,
         cover_max_hamming    => ($h{cover_max_hamming}    // 12) + 0,
+        matcher_version                     => ($h{matcher_version}                     // 2)    + 0,
+        lead_algo_version                   => ($h{lead_algo_version}                   // 2)    + 0,
+        lead_pages_sampled                  => ($h{lead_pages_sampled}                  // 3)    + 0,
+        strong_visual_hamming               => ($h{strong_visual_hamming}               // 16)   + 0,
+        weak_visual_hamming                 => ($h{weak_visual_hamming}                 // 24)   + 0,
+        strong_title_score                  => ($h{strong_title_score}                  // 0.78) + 0,
+        very_strong_title_score             => ($h{very_strong_title_score}             // 0.90) + 0,
+        subset_page_ratio                   => ($h{subset_page_ratio}                   // 0.70) + 0,
+        preferred_language_quality_floor    => ($h{preferred_language_quality_floor}    // 0.70) + 0,
+        high_quality_subset_warning_ratio   => ($h{high_quality_subset_warning_ratio}   // 1.30) + 0,
+        candidate_block_match_count         => ($h{candidate_block_match_count}         // 2)    + 0,
     };
 }
 
@@ -301,8 +312,10 @@ sub add_tasks {
         compute_pagehashes => sub {
             my ($job, $id) = @_;
             my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
-            my $redis  = LANraragi::Model::Config->get_redis;
-            my $cfg    = _dedup_config_from_redis($redis);
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+            $redis_cfg->quit;
 
             my $rc = LANraragi::Model::Dedup::compute_pagehashes_for_archive($redis, $id, $cfg);
             $redis->quit;
@@ -492,8 +505,10 @@ sub add_tasks {
         compute_coverhash => sub {
             my ($job, $id) = @_;
             my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
-            my $redis  = LANraragi::Model::Config->get_redis;
-            my $cfg    = _dedup_config_from_redis($redis);
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+            $redis_cfg->quit;
 
             my $rc = LANraragi::Model::Dedup::compute_coverhash_for_archive($redis, $id, $cfg);
             $redis->quit;
@@ -504,6 +519,41 @@ sub add_tasks {
                 $logger->debug("compute_coverhash skip $id (already at v$cfg->{cover_algo_version})");
             } else {
                 $logger->debug("compute_coverhash ok $id");
+            }
+            $job->finish({ rc => $rc });
+        }
+    );
+
+    $minion->add_task(
+        compute_dedup_signals => sub {
+            my ($job, $id) = @_;
+            my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+            $redis_cfg->quit;
+
+            my $rc = LANraragi::Model::Dedup::compute_leadhashes_for_archive($redis, $id, $cfg);
+            if ($rc >= 0) {
+                my @vals = $redis->hmget($id, qw(title name tags pagecount arcsize));
+                my %h;
+                @h{qw(title name tags pagecount arcsize)} = @vals;
+                my $title = $h{title} || $h{name} || '';
+                $redis->hmset(
+                    $id,
+                    "dedup_title_key",  LANraragi::Model::Dedup::normalize_title_for_dedup($title),
+                    "dedup_work_key",   LANraragi::Model::Dedup::work_key_for_dedup($title),
+                    "dedup_source_key", LANraragi::Model::Dedup::dedup_source_key_from_tags($h{tags} // ''),
+                );
+            }
+            $redis->quit;
+
+            if ($rc < 0) {
+                $logger->warn("compute_dedup_signals failed for $id");
+            } elsif ($rc == 0) {
+                $logger->debug("compute_dedup_signals skip $id (already at v$cfg->{lead_algo_version})");
+            } else {
+                $logger->debug("compute_dedup_signals ok $id");
             }
             $job->finish({ rc => $rc });
         }
@@ -547,6 +597,48 @@ sub add_tasks {
             $redis->quit;
             $redis_cfg->quit;
             $logger->info("backfill_coverhashes: done enqueued=$enqueued skipped=$skipped total=$total");
+            $job->finish({ enqueued => $enqueued, skipped => $skipped, total => $total });
+        }
+    );
+
+    $minion->add_task(
+        backfill_dedup_signals => sub {
+            my ($job) = @_;
+            my $logger    = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+
+            my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+            my $total    = scalar @ids;
+            my $enqueued = 0;
+            my $skipped  = 0;
+            my $seen     = 0;
+            $redis_cfg->del("LRR_DEDUP_SIGNAL_BACKFILL_CURSOR");
+            $logger->info("backfill_dedup_signals: scanning $total archives (lead_algo_version=$cfg->{lead_algo_version})");
+            for my $id (@ids) {
+                $seen++;
+                my $v   = $redis->hget($id, "lead_hashes_v")   // '';
+                my $err = $redis->hget($id, "lead_hashes_err") // '';
+                if ($v eq $cfg->{lead_algo_version}) {
+                    $skipped++;
+                    next;
+                }
+                if ($err =~ /^\Q$cfg->{lead_algo_version}\E:/) {
+                    $skipped++;
+                    next;
+                }
+                LANraragi::Model::Config->get_minion->enqueue(
+                    compute_dedup_signals => [ $id ] => { priority => 0 }
+                );
+                $enqueued++;
+                $redis_cfg->set("LRR_DEDUP_SIGNAL_BACKFILL_CURSOR", $id);
+                $logger->info("backfill_dedup_signals: progress $seen/$total (enqueued=$enqueued skipped=$skipped)")
+                    if $seen % 500 == 0;
+            }
+            $redis->quit;
+            $redis_cfg->quit;
+            $logger->info("backfill_dedup_signals: done enqueued=$enqueued skipped=$skipped total=$total");
             $job->finish({ enqueued => $enqueued, skipped => $skipped, total => $total });
         }
     );
@@ -668,6 +760,91 @@ sub add_tasks {
             ));
             if ($result->{truncated}) {
                 $logger->warn("find_cover_duplicates: candidate cap reached; will resume from cursor on next run");
+            }
+            $job->finish($result);
+        }
+    );
+
+    $minion->add_task(
+        find_relation_duplicates => sub {
+            my ($job) = @_;
+            my $logger    = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+
+            my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+            my @results;
+            for my $id (@ids) {
+                $redis->hmget(
+                    $id,
+                    qw(title name tags pagecount arcsize lead_hashes lead_hashes_v lead_hashes_err),
+                    sub { push @results, [ $id, $_[0] ] }
+                );
+            }
+            $redis->wait_all_responses;
+            $redis->quit;
+
+            my %signals;
+            my $pending_signals = 0;
+            for my $r (@results) {
+                my ($id, $reply) = @$r;
+                my @vals = @{ $reply // [] };
+                my %h;
+                @h{qw(title name tags pagecount arcsize lead_hashes lead_hashes_v lead_hashes_err)} = @vals;
+                if (($h{lead_hashes_v} // '') eq $cfg->{lead_algo_version}) {
+                    $signals{$id} = {
+                        title       => $h{title} // '',
+                        name        => $h{name} // '',
+                        tags        => $h{tags} // '',
+                        pagecount   => ($h{pagecount} // 0) + 0,
+                        arcsize     => ($h{arcsize} // 0) + 0,
+                        lead_hashes => [ split / /, ($h{lead_hashes} // '') ],
+                    };
+                } elsif (($h{lead_hashes_err} // '') =~ /^\Q$cfg->{lead_algo_version}\E:/) {
+                    # Errored at the current algo version: this archive can
+                    # never produce a signal, so it must not block the pass
+                    # forever. The stats endpoint counts these as errored, not
+                    # pending, for the same reason.
+                } else {
+                    $pending_signals++;
+                }
+            }
+
+            # Block only while archives are genuinely in flight (neither hashed
+            # nor errored). This mirrors archives_lead_pending in the stats API,
+            # which gates the Find button — so an enabled button always means
+            # the pass will actually run instead of silently aborting.
+            if ($pending_signals > 0) {
+                $redis_cfg->quit;
+                $logger->info(
+                    "find_relation_duplicates: skipped; $pending_signals/" . scalar(@ids) . " archives still need lead dedup signals"
+                );
+                $job->finish({
+                    stored          => 0,
+                    candidates      => 0,
+                    truncated       => 0,
+                    archives        => scalar(keys %signals),
+                    pending_signals => $pending_signals,
+                });
+                return;
+            }
+
+            # Relation matching replaces the review deck contents. Dismissed
+            # pairs are preserved in LRR_DEDUP_DISMISSED and still skipped by
+            # the in-memory matcher.
+            $redis_cfg->del("LRR_DUPLICATE_PAIRS");
+            $redis_cfg->del("LRR_DUPLICATE_PAIR_META");
+            my $result = LANraragi::Model::Dedup::find_relation_duplicates_in_memory(\%signals, $redis_cfg, $cfg);
+            $redis_cfg->set("LRR_DEDUP_LAST_RELATION_SCAN", time());
+            $redis_cfg->quit;
+
+            $logger->info(
+                "find_relation_duplicates: archives=" . scalar(keys %signals)
+                . " candidates=$result->{candidates} stored=$result->{stored}"
+            );
+            if ($result->{truncated}) {
+                $logger->warn("find_relation_duplicates: candidate cap reached; tighten relation candidate settings");
             }
             $job->finish($result);
         }

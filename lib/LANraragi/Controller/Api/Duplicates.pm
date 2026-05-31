@@ -25,7 +25,10 @@ sub pairs {
     my $preset    = $req->param('preset');
     my $offset    = ($req->param('offset') // 0) + 0;
     my $limit     = ($req->param('limit')  // 50) + 0;
+    my $relation  = $req->param('relation') // '';
+    my $min_confidence = $req->param('min_confidence');
     $limit = 200 if $limit > 200;
+    $min_confidence = defined $min_confidence && length $min_confidence ? $min_confidence + 0 : undef;
 
     # Explicit max_score overrides preset (REST convention).
     my $cap;
@@ -40,26 +43,25 @@ sub pairs {
     my $redis_cfg = _get_redis_config();
     my $redis     = _get_redis();
 
-    my @raw = $redis_cfg->zrangebyscore("LRR_DUPLICATE_PAIRS", 0, $cap, "WITHSCORES", "LIMIT", $offset, $limit);
+    my @raw = $redis_cfg->zrangebyscore("LRR_DUPLICATE_PAIRS", 0, $cap, "WITHSCORES");
     my $total = $redis_cfg->zcount("LRR_DUPLICATE_PAIRS", 0, $cap) + 0;
 
-    # Collect unique archive IDs and pair members for batched fetches.
-    my @pair_tuples;
-    my %seen_ids;
+    # Collect pair members for batched meta fetches, then apply relation filters
+    # before fetching archive briefs. The deck is intentionally small, so an
+    # in-memory filter avoids under-filled pages when LIMIT is applied too early.
+    my @raw_tuples;
     while (@raw) {
         my $member = shift @raw;
         my $score  = shift @raw;
         my ($id_a, $id_b) = split /\|/, $member, 2;
-        push @pair_tuples, [$member, $score, $id_a, $id_b];
-        $seen_ids{$id_a} = 1;
-        $seen_ids{$id_b} = 1;
+        push @raw_tuples, [$member, $score, $id_a, $id_b];
     }
 
     # Batched meta fetch: pipeline HMGET for all pair metas in one round-trip.
     my %meta_cache;
-    if (@pair_tuples) {
+    if (@raw_tuples) {
         my @meta_results;
-        for my $t (@pair_tuples) {
+        for my $t (@raw_tuples) {
             $redis_cfg->hmget("LRR_DUPLICATE_PAIR_META", $t->[0],
                 sub { push @meta_results, [ $t->[0], $_[0] ] });
         }
@@ -69,6 +71,22 @@ sub pairs {
             my $json = ($reply && ref $reply eq 'ARRAY' && $reply->[0]) ? $reply->[0] : '{}';
             $meta_cache{$member} = eval { decode_json($json) } // {};
         }
+    }
+
+    my @filtered_tuples;
+    for my $t (@raw_tuples) {
+        my $meta = $meta_cache{$t->[0]} // {};
+        next if length($relation) && ($meta->{relation} // '') ne $relation;
+        next if defined($min_confidence) && (($meta->{confidence} // 0) + 0) < $min_confidence;
+        push @filtered_tuples, $t;
+    }
+    my $filtered_total = scalar @filtered_tuples;
+    my @pair_tuples = splice @filtered_tuples, $offset, $limit;
+
+    my %seen_ids;
+    for my $t (@pair_tuples) {
+        $seen_ids{$t->[2]} = 1;
+        $seen_ids{$t->[3]} = 1;
     }
 
     # Batched archive brief: pipeline HMGET for all archive fields in one round-trip.
@@ -102,6 +120,17 @@ sub pairs {
             id_b             => $id_b,
             score            => $score + 0,
             pass             => $meta->{pass} // 'pcount',
+            relation         => $meta->{relation},
+            confidence       => $meta->{confidence},
+            suggested_action => $meta->{suggested_action},
+            suggested_delete => $meta->{suggested_delete},
+            suggested_keep   => $meta->{suggested_keep},
+            risk_flags       => $meta->{risk_flags} // [],
+            lead_hamming     => $meta->{lead_hamming},
+            title_score      => $meta->{title_score},
+            tag_score        => $meta->{tag_score},
+            page_ratio       => $meta->{page_ratio},
+            quality_ratio    => $meta->{quality_ratio},
             per_page         => $meta->{per_page} // [],
             page_count_delta => $meta->{pcount_delta} // 0,
             cover_hamming    => $meta->{cover_hamming},
@@ -113,7 +142,7 @@ sub pairs {
     $redis->quit;
     $redis_cfg->quit;
 
-    $self->render(json => { pairs => \@pairs, total => $total });
+    $self->render(json => { pairs => \@pairs, total => $total, filtered_total => $filtered_total });
 }
 
 sub _archive_brief_from_hash {
@@ -235,30 +264,37 @@ sub stats {
     my %config        = $redis_cfg->hgetall("LRR_DEDUP_CONFIG");
     my $last_scan_ts       = $redis_cfg->get("LRR_DEDUP_LAST_SCAN");
     my $last_cover_scan_ts = $redis_cfg->get("LRR_DEDUP_LAST_COVER_SCAN");
+    my $last_relation_scan_ts = $redis_cfg->get("LRR_DEDUP_LAST_RELATION_SCAN");
     my $algo_version       = ($config{algo_version}       // 1) + 0;
     my $cover_algo_version = ($config{cover_algo_version} // 1) + 0;
+    my $lead_algo_version  = ($config{lead_algo_version}  // 2) + 0;
 
     my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
     my ($hashed, $errored, $pending) = (0, 0, 0);
     my ($cover_hashed, $cover_errored, $cover_pending) = (0, 0, 0);
+    my ($lead_hashed, $lead_errored, $lead_pending) = (0, 0, 0);
     # Pipelined HMGET in one round-trip per archive instead of four
     # synchronous round-trips. On a 17k library this is ~30s vs ~3min.
     my @results;
     for my $id (@ids) {
-        $redis->hmget($id, "pagehashes_v", "pagehashes_err", "coverhash_v", "coverhash_err",
+        $redis->hmget($id, "pagehashes_v", "pagehashes_err", "coverhash_v", "coverhash_err", "lead_hashes_v", "lead_hashes_err",
             sub { push @results, $_[0] });
     }
     $redis->wait_all_responses;
     for my $reply (@results) {
-        my ($v, $err, $cv, $cerr) = @{ $reply // [] };
+        my ($v, $err, $cv, $cerr, $lv, $lerr) = @{ $reply // [] };
         $v    //= ''; $err  //= '';
         $cv   //= ''; $cerr //= '';
+        $lv   //= ''; $lerr //= '';
         if    ($v eq $algo_version)              { $hashed++ }
         elsif ($err =~ /^\Q$algo_version\E:/)    { $errored++ }
         else                                     { $pending++ }
         if    ($cv eq $cover_algo_version)              { $cover_hashed++ }
         elsif ($cerr =~ /^\Q$cover_algo_version\E:/)    { $cover_errored++ }
         else                                            { $cover_pending++ }
+        if    ($lv eq $lead_algo_version)               { $lead_hashed++ }
+        elsif ($lerr =~ /^\Q$lead_algo_version\E:/)      { $lead_errored++ }
+        else                                            { $lead_pending++ }
     }
 
     $redis->quit;
@@ -303,6 +339,11 @@ sub stats {
         cover_cursor_threshold    => $cover_cursor_threshold,
         cover_sweep_done          => $cover_sweep_done,
         last_cover_scan_ts        => defined $last_cover_scan_ts ? $last_cover_scan_ts + 0 : 0,
+        lead_algo_version         => $lead_algo_version,
+        archives_with_leadhashes  => $lead_hashed,
+        archives_lead_pending     => $lead_pending,
+        archives_lead_errored     => $lead_errored,
+        last_relation_scan_ts     => defined $last_relation_scan_ts ? $last_relation_scan_ts + 0 : 0,
         config => {
             algo_version         => $algo_version,
             pages_sampled        => ($config{pages_sampled}        // 5)  + 0,
@@ -311,6 +352,17 @@ sub stats {
             candidate_pair_cap   => ($config{candidate_pair_cap}   // 10_000_000) + 0,
             cover_algo_version   => $cover_algo_version,
             cover_max_hamming    => ($config{cover_max_hamming}    // 12) + 0,
+            matcher_version                     => ($config{matcher_version}                     // 2)    + 0,
+            lead_algo_version                   => $lead_algo_version,
+            lead_pages_sampled                  => ($config{lead_pages_sampled}                  // 3)    + 0,
+            strong_visual_hamming               => ($config{strong_visual_hamming}               // 16)   + 0,
+            weak_visual_hamming                 => ($config{weak_visual_hamming}                 // 24)   + 0,
+            strong_title_score                  => ($config{strong_title_score}                  // 0.78) + 0,
+            very_strong_title_score             => ($config{very_strong_title_score}             // 0.90) + 0,
+            subset_page_ratio                   => ($config{subset_page_ratio}                   // 0.70) + 0,
+            preferred_language_quality_floor    => ($config{preferred_language_quality_floor}    // 0.70) + 0,
+            high_quality_subset_warning_ratio   => ($config{high_quality_subset_warning_ratio}   // 1.30) + 0,
+            candidate_block_match_count         => ($config{candidate_block_match_count}         // 2)    + 0,
         },
     });
 }

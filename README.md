@@ -23,6 +23,10 @@ This fork is maintained by AI agents (Claude Code) under human direction. Change
 - **Bulk archive actions** on the index page (desktop) — hover-revealed checkbox on every card and an inline row checkbox in compact mode. The selection banner (next to the Crop thumbnails toggle) shows the live count with `Select page`, `Clear`, and an `Actions ▾` dropdown (Delete, Add to category). Right-clicking a selected card swaps the context menu to the bulk variant. Selection is sticky across pagination, sort, and filter; cleared on full reload. Bulk API strategy is sequential client-side calls — no new server endpoints. Spec and plan: [`docs/superpowers/specs/2026-04-20-bulk-archive-actions-design.md`](docs/superpowers/specs/2026-04-20-bulk-archive-actions-design.md).
 - **Mobile portrait card sizing fix** — cards were rendering desktop-sized (228×335, 280px thumb box) on portrait phones/tablets around 1440 CSS-px because no media query fired above 560px and the viewport meta omitted `initial-scale=1`. Added `initial-scale=1` to all 15 templates, relaxed the `.id3 img` cap so the image fills its container, added a 561–900px portrait breakpoint (196×296, 236px thumb), and mirrored the `min-height` override at ≤560px so phones actually get 256px cards instead of 335px cards with a blank strip.
 
+### Duplicates
+
+- **Relation-aware duplicate finder** — duplicate review now uses lead-page pHash plus normalized title/source heuristics to classify duplicate, translation variant, subset, and review-only pairs, including suggested delete/keep sides and risk flags.
+
 ### Performance
 
 A sustained sweep against the request hot path, tracked in [`docs/performance-audit.md`](docs/performance-audit.md) (v2 catalog) and [`docs/performance-audit-v3.md`](docs/performance-audit-v3.md) (v3 delta + plan). Current baseline measurements in [`docs/performance-baseline.md`](docs/performance-baseline.md).

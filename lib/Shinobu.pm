@@ -496,6 +496,9 @@ sub add_new_file ( $id, $file ) {
             LANraragi::Model::Config->get_minion->enqueue(
                 compute_coverhash => [ $id ] => { priority => 0 }
             );
+            LANraragi::Model::Config->get_minion->enqueue(
+                compute_dedup_signals => [ $id ] => { priority => 0 }
+            );
         };
         if ($@) {
             $logger->warn("Failed to enqueue dedup hashes for $id: $@");

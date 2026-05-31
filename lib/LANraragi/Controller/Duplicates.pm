@@ -12,6 +12,7 @@ sub index {
         template => "duplicates",
         title    => $self->LRR_CONF->get_htmltitle,
         csshead  => generate_themes_header($self),
+        version  => $self->LRR_VERSION,
     );
 }
 

@@ -27,7 +27,10 @@ package FakeRedis {
         my ($k, @fields) = @_;
         # For pair meta HMGET, return per_page/pcount_delta JSON.
         if ($k eq 'LRR_DUPLICATE_PAIR_META') {
-            my $json = '{"per_page":[1,2,3,4,5],"pcount_delta":3,"algo_version":1,"ts":1}';
+            my $member = $fields[0] // '';
+            my $json = $member eq 'id_c|id_d'
+                ? '{"relation":"duplicate","confidence":0.82,"suggested_action":"delete_lower_quality","suggested_delete":"id_c","suggested_keep":"id_d","risk_flags":[],"lead_hamming":2,"title_score":0.95,"per_page":[1,2],"pcount_delta":3,"algo_version":2,"ts":1}'
+                : '{"relation":"subset","confidence":0.9,"suggested_action":"delete_subset","suggested_delete":"id_a","suggested_keep":"id_b","risk_flags":["deleting_preferred_language_subset"],"lead_hamming":1,"title_score":1,"per_page":[1,2,3,4,5],"pcount_delta":3,"algo_version":2,"ts":1}';
             $cb->([$json], undef) if $cb;
             return [$json];
         }
@@ -64,6 +67,24 @@ is($body->{pairs}[0]{id_a}, "id_a", "first pair id_a parsed");
 is($body->{pairs}[0]{id_b}, "id_b", "first pair id_b parsed");
 cmp_ok($body->{pairs}[0]{score}, "==", 4.5, "score passed through");
 is($body->{total}, 2, "total reported");
+is($body->{filtered_total}, 2, "filtered_total reported");
+is($body->{pairs}[0]{relation}, "subset", "relation metadata passed through");
+is($body->{pairs}[0]{suggested_delete}, "id_a", "suggested delete passed through");
+is_deeply($body->{pairs}[0]{risk_flags}, ["deleting_preferred_language_subset"], "risk flags passed through");
+
+note("GET /api/duplicates/pairs supports relation filtering");
+{
+    my $tx = Mojo::Transaction::HTTP->new;
+    my $c = Mojolicious::Controller->new(app => $t, tx => $tx);
+    $c->req->url->parse('/api/duplicates/pairs?max_score=20&relation=duplicate');
+
+    LANraragi::Controller::Api::Duplicates::pairs($c);
+
+    my $body = decode_json($c->res->body);
+    is(scalar @{$body->{pairs}}, 1, "relation filter returns one matching pair");
+    is($body->{filtered_total}, 1, "filtered_total counts relation-filtered pairs");
+    is($body->{pairs}[0]{relation}, "duplicate", "duplicate relation returned");
+}
 
 note("DELETE /api/duplicates/pairs adds member to dismissed set and removes from index");
 {
