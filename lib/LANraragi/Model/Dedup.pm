@@ -241,7 +241,7 @@ sub compute_pagehashes_for_archive {
     return 1;
 }
 
-use Mojo::JSON qw(encode_json);
+use Mojo::JSON qw(encode_json decode_json);
 
 # ---------------------------------------------------------------------------
 # Cover-only pass.
@@ -576,15 +576,23 @@ sub find_relation_duplicates_in_memory {
     my $candidates_seen = 0;
     my $truncated = 0;
 
+    my $updated = 0;   # existing pairs refreshed in place
+    my $removed = 0;   # stale relation pairs GC'd
+
     my ($members, $bucket_stats) = _candidate_members_from_signals($signals, $config);
+
+    # Members this run classifies as a real relation. Drives the GC below so we
+    # only drop relation pairs that genuinely no longer match.
+    my %live;
+
     for my $member (@$members) {
         if ($candidates_seen >= $cap) {
             $truncated = 1;
             last;
         }
         $candidates_seen++;
+        # Dismissed pairs stay dismissed across re-runs (durable user decision).
         next if $redis->sismember("LRR_DEDUP_DISMISSED", $member);
-        next if defined $redis->zscore("LRR_DUPLICATE_PAIRS", $member);
 
         my ($a, $b) = split /\|/, $member, 2;
         my $meta = classify_dedup_pair(
@@ -594,17 +602,51 @@ sub find_relation_duplicates_in_memory {
         );
         next if ($meta->{relation} // 'none') eq 'none';
 
+        $live{$member} = 1;
+
+        # Upsert instead of skip-if-present: refresh the pair in place and
+        # preserve its review status so re-runs don't discard progress. A pair
+        # not yet in the deck is a fresh find (status 'new').
+        my $existing_score = $redis->zscore("LRR_DUPLICATE_PAIRS", $member);
+        my $status = 'new';
+        if (defined $existing_score) {
+            my $prev = eval { decode_json($redis->hget("LRR_DUPLICATE_PAIR_META", $member) // '{}') } // {};
+            $status = $prev->{status} // 'new';
+            $updated++;
+        } else {
+            $stored++;
+        }
+
         $meta->{algo_version} = $algo;
-        $meta->{pass} = "relation";
-        $meta->{ts} = time();
+        $meta->{pass}         = "relation";
+        $meta->{status}       = $status;
+        $meta->{ts}           = time();
         my $distance_score = 1 - ($meta->{confidence} // 0);
         $redis->zadd("LRR_DUPLICATE_PAIRS", $distance_score, $member);
         $redis->hset("LRR_DUPLICATE_PAIR_META", $member, encode_json($meta));
-        $stored++;
+    }
+
+    # GC stale relation pairs: ones in the deck that this run did NOT classify
+    # (e.g. an archive was retagged/replaced/removed). Touches only relation-
+    # pass members — never pcount/cover pairs, never live pairs, never
+    # dismissed records. Replaces the old wholesale `del` that wiped the entire
+    # deck (including in-progress review) on every run. Skipped when truncated,
+    # since %live is then incomplete and would falsely flag valid pairs.
+    unless ($truncated) {
+        for my $member ($redis->zrange("LRR_DUPLICATE_PAIRS", 0, -1)) {
+            next if $live{$member};
+            my $m = eval { decode_json($redis->hget("LRR_DUPLICATE_PAIR_META", $member) // '{}') } // {};
+            next unless ($m->{pass} // '') eq 'relation';
+            $redis->zrem("LRR_DUPLICATE_PAIRS", $member);
+            $redis->hdel("LRR_DUPLICATE_PAIR_META", $member);
+            $removed++;
+        }
     }
 
     return {
         stored          => $stored,
+        updated         => $updated,
+        removed         => $removed,
         candidates      => $candidates_seen,
         truncated       => $truncated,
         dropped_buckets => $bucket_stats->{dropped_buckets},

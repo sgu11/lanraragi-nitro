@@ -840,11 +840,11 @@ sub add_tasks {
                 return;
             }
 
-            # Relation matching replaces the review deck contents. Dismissed
-            # pairs are preserved in LRR_DEDUP_DISMISSED and still skipped by
-            # the in-memory matcher.
-            $redis_cfg->del("LRR_DUPLICATE_PAIRS");
-            $redis_cfg->del("LRR_DUPLICATE_PAIR_META");
+            # Relation matching upserts into the shared deck: existing pairs
+            # are refreshed in place (review status preserved), pairs that no
+            # longer classify are GC'd by the matcher, and dismissed pairs stay
+            # dismissed via LRR_DEDUP_DISMISSED. No wholesale wipe — in-progress
+            # review survives re-runs (was: del LRR_DUPLICATE_PAIRS + META).
             my $result = LANraragi::Model::Dedup::find_relation_duplicates_in_memory(\%signals, $redis_cfg, $cfg);
             $redis_cfg->set("LRR_DEDUP_LAST_RELATION_SCAN", time());
             $redis_cfg->quit;
@@ -852,6 +852,8 @@ sub add_tasks {
             $logger->info(
                 "find_relation_duplicates: archives=" . scalar(keys %signals)
                 . " candidates=$result->{candidates} stored=$result->{stored}"
+                . " updated=" . ($result->{updated} // 0)
+                . " removed=" . ($result->{removed} // 0)
                 . " dropped_buckets=" . ($result->{dropped_buckets} // 0)
                 . " largest_bucket=" . ($result->{largest_bucket} // 0)
             );

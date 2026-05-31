@@ -27,6 +27,11 @@ sub pairs {
     my $limit     = ($req->param('limit')  // 50) + 0;
     my $relation  = $req->param('relation') // '';
     my $min_confidence = $req->param('min_confidence');
+    # Review lifecycle filter. Default 'new' shows only unreviewed pairs; pairs
+    # written before the status field existed have no status and count as new.
+    # 'all' bypasses the filter.
+    my $status = $req->param('status');
+    $status = (defined $status && length $status) ? $status : 'new';
     $limit = 200 if $limit > 200;
     $min_confidence = defined $min_confidence && length $min_confidence ? $min_confidence + 0 : undef;
 
@@ -76,6 +81,7 @@ sub pairs {
     my @filtered_tuples;
     for my $t (@raw_tuples) {
         my $meta = $meta_cache{$t->[0]} // {};
+        next if $status ne 'all' && (($meta->{status} // 'new') ne $status);
         next if length($relation) && ($meta->{relation} // '') ne $relation;
         next if defined($min_confidence) && (($meta->{confidence} // 0) + 0) < $min_confidence;
         push @filtered_tuples, $t;
