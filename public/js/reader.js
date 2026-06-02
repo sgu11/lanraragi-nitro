@@ -17,6 +17,8 @@ let pageThumbnails = [];
 let preloadedImg = {};
 let preloadedSizes = {};
 let spaceScroll = { timeout: null, animationId: null };
+let imageQuality = "auto";      // fork: reader image-rendering ("auto"|"high-quality"|"smooth-sharp"|"pixelated")
+let mobileFullscreen = true;    // fork: auto-enter fullscreen on first reading click
 //Spacebar Scroll Config
 let scrollConfig = {
     scrollDist: 75,      // Viewport % distance to scroll
@@ -88,6 +90,9 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
     $(document).on("click.toggle-full-screen", "#toggle-full-screen", () => toggleFullScreen());
     // Fork: middle-click anywhere toggles fullscreen (matches the "F or Middle-click" reader help string).
     $(document).on("auxclick.fullscreen", (e) => { if (e.button === 1) { e.preventDefault(); toggleFullScreen(); } });
+    // Fork: image-quality selector + auto-fullscreen toggle.
+    $("#image-quality input").on("click.image-quality", setImageQuality);
+    $(document).on("click.toggle-mobile-fullscreen", "#toggle-mobile-fullscreen input", toggleMobileFullscreen);
     $(document).on("click.toggle-auto-next-page", ".toggle-auto-next-page", toggleAutoNextPage);
     $(document).on("click.toggle-archive-overlay", "#toggle-archive-overlay", toggleArchiveOverlay);
     $(document).on("click.toggle-settings-overlay", "#toggle-settings-overlay", toggleSettingsOverlay);
@@ -633,6 +638,54 @@ export function initializeSettings() {
 
     markersVisible = localStorage.markersVisible === "true" || false;
     $("#toggle-stamps").prop("checked", markersVisible);
+
+    // fork: image quality / interpolation
+    imageQuality = localStorage.imageQuality || "auto";
+    $("#image-quality input").removeClass("toggled");
+    const qualityMap = { "auto": "#quality-auto", "high-quality": "#quality-high", "smooth-sharp": "#quality-sharp", "pixelated": "#quality-pixelated" };
+    $(qualityMap[imageQuality] || "#quality-auto").addClass("toggled");
+    applyImageQuality();
+
+    // fork: auto-fullscreen-on-first-click
+    mobileFullscreen = localStorage.mobileFullscreen !== "false"; // default true
+    $(mobileFullscreen ? "#mobile-fullscreen-on" : "#mobile-fullscreen-off").addClass("toggled");
+}
+
+// fork: apply image-rendering via an <html data-img-quality> attribute so it
+// covers all current AND future .reader-image elements without hooking the render path.
+function applyImageQuality() {
+    document.documentElement.setAttribute("data-img-quality", imageQuality || "auto");
+}
+
+function setImageQuality() {
+    const map = { "quality-auto": "auto", "quality-high": "high-quality", "quality-sharp": "smooth-sharp", "quality-pixelated": "pixelated" };
+    imageQuality = map[this.id] || "auto";
+    localStorage.imageQuality = imageQuality;
+    $("#image-quality input").removeClass("toggled");
+    $(`#${this.id}`).addClass("toggled");
+    applyImageQuality();
+}
+
+function toggleMobileFullscreen() {
+    mobileFullscreen = !mobileFullscreen;
+    localStorage.mobileFullscreen = mobileFullscreen;
+    $("#toggle-mobile-fullscreen input").toggleClass("toggled");
+}
+
+// fork: arm a one-shot capture-phase listener so the first real reading click
+// (no overlay open, not already fullscreen) enters fullscreen and is swallowed
+// before the bubble-phase page-navigation handler runs.
+function armAutoFullscreen() {
+    if (!mobileFullscreen || !fscreen.fullscreenEnabled) return;
+    const i3 = document.getElementById("i3");
+    if (!i3) return;
+    function autoFullscreen(e) {
+        if (fscreen.inFullscreen() || $("#overlay-shade").is(":visible")) return;
+        i3.removeEventListener("click", autoFullscreen, true);
+        e.stopPropagation();
+        handleFullScreen(true);
+    }
+    i3.addEventListener("click", autoFullscreen, true);
 }
 
 function initFullscreen() {
@@ -646,6 +699,7 @@ function initFullscreen() {
     }
 
     fscreen.onfullscreenchange = () => handleFullScreen(fscreen.fullscreenElement !== null);
+    armAutoFullscreen();
 }
 
 function initInfiniteScrollView() {

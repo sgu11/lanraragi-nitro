@@ -321,6 +321,11 @@ p#nb {
   z-index: 19;
 }
 
+/* fork: Image Quality setting — driven by <html data-img-quality> set in reader.js.
+   "auto"/"high-quality" use the browser default (no override). */
+html[data-img-quality="pixelated"] .reader-image { image-rendering: pixelated; }
+html[data-img-quality="smooth-sharp"] .reader-image { image-rendering: auto; filter: url(#sharpen); }
+
 .marker {
   position: absolute;
   width: 24px;
