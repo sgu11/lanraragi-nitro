@@ -1325,7 +1325,7 @@ function loadBookmarkStatus() {
 
 function updateMetadata() {
     const img = $("#img")[0];
-    const filename = img.dataset.filename;
+    const { filename } = img.dataset;
 
     const imgDoublePage = $("#img_doublepage")[0];
     const filenameDoublePage = imgDoublePage.dataset.filename;
@@ -1342,31 +1342,39 @@ function updateMetadata() {
     const heightDoublePage = imgDoublePage.naturalHeight;
     const widthView = width + widthDoublePage;
 
+    // Render with whatever size info we have now ("—" if unknown); refresh via async HEAD
+    // on the cold path instead of blocking the UI thread with a synchronous XHR.
+    const renderSingle = (s) => {
+        const text = `${filename} :: ${width} x ${height} :: ${s === undefined ? "—" : s} KB`;
+        $(".file-info").text(text).attr("title", text);
+    };
+    const renderDouble = (s1, s2) => {
+        const sizeView = (s1 === undefined || s2 === undefined) ? "—" : (s1 + s2);
+        $(".file-info").text(`${filename} - ${filenameDoublePage} :: ${widthView} x ${height} :: ${sizeView} KB`);
+        $(".file-info").attr("title", `${filename} :: ${width} x ${height} :: ${s1 ?? "—"} KB - ${filenameDoublePage} :: ${widthDoublePage} x ${heightDoublePage} :: ${s2 ?? "—"} KB`);
+    };
+    const fetchAndStore = (idx) => LRR.getImgSizeAsync(pages[idx]).then((s) => {
+        preloadedSizes[idx] = s;
+        return s;
+    });
+
     if (showingSinglePage) {
-        let size = preloadedSizes[currentPage];
-        if (!size) {
-            size = LRR.getImgSize(pages[currentPage]);
-            preloadedSizes[currentPage] = size;
-            $(".file-info").text(`${filename} :: ${width} x ${height} :: ${size} KB`);
-            $(".file-info").attr("title", `${filename} :: ${width} x ${height} :: ${size} KB`);
-        } else {
-            $(".file-info").text(`${filename} :: ${width} x ${height} :: ${size} KB`);
-            $(".file-info").attr("title", `${filename} :: ${width} x ${height} :: ${size} KB`);
+        const size = preloadedSizes[currentPage];
+        renderSingle(size);
+        if (size === undefined) {
+            const idx = currentPage;
+            fetchAndStore(idx).then((s) => { if (currentPage === idx) renderSingle(s); });
         }
     } else {
-        let size = preloadedSizes[currentPage];
-        let sizePre = preloadedSizes[currentPage + 1];
-
-        if (!size || !sizePre) {
-            size = LRR.getImgSize(pages[currentPage]);
-            sizePre = LRR.getImgSize(pages[currentPage + 1]);
-            preloadedSizes[currentPage] = size;
-            preloadedSizes[currentPage + 1] = sizePre;
+        const size = preloadedSizes[currentPage];
+        const sizePre = preloadedSizes[currentPage + 1];
+        renderDouble(size, sizePre);
+        if (size === undefined || sizePre === undefined) {
+            const idx = currentPage;
+            Promise.all([fetchAndStore(idx), fetchAndStore(idx + 1)]).then(([s1, s2]) => {
+                if (currentPage === idx) renderDouble(s1, s2);
+            });
         }
-
-        const sizeView = size + sizePre;
-        $(".file-info").text(`${filename} - ${filenameDoublePage} :: ${widthView} x ${height} :: ${sizeView} KB`);
-        $(".file-info").attr("title", `${filename} :: ${width} x ${height} :: ${size} KB - ${filenameDoublePage} :: ${widthDoublePage} x ${heightDoublePage} :: ${sizePre} KB`);
     }
 
     // Update page numbers in the paginator

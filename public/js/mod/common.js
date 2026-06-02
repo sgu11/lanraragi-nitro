@@ -529,22 +529,15 @@ export function showPopUp(c) {
 }
 
 /**
- * Fires a HEAD request to get filesize of a given URL.
- * return target img size.
+ * Fires an async HEAD request to get the filesize of a given URL.
+ * Returns a Promise resolving to the size in KB (0 on error/missing header).
+ * Replaces the old synchronous $.ajax HEAD that blocked the UI thread on page turns.
  * @param {string} target Target URL String
  */
-export function getImgSize(target) {
-    let imgSize = 0;
-    $.ajax({
-        async: false,
-        url: target,
-        cache: true,
-        type: "HEAD",
-        success: (data, textStatus, request) => {
-            imgSize = parseInt(request.getResponseHeader("Content-Length") / 1024, 10);
-        },
-    });
-    return imgSize;
+export function getImgSizeAsync(target) {
+    return fetch(target, { method: "HEAD", cache: "force-cache" })
+        .then((res) => parseInt((res.headers.get("Content-Length") || 0) / 1024, 10))
+        .catch(() => 0);
 }
 
 /**
