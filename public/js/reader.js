@@ -19,6 +19,8 @@ let preloadedSizes = {};
 let spaceScroll = { timeout: null, animationId: null };
 let imageQuality = "auto";      // fork: reader image-rendering ("auto"|"high-quality"|"smooth-sharp"|"pixelated")
 let mobileFullscreen = true;    // fork: auto-enter fullscreen on first reading click
+let spreadStart = "auto";       // fork: double-page spread-start mode ("auto"|"always"=cover+first|"none"=cover-alone)
+let doublePageOffset = false;   // fork: when true, pair the cover (page 0) with page 1
 //Spacebar Scroll Config
 let scrollConfig = {
     scrollDist: 75,      // Viewport % distance to scroll
@@ -90,9 +92,10 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
     $(document).on("click.toggle-full-screen", "#toggle-full-screen", () => toggleFullScreen());
     // Fork: middle-click anywhere toggles fullscreen (matches the "F or Middle-click" reader help string).
     $(document).on("auxclick.fullscreen", (e) => { if (e.button === 1) { e.preventDefault(); toggleFullScreen(); } });
-    // Fork: image-quality selector + auto-fullscreen toggle.
+    // Fork: image-quality selector + auto-fullscreen toggle + double-page spread-start.
     $("#image-quality input").on("click.image-quality", setImageQuality);
     $(document).on("click.toggle-mobile-fullscreen", "#toggle-mobile-fullscreen input", toggleMobileFullscreen);
+    $(document).on("click.toggle-spread-start", "#toggle-spread-start input", cycleSpreadStart);
     $(document).on("click.toggle-auto-next-page", ".toggle-auto-next-page", toggleAutoNextPage);
     $(document).on("click.toggle-archive-overlay", "#toggle-archive-overlay", toggleArchiveOverlay);
     $(document).on("click.toggle-settings-overlay", "#toggle-settings-overlay", toggleSettingsOverlay);
@@ -207,7 +210,7 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
 
         let page = currentPage + 1;
 
-        if (doublePageMode && currentPage > 0
+        if (doublePageMode && (currentPage > 0 || doublePageOffset)
             && currentPage < maxPage) {
             if (img.id == "img_doublepage") {
                 page += 1;
@@ -411,6 +414,8 @@ export function loadContentData() {
             content.pages = data.pagecount;
             content.tags = data.tags;
             content.summary = data.summary;
+
+            setSpreadStart(data.spreadstart || "auto"); // fork: per-archive double-page spread-start
 
             updateProgress(data, id);
 
@@ -672,6 +677,37 @@ function toggleMobileFullscreen() {
     $("#toggle-mobile-fullscreen input").toggleClass("toggled");
 }
 
+// fork: double-page spread-start control (auto / cover+first / cover-alone), persisted per-archive.
+function setSpreadStart(value) {
+    spreadStart = value;
+    doublePageOffset = value === "always"; // "always" = pair the cover with page 1 (cover+first)
+    $("#toggle-spread-start input").removeClass("toggled");
+    $(`#spread-${value}`).addClass("toggled");
+}
+
+function getPageNavigationOffset(targetPage) {
+    let offset = targetPage;
+    if (doublePageMode && !showingSinglePage && (currentPage > 0 || doublePageOffset)) {
+        offset *= 2;
+    }
+    return offset;
+}
+
+function cycleSpreadStart() {
+    if (!doublePageMode || infiniteScroll) { return; }
+    const modes = ["auto", "always", "none"];
+    const next = modes[(modes.indexOf(spreadStart) + 1) % modes.length];
+    const wasOffset = doublePageOffset;
+    setSpreadStart(next);
+    // Persist per-archive (backend: PUT /api/archives/{id}/spreadstart)
+    fetch(new LRR.ApiURL(`/api/archives/${id}/spreadstart?value=${next}`), { method: "PUT" });
+    // Re-pair the current view after changing the cover offset
+    let dest = currentPage;
+    if (next === "always" && currentPage > 0) { dest = currentPage - 1; }
+    else if (next !== "always" && currentPage > 0 && wasOffset) { dest = currentPage + 1; }
+    goToPage(Math.max(0, Math.min(dest, maxPage)));
+}
+
 // fork: arm a one-shot capture-phase listener so the first real reading click
 // (no overlay open, not already fullscreen) enters fullscreen and is swallowed
 // before the bubble-phase page-navigation handler runs.
@@ -812,6 +848,9 @@ function handleShortcuts(e) {
             break;
         case 72: // h
             toggleHelp();
+            break;
+        case 74: // j — fork: cycle double-page spread start (auto / cover+first / cover-alone)
+            cycleSpreadStart();
             break;
         case 77: // m
             toggleMangaMode();
@@ -1139,7 +1178,7 @@ function loadStamps(currentPage) {
                 markers.push(markerData);
             }
 
-            if (doublePageMode && currentPage > 0
+            if (doublePageMode && (currentPage > 0 || doublePageOffset)
             && currentPage < maxPage) {
 
                 const { arcId: id2, localPage: p2 } = getArchiveForPage(currentPage + 1);
@@ -1351,7 +1390,7 @@ async function goToPage(page) {
         $("#img_doublepage").attr("src", "");
         $("#img_doublepage").attr("data-filename", "");
         $("#display").removeClass("double-mode");
-        if (doublePageMode && currentPage > 0
+        if (doublePageMode && (currentPage > 0 || doublePageOffset)
             && currentPage < maxPage) {
             // Composite an image and use that as the source
             const img1 = await loadImage(currentPage);
@@ -1939,10 +1978,7 @@ function changePage(targetPage, resetAuto = false) {
     } else if (targetPage === "last") {
         destination = mangaMode ? 0 : maxPage;
     } else {
-        let offset = targetPage;
-        if (doublePageMode && !showingSinglePage && currentPage > 0) {
-            offset *= 2;
-        }
+        const offset = getPageNavigationOffset(targetPage);
         destination = currentPage + (mangaMode ? -offset : offset);
     }
     goToPage(destination);

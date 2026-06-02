@@ -231,6 +231,14 @@
     <input id="double-page" class="favtag-btn config-btn" type="button" value="[% c.lh('Double') %]">
 </div>
 
+<div id="toggle-spread-start">
+    <h2 class="config-panel"> [% c.lh("Spread Start (double-page)") %] </h2>
+    <span class="config-panel">[% c.lh("Where two-page spreads begin. Press J to cycle.") %]</span>
+    <input id="spread-auto" class="favtag-btn config-btn" type="button" value="[% c.lh('Auto') %]">
+    <input id="spread-always" class="favtag-btn config-btn" type="button" value="[% c.lh('Cover + first') %]">
+    <input id="spread-none" class="favtag-btn config-btn" type="button" value="[% c.lh('Cover alone') %]">
+</div>
+
 <div id="toggle-manga-mode">
     <h2 class="config-panel"> [% c.lh("Reading Direction") %] </h2>
     <span class="config-panel"></span>
