@@ -3,7 +3,7 @@
 <head>
     <title>[% title %]</title>
 
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width" />
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="apple-mobile-web-status-bar-style" content="black" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -20,26 +20,19 @@
     <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/jquery.contextMenu.min.css") %]" />
     [% csshead %]
 
-    <script defer src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/javascript"></script>
-    <script defer src="[% c.url_for("/js/vendor/preact.umd.js") %]" type="text/JAVASCRIPT"></script>
-    <script defer src="[% c.url_for("/js/vendor/hooks.umd.js") %]" type="text/JAVASCRIPT"></script>
-    <script defer src="[% c.url_for("/js/vendor/compat.umd.js") %]" type="text/JAVASCRIPT"></script>
-    <script defer src="[% c.url_for("/js/react-alias.js?$version") %]" type="text/JAVASCRIPT"></script>
-    <script defer src="[% c.url_for("/js/vendor/clsx.min.js") %]" type="text/JAVASCRIPT"></script>
-    <script defer src="[% c.url_for("/js/vendor/react-toastify.umd.js") %]" type="text/JAVASCRIPT"></script>
-    <script defer src="[% c.url_for("/js/vendor/sweetalert2.min.js") %]" type="text/JAVASCRIPT"></script>
-    <script defer src="[% c.url_for("/js/vendor/raty.min.js") %]" type="text/JAVASCRIPT"></script>
+    [% INCLUDE common/importmap %]
 
-    <script defer src="[% c.url_for("/js/i18n.js?$version") %]" type="text/JAVASCRIPT"></script>
-    <script defer src="[% c.url_for("/js/mod/common.js?$version") %]" type="text/javascript"></script>
-    <script defer src="[% c.url_for("/js/mod/server.js?$version") %]" type="text/javascript"></script>
-    <script defer src="[% c.url_for("/js/reader.js?$version") %]" type="text/javascript"></script>
+    <script src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/javascript"></script>
+    <script src="[% c.url_for("/js/vendor/raty.min.js") %]" type="text/JAVASCRIPT"></script>
+    <script src="[% c.url_for("/js/vendor/jquery.contextMenu.min.js") %]" type="text/JAVASCRIPT"></script>
 
     <script type="module">
-        import('[% c.url_for("/js/vendor/fscreen.esm.js") %]').then(r => {
-            window.fscreen = r.default;
-            Reader.initializeAll();
-        })
+        import * as Reader from "[% c.url_for("/js/reader.js?$version") %]";
+
+        const trackProgressLocally = "[% use_local %]" === "1";
+        const authenticateProgress = "[% auth_progress %]" === "1";
+
+        Reader.initializeAll(trackProgressLocally, authenticateProgress);
     </script>
 </head>
 
@@ -62,7 +55,7 @@
             <div id="overlay-page" class="focus-overlay"></div>
 
             <a id="display">
-                <img id="img" class="reader-image" src="[% first_page_url %]" fetchpriority="high"><img id="img_doublepage" class="reader-image" src="" fetchpriority="high">
+                <img id="img" class="reader-image" src="" fetchpriority="high"><img id="img_doublepage" class="reader-image" src="" fetchpriority="high">
             </a>
 
         </div>
@@ -92,14 +85,6 @@
         </div>
 
     </div>
-
-    <script>
-        // Stash on window so reader.js (deferred) can pick these up once Reader is defined.
-        window.__lrrReaderBootstrap = {
-            trackProgressLocally: "[% use_local %]" === "1",
-            authenticateProgress: "[% auth_progress %]" === "1",
-        };
-    </script>
 
     <div id="overlay-shade"></div>
     <div id="archivePagesOverlay" class="id1 base-overlay page-overlay" style="display:none" loaded="false">
@@ -178,14 +163,6 @@
         [% INCLUDE config %]
     </div>
 
-    <canvas id="dpcanvas" style="display:none" width="100" height="100"></canvas>
-
-    <svg style="display:none; position:absolute; width:0; height:0">
-        <filter id="sharpen">
-            <feConvolveMatrix order="3" kernelMatrix="0 -0.5 0 -0.5 3 -0.5 0 -0.5 0" preserveAlpha="true"/>
-        </filter>
-    </svg>
-
     <div id="reader-help" style="display: none;">
         <div class="navigation-help-toast">
             [% c.lh("You can navigate between pages using:") %]
@@ -200,10 +177,9 @@
                 <li>[% c.lh("M: toggle manga mode (right-to-left reading)") %]</li>
                 <li>[% c.lh("O: show advanced reader options.") %]</li>
                 <li>[% c.lh("P: toggle double page mode") %]</li>
-                <li>[% c.lh("J: cycle spread start mode (auto, cover+first, cover alone)") %]</li>
                 <li>[% c.lh("Q: bring up the thumbnail index and archive options.") %]</li>
                 <li>[% c.lh("R: open a random archive.") %]</li>
-                <li>[% c.lh("F or Middle-click: toggle fullscreen mode") %]</li>
+                <li>[% c.lh("F: toggle fullscreen mode") %]</li>
                 <li>[% c.lh("B: toggle bookmark") %]</li>
                 <li>[% c.lh("N: toggle auto next page") %]</li>
                 <li>[% c.lh("G: go to page number") %]</li>
@@ -243,25 +219,10 @@
     <input id="container-width-apply" class="favtag-btn config-btn" type="button" style="display:inline;" value="[% c.lh('Apply') %]">
 </div>
 
-<div id="image-quality">
-    <h2 class="config-panel"> [% c.lh("Image Quality") %] </h2>
-    <input id="quality-auto" class="favtag-btn config-btn" type="button" value="[% c.lh('Auto') %]">
-    <input id="quality-high" class="favtag-btn config-btn" type="button" value="[% c.lh('High Quality') %]">
-    <input id="quality-sharp" class="favtag-btn config-btn" type="button" value="[% c.lh('Sharp') %]">
-    <input id="quality-pixelated" class="favtag-btn config-btn" type="button" value="[% c.lh('Pixelated') %]">
-</div>
-
 <div id="toggle-double-mode">
     <h2 class="config-panel"> [% c.lh("Page Rendering") %] </h2>
     <input id="single-page" class="favtag-btn config-btn" type="button" value="[% c.lh('Single') %]">
     <input id="double-page" class="favtag-btn config-btn" type="button" value="[% c.lh('Double') %]">
-</div>
-
-<div id="toggle-spread-start">
-    <h2 class="config-panel"> [% c.lh("Spread Start") %] </h2>
-    <input id="spread-auto" class="favtag-btn config-btn" type="button" value="[% c.lh('Auto') %]">
-    <input id="spread-always" class="favtag-btn config-btn" type="button" value="[% c.lh('Cover + first') %]">
-    <input id="spread-none" class="favtag-btn config-btn" type="button" value="[% c.lh('Cover alone') %]">
 </div>
 
 <div id="toggle-manga-mode">
@@ -306,14 +267,6 @@
     </span>
     <input id="infinite-scroll-on" class="favtag-btn config-btn" type="button" value="[% c.lh('Enabled') %]">
     <input id="infinite-scroll-off" class="favtag-btn config-btn" type="button" value="[% c.lh('Disabled') %]">
-</div>
-
-<div id="toggle-mobile-fullscreen">
-    <h2 class="config-panel"> [% c.lh("Auto Fullscreen") %] </h2>
-    <span class="config-panel">[% c.lh("Automatically enter fullscreen on your first click or tap when reading.") %]
-    </span>
-    <input id="mobile-fullscreen-on" class="favtag-btn config-btn" type="button" value="[% c.lh('Enabled') %]">
-    <input id="mobile-fullscreen-off" class="favtag-btn config-btn" type="button" value="[% c.lh('Disabled') %]">
 </div>
 
 <div id="auto-next-page">

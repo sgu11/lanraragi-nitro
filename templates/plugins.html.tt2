@@ -1,15 +1,15 @@
 <!DOCTYPE html>
-
+<html>
 <head>
 	<title>[% title %] - [% c.lh("Plugin Configuration") %]</title>
 
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<meta name="viewport" content="width=device-width" />
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 	<meta name="apple-mobile-web-status-bar-style" content="black" />
 	<meta name="mobile-web-app-capable" content="yes" />
 	<meta name="apple-mobile-web-app-capable" content="yes" />
 
-	<link type="image/png" rel="icon" href="favicon.ico" />
+	<link type="image/png" rel="icon" href="/favicon.ico" />
 	<link rel="manifest" href="app.webappmanifest" />
 	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$version") %]" />
 	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/config.css") %]" />
@@ -21,22 +21,14 @@
 	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/sweetalert2.min.css") %]" />
 	[% csshead %]
 
-	<script defer src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/preact.umd.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/hooks.umd.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/compat.umd.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/react-alias.js?$version") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/clsx.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/react-toastify.umd.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/jquery.ui.widget.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/jquery.fileupload.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/allcollapsible.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/sweetalert2.min.js") %]" type="text/JAVASCRIPT"></script>
+	[% INCLUDE common/importmap %]
 
-	<script defer src="[% c.url_for("/js/i18n.js?$version") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/mod/common.js?$version") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/mod/server.js?$version") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/plugins.js?$version") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/jquery.ui.widget.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/jquery.fileupload.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/allcollapsible.min.js") %]" type="text/JAVASCRIPT"></script>
+
+	<script src="[% c.url_for("/js/plugins.js?$version") %]" type="module"></script>
 
 </head>
 
