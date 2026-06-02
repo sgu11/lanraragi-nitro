@@ -6,6 +6,10 @@ import I18N from "i18n";
 
 let isScriptRunning = false;
 
+// Inflight request cache: deduplicates concurrent GETs to the same URL.
+// Only applied to GET; side-effectful verbs must not be merged.
+const inflight = new Map();
+
 /**
  * Call that shows a popup to the user on success/failure.
  * Returns the promise so you can add final callbacks if needed.
@@ -17,9 +21,27 @@ let isScriptRunning = false;
  * @returns The result of the callback, or NULL.
  */
 export function callAPI(endpoint, method, successMessage, errorMessage, successCallback) {
-    let endpointUrl = new LRR.ApiURL(endpoint);
-    return fetch(endpointUrl, { method })
-        .then((response) => response.json())
+    const endpointUrl = new LRR.ApiURL(endpoint);
+    const verb = method || "GET";
+    const dedupKey = verb === "GET" ? `GET ${endpointUrl}` : null;
+
+    let dataPromise;
+    if (dedupKey && inflight.has(dedupKey)) {
+        dataPromise = inflight.get(dedupKey);
+    } else {
+        dataPromise = fetch(endpointUrl, { method: verb }).then((response) => response.json());
+        if (dedupKey) {
+            inflight.set(dedupKey, dataPromise);
+            // then(onFulfilled, onRejected) rather than finally() so cleanup doesn't
+            // create an unhandled rejection when fetch errors out.
+            const cleanup = () => {
+                if (inflight.get(dedupKey) === dataPromise) inflight.delete(dedupKey);
+            };
+            dataPromise.then(cleanup, cleanup);
+        }
+    }
+
+    return dataPromise
         .then((data) => {
             if (Object.prototype.hasOwnProperty.call(data, "success") && !data.success) {
                 throw new Error(data.error);

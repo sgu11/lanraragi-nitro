@@ -3,7 +3,7 @@
 <head>
     <title>[% title %]</title>
 
-    <meta name="viewport" content="width=device-width" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="apple-mobile-web-status-bar-style" content="black" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -55,7 +55,7 @@
             <div id="overlay-page" class="focus-overlay"></div>
 
             <a id="display">
-                <img id="img" class="reader-image" src="" fetchpriority="high"><img id="img_doublepage" class="reader-image" src="" fetchpriority="high">
+                <img id="img" class="reader-image" src="[% first_page_url %]" fetchpriority="high"><img id="img_doublepage" class="reader-image" src="" fetchpriority="high">
             </a>
 
         </div>
