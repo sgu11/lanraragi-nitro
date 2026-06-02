@@ -39,6 +39,7 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
         return ( -1, -1, () );
     }
 
+    $filter = $filter // "";
     my $tankcount = $redis->scard("LRR_TANKGROUPED") + 0;
 
     # Tank-id count via the LRR_TANKS maintained set (B.3). Falls back to a
