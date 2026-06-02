@@ -62,6 +62,7 @@ sub index {
             auth_progress  => $self->LRR_CONF->enable_authprogress,
             id             => $id,
             first_page_url => $first_page_url,
+            is_tank        => ( $id =~ /^TANK_/ ? 1 : 0 ),
             arc_categories => \@arc_categories,
             categories     => \@categories,
             csshead        => generate_themes_header($self),

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-
+<html>
 <head>
 	<title>[% title %]</title>
 
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<meta name="viewport" content="width=device-width" />
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 	<meta name="apple-mobile-web-status-bar-style" content="black" />
 	<meta name="mobile-web-app-capable" content="yes" />
@@ -23,31 +23,31 @@
 	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/sweetalert2.min.css") %]" />
 	[% csshead %]
 
-	<script defer src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/jquery.dataTables.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/preact.umd.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/hooks.umd.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/compat.umd.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/react-alias.js?$version") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/clsx.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/react-toastify.umd.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/jquery.ui.position.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/jquery.contextMenu.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/awesomplete.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/popper.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/tippy-bundle.umd.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/marked.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/allcollapsible.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/swiper-bundle.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/sweetalert2.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/vendor/clipboard.min.js") %]" type="text/JAVASCRIPT"></script>
+	[% INCLUDE common/importmap %]
 
-	<script defer src="[% c.url_for("/js/i18n.js?$version") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/selection.js?$version") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/mod/index.js?$version") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/mod/common.js?$version") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/mod/server.js?$version") %]" type="text/JAVASCRIPT"></script>
-	<script defer src="[% c.url_for("/js/mod/index_datatables.js?$version") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/jquery.dataTables.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/jquery.ui.position.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/jquery.contextMenu.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/awesomplete.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/popper.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/tippy-bundle.umd.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/allcollapsible.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/swiper-bundle.min.js") %]" type="text/JAVASCRIPT"></script>
+	<script src="[% c.url_for("/js/vendor/clipboard.min.js") %]" type="text/JAVASCRIPT"></script>
+
+	<script type="module">
+		import * as Index from "mod/index";
+		import * as IndexTable from "mod/index_datatables";
+		import * as LRR from "mod/common";
+
+		jQuery(() => {
+			Index.initializeAll();
+			window.Index = Index;
+			window.IndexTable = IndexTable;
+			window.LRR = LRR;
+		});
+	</script>
 
 </head>
 
@@ -59,7 +59,7 @@
 		<a href="[% c.url_for("/upload") %]">[% c.lh("Add Archives") %]</a>
 		<span style="margin-left:5px"></span>
 		<i class="fa fa-caret-right"></i>
-		<a href="[% c.url_for("/batch") %]">[% c.lh("Batch Operations") %]</a>
+		<a href="[% c.url_for("/duplicates") %]">[% c.lh("Duplicate Detection") %]</a>
 		<span style="margin-left:5px"></span>
 		<i class="fa fa-caret-right"></i>
 		<a href="[% c.url_for("/config") %]">[% c.lh("Settings") %]</a>
@@ -89,11 +89,11 @@
 				<div id="category-container">
 					<!-- Categories go here -->
 				</div>
-				<input type='text' id='search-input' class='search stdinput' size='90' style='width:95%'
+				<input type='text' id='search-input' class='search stdinput'  
 					placeholder='[% c.lh("Search Title, Artist, Series, Language or Tags") %]' />
 				<input id='apply-search' class='searchbtn stdbtn' type='button' value='[% c.lh("Apply Filter") %]' />
 				<input id='clear-search' class='searchbtn stdbtn' type='button' value='[% c.lh("Clear Filter") %]' />
-				<input id='toggle-carousel-visibility' class='searchbtn stdbtn' type='button' value='[% c.lh("Hide Carousel") %]' />
+				<input id='msm-toggle' class='searchbtn stdbtn' type='button' value='[% c.lh("Select Archives") %]' />
 			</div>
 
 			<ul class="collapsible index-carousel with-right-caret">
@@ -106,10 +106,22 @@
 							title="[% c.lh('Click to show archives from the current search with the specified filter') %]">...</div>
 					</div>
 					<div class="collapsible-right">
-						<a class="fa fa-2x fa-sync-alt" style="margin-bottom: -4px; display:none" id="reload-carousel"
+						<a class="fa fa-2x fa-sync-alt carousel-icon" style="margin-bottom: -4px; display:none" id="reload-carousel"
 							href="#" title="[% c.lh('Refresh Selection') %]"></a>
-						<a class="fa fa-2x fa-ellipsis-h" style="margin-bottom: -4px; margin-left: 12px"
+						<a class="fa fa-2x fa-ellipsis-h carousel-icon" style="margin-bottom: -4px; margin-left: 12px"
 							id="carousel-mode-menu" href="#" title="[% c.lh('Carousel Options') %]"></a>
+
+						<div id="msm-carousel-controls" style="margin-bottom: -4px; display:none">
+							<span id="msm-selection-count"></span>
+							<a class="fa fa-2x fa-hammer carousel-icon" style="margin-left: 12px" id="msm-batch-ops" 
+								href="#" title="[% c.lh('Run Batch Operations on selection') %]"></a>
+							<a class="fa fa-2x fa-compress-alt carousel-icon" style="margin-left: 12px" id="msm-merge"
+								href="#" title="[% c.lh('Merge Archives into Tankoubon') %]"></a>
+							<a class="fa fa-2x fa-eject carousel-icon" style="margin-left: 12px" id="msm-clear"
+								href="#" title="[% c.lh('Clear selection') %]"></a>
+							<a class="fa fa-2x fa-check-double carousel-icon" style="margin-left: 12px" id="msm-select-page" 
+								href="#" title="[% c.lh('Select All in Page') %]"></a>
+						</div>
 					</div>
 
 					<div class="collapsible-body" style="flex: 1 0 100%;overflow: hidden;box-sizing: border-box;">
@@ -123,8 +135,8 @@
 							</div>
 							<div id="carousel-empty"
 								style="height: 344px; display: flex; justify-content: center; align-items: center; flex-direction: column;">
-								<i class="fa fa-4x fa-sad-cry"></i>
-								<span style="margin-top: 12px;">[% c.lh("No results here.") %]</span>
+								<i class="fa fa-4x fa-glasses"></i>
+								<span id="carousel-empty-text" style="margin-top: 12px;">[% c.lh("No results here.") %]</span>
 							</div>
 						</div>
 					</div>
@@ -139,20 +151,7 @@
 					</select>
 					<a class="fa fa-sort-alpha-down fa-2x table-option" id="order-sortby" href="#"
 						title="[% c.lh('Sort Order') %]"></a>
-
-					<input id="thumbnail-crop" class="fa table-option" type="checkbox"
-					title="[% c.lh('If enabled, thumbnails that don\'t fit a regular A4 page will be cropped to only show the left side.') %]">
-					<label for="thumbnail-crop" style="vertical-align: middle; padding-top:6px">[% c.lh("Crop thumbnails") %]</label>
-
-					[% IF userlogged %]
-					<span id="bulk-selection-banner" style="display:none">
-						<span class="bulk-count">0 [% c.lh('selected') %]</span>
-						<button type="button" id="bulk-select-page" class="bulk-btn">[% c.lh('Select page') %]</button>
-						<button type="button" id="bulk-clear" class="bulk-btn">[% c.lh('Clear') %]</button>
-						<button type="button" id="bulk-delete" class="bulk-btn"><i class="fas fa-trash-alt"></i> [% c.lh('Delete') %]</button>
-					</span>
-					[% END %]
-				</div>
+				</div>			
 				<div class="compact-options">[% c.lh("Columns:") %]
 					<select class="favtag-btn" id="columnCount">
 						<script>  
@@ -195,11 +194,12 @@
 
 	<button id="pseudo-copy-btn" data-clipboard-text="" style="display: none">click me</button>
 
-	<script>
+	<script type="module">
+		import * as Index from "mod/index";
+		import I18N from "i18n";
 
-		// Last few remains of JS using server-provided data.
-		// Wrap in DOMContentLoaded so deferred scripts (jQuery, LRR, Index, $.contextMenu) are loaded first.
-		document.addEventListener("DOMContentLoaded", () => {
+		// Last few remains of JS using server-provided data
+		jQuery(() => {
 
 			[% IF usingdefpass %]
 			//If the json has the "default password" flag, flash a friendly notification inviting the user to change his password
@@ -229,41 +229,34 @@
 				selector: '.context-menu',
 				build: ($trigger, e) => {
 					const id = $trigger.attr("id");
-					// Bulk branch: right-clicked card is in the active selection.
-					if (typeof Selection !== "undefined" && Selection.has(id) && Selection.size() > 0) {
-						return {
-							callback: function (key) { Index.handleBulkAction(key); },
-							items: {
-								[% IF userlogged %]
-								"delete": { name: "[% c.lh('Delete') %] (" + Selection.size() + ")", icon: "fas fa-trash-alt" }
-								[% ELSE %]
-								"noop": { name: "[% c.lh('Log in to perform bulk actions') %]", icon: "fas fa-lock" }
-								[% END %]
-							}
-						};
-					}
-					// Single-archive branch (unchanged).
+					const isTankoubon = id && id.startsWith("TANK_");
 					return {
 						callback: function (key, options) {
 							Index.handleContextMenu(key, $(this).attr("id"));
 						},
 						items: {
 							"read": { name: "[% c.lh('Read') %]", icon: "fas fa-book" },
-							"download": { name: "[% c.lh('Download') %]", icon: "fas fa-save" },
+							...(!isTankoubon ? { "download": { name: "[% c.lh('Download') %]", icon: "fas fa-save" } } : {}),
 							"copy link": { name: "[% c.lh('Copy link') %]", icon: "fas fa-link" },
+							"msm-toggle-archive": {
+								name: Index.selectedArchives.has(id)
+									? I18N.MSMRemoveFromSelection
+									: I18N.MSMAddToSelection,
+								icon: "fas fa-check-square"
+							},
 							[% IF userlogged %]
 							"sep1": "---------",
 							"edit": { name: "[% c.lh('Edit Metadata') %]", icon: "fas fa-pencil-alt" },
 							"delete": { name: "[% c.lh('Delete') %]", icon: "fas fa-trash-alt" },
-							"rating": {
-							    "name": "[% c.lh('Add Rating') %]",
-							    "icon": "fas fa-star",
-							    "items": Index.loadContextMenuRatings($trigger.attr("id"))
-							},
+								"rating": {
+								    "name": "[% c.lh('Add Rating') %]",
+								    "icon": "fas fa-star",
+								    "items": LRR.loadContextMenuRatings(id)
+								},
 							"collections": {
 								"name": "[% c.lh('Add to Category') %]",
 								"icon": "fas fa-search-plus",
-								"items": Index.loadContextMenuCategories(catList, $trigger.attr("id"))
+								"items": LRR.loadContextMenuCategories(catList, id)
 							}
 							[% END %]
 						}
