@@ -1,4 +1,4 @@
-"use strict";
+import * as LRR from "mod/common";
 
 const Duplicates = {};
 
@@ -43,7 +43,7 @@ Duplicates.deckIsStale = function () {
 };
 
 Duplicates.refreshStats = function () {
-    fetch(new LRR.apiURL("/api/duplicates/stats"))
+    fetch(new LRR.ApiURL("/api/duplicates/stats"))
         .then((r) => r.json())
         .then((s) => {
             const pending = s.archives_pending || 0;
@@ -107,7 +107,7 @@ Duplicates.rebuildDeckIfStale = function () {
 
 Duplicates.loadPairs = function () {
     const url =
-        new LRR.apiURL("/api/duplicates/pairs") +
+        new LRR.ApiURL("/api/duplicates/pairs") +
         `?max_score=${encodeURIComponent(Duplicates.state.threshold)}` +
         `&limit=${Duplicates.state.limit}` +
         (Duplicates.state.relation ? `&relation=${encodeURIComponent(Duplicates.state.relation)}` : "");
@@ -159,8 +159,8 @@ Duplicates.renderPairs = function (pairs) {
                 $side.append(`<div class="dupe-side-role">${isDelete ? "Suggested delete" : "Suggested keep"}</div>`);
             }
             $side.append(
-                `<a href="${new LRR.apiURL("/reader?id=" + encodeURIComponent(archive.arcid))}">` +
-                    `<img class="dupe-thumb" src="${new LRR.apiURL("/api/archives/" + encodeURIComponent(archive.arcid) + "/thumbnail")}" alt="${LRR.encodeHTML(archive.title || "")}" />` +
+                `<a href="${new LRR.ApiURL("/reader?id=" + encodeURIComponent(archive.arcid))}">` +
+                    `<img class="dupe-thumb" src="${new LRR.ApiURL("/api/archives/" + encodeURIComponent(archive.arcid) + "/thumbnail")}" alt="${LRR.encodeHTML(archive.title || "")}" />` +
                     `</a>`,
             );
             $side.append(`<div class="dupe-title">${$(`<div></div>`).text(archive.title || archive.name).html()}</div>`);
@@ -221,13 +221,13 @@ Duplicates.fetchJSON = function (url, init) {
 
 Duplicates.deleteArchive = function (arcid) {
     return Duplicates.fetchJSON(
-        new LRR.apiURL("/api/archives/" + encodeURIComponent(arcid)),
+        new LRR.ApiURL("/api/archives/" + encodeURIComponent(arcid)),
         { method: "DELETE" },
     );
 };
 
 Duplicates.dismissPair = function (pair) {
-    return Duplicates.fetchJSON(new LRR.apiURL("/api/duplicates/pairs"), {
+    return Duplicates.fetchJSON(new LRR.ApiURL("/api/duplicates/pairs"), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pair }),
@@ -236,21 +236,21 @@ Duplicates.dismissPair = function (pair) {
 
 Duplicates.queueFind = function () {
     return Duplicates.fetchJSON(
-        new LRR.apiURL("/api/minion/find_relation_duplicates/queue?args=[]"),
+        new LRR.ApiURL("/api/minion/find_relation_duplicates/queue?args=[]"),
         { method: "POST" },
     );
 };
 
 Duplicates.queueBackfill = function () {
     return Duplicates.fetchJSON(
-        new LRR.apiURL("/api/minion/backfill_dedup_signals/queue?args=[]"),
+        new LRR.ApiURL("/api/minion/backfill_dedup_signals/queue?args=[]"),
         { method: "POST" },
     );
 };
 
 Duplicates.queueCoverBackfill = function () {
     return Duplicates.fetchJSON(
-        new LRR.apiURL("/api/minion/backfill_coverhashes/queue?args=[]"),
+        new LRR.ApiURL("/api/minion/backfill_coverhashes/queue?args=[]"),
         { method: "POST" },
     );
 };
@@ -262,14 +262,14 @@ Duplicates.queueCoverBackfill = function () {
 Duplicates.queueFindCover = function () {
     const args = JSON.stringify([Duplicates.state.threshold]);
     return Duplicates.fetchJSON(
-        new LRR.apiURL("/api/minion/find_cover_duplicates/queue?args=" + encodeURIComponent(args)),
+        new LRR.ApiURL("/api/minion/find_cover_duplicates/queue?args=" + encodeURIComponent(args)),
         { method: "POST" },
     );
 };
 
 Duplicates.refreshDeck = function () {
     return Duplicates.fetchJSON(
-        new LRR.apiURL("/api/duplicates/refresh"),
+        new LRR.ApiURL("/api/duplicates/refresh"),
         { method: "POST" },
     );
 };
@@ -287,7 +287,7 @@ $(function () {
     Duplicates.loadPairs();
 
     $("#return").on("click", function () {
-        window.location.href = new LRR.apiURL("/");
+        window.location.href = new LRR.ApiURL("/");
     });
 
     $("#threshold-slider").on("input", function () {
