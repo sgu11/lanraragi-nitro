@@ -6,6 +6,7 @@ import * as Server from "mod/server";
 import * as LRR from "mod/common";
 import I18N from "i18n";
 import fscreen from "fscreen";
+import { spreadStartFlags, getPageNavigationOffset as computeNavigationOffset } from "mod/reader-spread";
 
 let id = "";
 let force = false;
@@ -16,11 +17,13 @@ let showingSinglePage = true;
 let pageThumbnails = [];
 let preloadedImg = {};
 let preloadedSizes = {};
+let preloadedDimensions = {};   // fork: page index -> { width, height }, for the first-portrait dampener
 let spaceScroll = { timeout: null, animationId: null };
 let imageQuality = "auto";      // fork: reader image-rendering ("auto"|"high-quality"|"smooth-sharp"|"pixelated")
 let mobileFullscreen = true;    // fork: auto-enter fullscreen on first reading click
 let spreadStart = "auto";       // fork: double-page spread-start mode ("auto"|"always"=cover+first|"none"=cover-alone)
 let doublePageOffset = false;   // fork: when true, pair the cover (page 0) with page 1
+let firstPortraitPageDamper = false; // fork: auto-mode guard — don't pair the first portrait page after the cover
 //Spacebar Scroll Config
 let scrollConfig = {
     scrollDist: 75,      // Viewport % distance to scroll
@@ -680,17 +683,22 @@ function toggleMobileFullscreen() {
 // fork: double-page spread-start control (auto / cover+first / cover-alone), persisted per-archive.
 function setSpreadStart(value) {
     spreadStart = value;
-    doublePageOffset = value === "always"; // "always" = pair the cover with page 1 (cover+first)
+    // "always" pairs the cover with page 1; "auto" enables the first-portrait dampener
+    ({ doublePageOffset, firstPortraitPageDamper } = spreadStartFlags(value));
     $("#toggle-spread-start input").removeClass("toggled");
     $(`#spread-${value}`).addClass("toggled");
 }
 
 function getPageNavigationOffset(targetPage) {
-    let offset = targetPage;
-    if (doublePageMode && !showingSinglePage && (currentPage > 0 || doublePageOffset)) {
-        offset *= 2;
-    }
-    return offset;
+    return computeNavigationOffset(targetPage, {
+        doublePageMode,
+        showingSinglePage,
+        currentPage,
+        doublePageOffset,
+        mangaMode,
+        firstPortraitPageDamper,
+        firstPageDimensions: preloadedDimensions[1],
+    });
 }
 
 function cycleSpreadStart() {
@@ -1501,6 +1509,19 @@ async function loadImage(index) {
         preloadedSizes[index] = parseInt(res.headers.get("Content-Length") / 1024, 10);
         const blob = await res.blob();
         preloadedImg[src] = URL.createObjectURL(blob);
+    }
+
+    // Cache natural dimensions for the first-portrait dampener (separate from the
+    // byte sizes in preloadedSizes). Decoded off the already-fetched blob.
+    if (!preloadedDimensions[index]) {
+        const blobUrl = preloadedImg[src];
+        preloadedDimensions[index] = await new Promise((resolve) => {
+            const probe = new Image();
+            probe.onload = () => resolve({ width: probe.naturalWidth, height: probe.naturalHeight });
+            // Don't hang navigation if the blob can't be decoded.
+            probe.onerror = () => resolve({ width: 0, height: 0 });
+            probe.src = blobUrl;
+        });
     }
 
     return preloadedImg[src];
