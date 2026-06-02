@@ -86,6 +86,8 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
 
     $(document).on("click.close-overlay", "#overlay-shade", LRR.closeOverlay);
     $(document).on("click.toggle-full-screen", "#toggle-full-screen", () => toggleFullScreen());
+    // Fork: middle-click anywhere toggles fullscreen (matches the "F or Middle-click" reader help string).
+    $(document).on("auxclick.fullscreen", (e) => { if (e.button === 1) { e.preventDefault(); toggleFullScreen(); } });
     $(document).on("click.toggle-auto-next-page", ".toggle-auto-next-page", toggleAutoNextPage);
     $(document).on("click.toggle-archive-overlay", "#toggle-archive-overlay", toggleArchiveOverlay);
     $(document).on("click.toggle-settings-overlay", "#toggle-settings-overlay", toggleSettingsOverlay);
