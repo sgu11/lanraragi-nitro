@@ -566,9 +566,9 @@ export function loadImages() {
                 const container = document.getElementById("i3");
                 if (!container) return;
                 const rect = container.getBoundingClientRect();
-                const xPct = (event.clientX - rect.left) / rect.width * 100;
+                const xPct = event.clientX / window.innerWidth * 100;
                 const yPct = (event.clientY - rect.top) / rect.height * 100;
-                if (xPct < 0 || xPct > 100 || yPct < 0 || yPct > 100) return;
+                if (yPct < 0 || yPct > 100) return;
 
                 if (yPct < 33.33) {
                     changePage(-1, true);
