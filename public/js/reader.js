@@ -554,32 +554,32 @@ export function loadImages() {
 
             // Navigation tap zones (Suwayomi-style EDGE layout)
             //   +---+---+---+
-            //   | N | N | N |  P: Previous
+            //   | P | P | P |  P: Previous
             //   +---+---+---+
-            //   | N | M | N |  M: Menu
+            //   | P | M | P |  M: Menu
             //   +---+---+---+
-            //   | N | P | N |  N: Next
+            //   | P | N | P |  N: Next
             //   +---+---+---+
             $(document).on("click", (event) => {
-                if (!$(event.target).closest("#i3").length
-                    || $("#overlay-shade").is(":visible")
-                    || !pageNaviState) return;
+                if ($("#overlay-shade").is(":visible") || !pageNaviState) return;
 
                 const container = document.getElementById("i3");
+                if (!container) return;
                 const rect = container.getBoundingClientRect();
                 const xPct = (event.clientX - rect.left) / rect.width * 100;
                 const yPct = (event.clientY - rect.top) / rect.height * 100;
+                if (xPct < 0 || xPct > 100 || yPct < 0 || yPct > 100) return;
 
                 if (yPct < 33.33) {
-                    changePage(1, true);
+                    changePage(-1, true);
                 } else if (xPct < 33.33) {
-                    changePage(1, true);
+                    changePage(-1, true);
                 } else if (xPct > 66.66) {
-                    changePage(1, true);
+                    changePage(-1, true);
                 } else if (yPct < 66.66) {
                     toggleSettingsOverlay();
                 } else {
-                    changePage(-1, true);
+                    changePage(1, true);
                 }
             });
 
