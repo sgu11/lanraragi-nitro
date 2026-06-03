@@ -989,7 +989,7 @@ function handleWheel(e) {
     if (fscreen.inFullscreen() && !infiniteScroll && !wheelDebounce) {
         e.preventDefault();
         const deltaY = e.originalEvent ? e.originalEvent.deltaY : e.deltaY;
-        const direction = deltaY > 0 ? 1 : -1;
+        const direction = deltaY > 0 ? -1 : 1;
         wheelDebounce = true;
         changePage(direction, true);
         setTimeout(() => { wheelDebounce = false; }, 200);
