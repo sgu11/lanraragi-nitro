@@ -552,16 +552,34 @@ export function loadImages() {
         } else {
             $("#img").on("load", updateMetadata);
 
-            // when click left or right img area change page
+            // Navigation tap zones (Suwayomi-style EDGE layout)
+            //   +---+---+---+
+            //   | N | N | N |  P: Previous
+            //   +---+---+---+
+            //   | N | M | N |  M: Menu
+            //   +---+---+---+
+            //   | N | P | N |  N: Next
+            //   +---+---+---+
             $(document).on("click", (event) => {
-                // check click Y position is in img Y area
-                if ($(event.target).closest("#i3").length && !$("#overlay-shade").is(":visible") && pageNaviState) {
-                    // is click X position is left on screen or right
-                    if (event.pageX < $(window).width() / 2) {
-                        changePage(-1, true);
-                    } else {
-                        changePage(1, true);
-                    }
+                if (!$(event.target).closest("#i3").length
+                    || $("#overlay-shade").is(":visible")
+                    || !pageNaviState) return;
+
+                const container = document.getElementById("i3");
+                const rect = container.getBoundingClientRect();
+                const xPct = (event.clientX - rect.left) / rect.width * 100;
+                const yPct = (event.clientY - rect.top) / rect.height * 100;
+
+                if (yPct < 33.33) {
+                    changePage(1, true);
+                } else if (xPct < 33.33) {
+                    changePage(1, true);
+                } else if (xPct > 66.66) {
+                    changePage(1, true);
+                } else if (yPct < 66.66) {
+                    toggleSettingsOverlay();
+                } else {
+                    changePage(-1, true);
                 }
             });
 
