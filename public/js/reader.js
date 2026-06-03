@@ -727,7 +727,7 @@ function armAutoFullscreen() {
         if (fscreen.inFullscreen() || $("#overlay-shade").is(":visible")) return;
         i3.removeEventListener("click", autoFullscreen, true);
         e.stopPropagation();
-        handleFullScreen(true);
+        toggleFullScreen();
     }
     i3.addEventListener("click", autoFullscreen, true);
 }
