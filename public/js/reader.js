@@ -1411,9 +1411,11 @@ async function goToPage(page) {
             const img1Filename = getFilename(currentPage);
             const img2 = await loadImage(currentPage + 1);
             const img2Filename = getFilename(currentPage + 1);
-            if (img1.naturalWidth > img1.naturalHeight || img2.naturalWidth > img2.naturalHeight) {
-                const wideSrc = previousPage > currentPage ? img2 : img1;
-                const wideFilename = previousPage > currentPage ? img2Filename : img1Filename;
+            const img1isWide = img1.naturalWidth > img1.naturalHeight;
+            const img2isWide = img2.naturalWidth > img2.naturalHeight;
+            if (img1isWide || img2isWide) {
+                const wideSrc = img1isWide ? img1 : img2;
+                const wideFilename = img1isWide ? img1Filename : img2Filename;
                 await decodeImage(wideSrc);
                 $("#img").attr("src", wideSrc);
                 $("#img").attr("data-filename", wideFilename);
