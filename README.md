@@ -8,6 +8,8 @@ This fork is maintained by AI agents (Claude Code) under human direction. Change
 
 ## Patch Notes (vs. upstream)
 
+The current merge-preservation baseline lives in [`docs/local-features/`](docs/local-features/README.md). Use those feature documents during upstream syncs to preserve fork-only implementation details, routes, Redis keys, and verification commands.
+
 ### Reader
 
 - **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
@@ -15,6 +17,7 @@ This fork is maintained by AI agents (Claude Code) under human direction. Change
 - **Fit-height fix in fullscreen** — recomputes correct height on enter/exit instead of leaving stale layout.
 - **Double-page rendering** no longer flickers between page transitions.
 - **Middle-click toggles fullscreen** anywhere in the reader (same as pressing `F`).
+- Technical baseline: [`docs/local-features/reader.md`](docs/local-features/reader.md).
 
 ### Library / Thumbnails
 
@@ -26,10 +29,11 @@ This fork is maintained by AI agents (Claude Code) under human direction. Change
 ### Duplicates
 
 - **Relation-aware duplicate finder** — duplicate review now uses lead-page pHash plus normalized title/source heuristics to classify duplicate, translation variant, subset, and review-only pairs, including suggested delete/keep sides and risk flags.
+- Technical baseline: [`docs/local-features/duplicate-detection.md`](docs/local-features/duplicate-detection.md).
 
 ### Performance
 
-A sustained sweep against the request hot path, tracked in [`docs/performance-audit.md`](docs/performance-audit.md) (v2 catalog) and [`docs/performance-audit-v3.md`](docs/performance-audit-v3.md) (v3 delta + plan). Current baseline measurements in [`docs/performance-baseline.md`](docs/performance-baseline.md).
+A sustained sweep against the request hot path, tracked in [`docs/performance-audit.md`](docs/performance-audit.md) (v2 catalog), [`docs/performance-audit-v3.md`](docs/performance-audit-v3.md) (v3 delta + plan), and [`docs/local-features/performance-reliability.md`](docs/local-features/performance-reliability.md) (current implementation baseline). Current baseline measurements in [`docs/performance-baseline.md`](docs/performance-baseline.md).
 
 **Tier 0** — trivia wins:
 - Cache `is_default_password` (bcrypt ~50–100 ms) and the `(apikey, bearer)` tuple per-worker with 30s TTL, eliminating the bcrypt round and a Redis connection on every index / authenticated API request.
@@ -43,13 +47,11 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 - **Plugin namespace lookup hash** — `get_plugin` was an O(N) scan over every loaded plugin calling `plugin_info()`; now a one-shot `%by_namespace` hash. ~200× speedup on Auto-Plugin per-archive runs.
 - **Static asset caching** — `Cache-Control: public, max-age=86400` on `/css|js|themes|img/*` responses; `Set-Cookie` skipped on those paths so shared HTTP caches can reuse them.
 - **Async page-size lookup** — `LRR.getImgSizeAsync` replaces the sync `$.ajax({ async: false, HEAD })` that blocked the UI thread on every page turn.
-- **Deferred script loading** — `defer` applied to all `<script src>` tags across 13 templates; the inline React alias moved to `react-alias.js`; inline scripts that depend on libs wrapped in `DOMContentLoaded`. Unblocks the initial HTML parse on slow networks.
 - **Pipelined Redis bulk fetches** — duplicate-finder `thumbhash` reads, backup metadata, and plugin metadata use `HMGET` + `wait_all_responses` instead of N sequential round-trips; `clean_database` downgraded from `HGETALL` to `EXISTS` for existence checks.
 - **Page response cache headers (N-1)** — `Cache-Control: private, max-age=3600, immutable` on `/api/archives/{id}/page` so the browser can serve back-button/replay hits without hitting the app. Archive IDs are content-hashed, so the URL is stable for the bytes.
 - **`LRR_MCE_WORKERS` env var (N-5)** — plumbs into `MCE::Loop->init` at the Shinobu / Minion mce_loop call sites so over-subscription on small VMs can be tamed without patching.
 - **Fresh-install default `archives_per_page` = 30 (B.8)** — faster first paint on mobile for new installs; existing instances keep their configured value.
 - **Thumbnail-job race guard (B.9)** — `HSETNX` on the `thumbjob` field closes the TOCTOU between the `-e` probe and `enqueue`; Minion `on_failed` hook `HDEL`s the stale field so failed jobs don't wedge future regeneration.
-- **Chunked archive-overlay render (B.7)** — reader overlay inserts page thumbnails 20 per `requestAnimationFrame` frame with a render-token that cancels an in-flight render on re-open. 200+ page archives no longer freeze the main thread on overlay open.
 - **Inflight-promise dedup in `Server.callAPI` (B.10)** — concurrent GETs to the same URL share a single fetch; the Map self-evicts on settle.
 - **Filelist cache (B.1)** — `pagefiles` on the archive hash (Storable-frozen, invalidated by Shinobu on arcsize mismatch and by `change_archive_id`). Reader opens on warm cache skip the libarchive scan — 237 → 49 ms on truly cold archives.
 - **Inline first-page `src=` (A.6)** — template sets the reader's `<img src>` to the first page URL when pagefiles cache is warm, so the browser starts the page fetch during HTML parse instead of waiting for the `/files` API.
@@ -83,6 +85,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 ### Docs / Ops
 
 - [`AGENTS.md`](AGENTS.md) documents the architecture, build, plugin contract, and code style for AI agents working in this repo.
+- [`docs/local-features/`](docs/local-features/README.md) records current fork-only feature baselines for future upstream merges.
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) documents the three-tier deployment procedure to the production instance (hot code-swap, compose edit, image rebuild) with pre-flight, verification, and rollback steps.
 
 ---
