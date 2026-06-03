@@ -983,14 +983,16 @@ function spaceScrollProcessInput(e) {
     }
 }
 
+let wheelDebounce = false;
+
 function handleWheel(e) {
-    if (fscreen.inFullscreen() && !infiniteScroll) {
-        let changePage = 1;
-        if (e.originalEvent.deltaY > 0) changePage = -1;
-        // In Manga mode, reverse the changePage variable
-        // so that we always move forward
-        if (!mangaMode) changePage *= -1;
-        changePage(changePage, true);
+    if (fscreen.inFullscreen() && !infiniteScroll && !wheelDebounce) {
+        e.preventDefault();
+        const deltaY = e.originalEvent ? e.originalEvent.deltaY : e.deltaY;
+        const direction = deltaY > 0 ? 1 : -1;
+        wheelDebounce = true;
+        changePage(direction, true);
+        setTimeout(() => { wheelDebounce = false; }, 200);
     }
 }
 
