@@ -1405,25 +1405,24 @@ async function goToPage(page) {
     if (infiniteScroll) {
         $("#display img").get(currentPage).scrollIntoView({ block: "nearest" });
     } else {
-        $("#img_doublepage").attr("src", "");
-        $("#img_doublepage").attr("data-filename", "");
-        $("#display").removeClass("double-mode");
         if (doublePageMode && (currentPage > 0 || doublePageOffset)
             && currentPage < maxPage) {
-            // Composite an image and use that as the source
             const img1 = await loadImage(currentPage);
             const img1Filename = getFilename(currentPage);
             const img2 = await loadImage(currentPage + 1);
             const img2Filename = getFilename(currentPage + 1);
-            // If w > h on one of the images(widespread), set canvasdata to the first image only
             if (img1.naturalWidth > img1.naturalHeight || img2.naturalWidth > img2.naturalHeight) {
-                // Depending on whether we were going forward or backward, display img1 or img2
                 const wideSrc = previousPage > currentPage ? img2 : img1;
                 const wideFilename = previousPage > currentPage ? img2Filename : img1Filename;
+                await decodeImage(wideSrc);
                 $("#img").attr("src", wideSrc);
                 $("#img").attr("data-filename", wideFilename);
+                $("#img_doublepage").attr("src", "");
+                $("#img_doublepage").attr("data-filename", "");
+                $("#display").removeClass("double-mode");
                 showingSinglePage = true;
             } else {
+                await Promise.all([decodeImage(img1), decodeImage(img2)]);
                 if (mangaMode) {
                     $("#img").attr("src", img2);
                     $("#img").attr("data-filename", img2Filename);
@@ -1440,8 +1439,12 @@ async function goToPage(page) {
         } else {
             const img = await loadImage(currentPage);
             const imgFilename = getFilename(currentPage);
+            await decodeImage(img);
             $("#img").attr("src", img);
             $("#img").attr("data-filename", imgFilename);
+            $("#img_doublepage").attr("src", "");
+            $("#img_doublepage").attr("data-filename", "");
+            $("#display").removeClass("double-mode");
             showingSinglePage = true;
         }
 
@@ -1501,6 +1504,12 @@ function preloadImages() {
         if (currentPage - i < 0) { break; }
         loadImage(currentPage - i);
     }
+}
+
+async function decodeImage(src) {
+    const img = new Image();
+    img.src = src;
+    return img.decode().catch(() => {});
 }
 
 async function loadImage(index) {
