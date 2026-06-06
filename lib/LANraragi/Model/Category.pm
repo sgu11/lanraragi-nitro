@@ -176,7 +176,7 @@ sub delete_category {
     }
 
     if ( $redis->exists($cat_id) ) {
-        if ( $redis->hget( 'LRR_CONFIG', 'bookmark_link' ) eq $cat_id ) {
+        if ( ( $redis->hget( 'LRR_CONFIG', 'bookmark_link' ) // "" ) eq $cat_id ) {
             $redis->hdel( 'LRR_CONFIG', 'bookmark_link' );
             LANraragi::Model::Config::invalidate_config_cache();
             $logger->info("Removed link from bookmark to category $cat_id.");

@@ -233,7 +233,15 @@ sub setup_redis_mock {
             return exists $datamodel{$key} ? 1 : 0;
         }
     );
-    $redis->mock( 'hexists', sub { 1 } );
+    $redis->mock(
+        'hexists',
+        sub {
+            my $self = shift;
+            my ( $key, $field ) = @_;
+            return 0 unless exists $datamodel{$key} && ref $datamodel{$key} eq 'HASH';
+            return exists $datamodel{$key}{$field} ? 1 : 0;
+        }
+    );
     $redis->mock(
         'hset',    # $redis->hset => set hash field value in datamodel
         sub {
@@ -316,6 +324,7 @@ sub setup_redis_mock {
     $redis->mock( 'set',     sub { 1 } );
     $redis->mock( 'hlen',    sub { 1337 } );
     $redis->mock( 'dbsize',  sub { 1337 } );
+    $redis->mock( 'script_load', sub { die "Lua unavailable in Redis mock\n"; } );
 
     $redis->mock(
         'multi',
@@ -386,14 +395,16 @@ sub setup_redis_mock {
         'sadd',    # $redis->sadd => add value to list named by key in datamodel
         sub {
             my $self = shift;
-            my ( $key, $value ) = @_;
+            my ( $key, @values ) = @_;
 
             if ( !exists $datamodel{$key} ) {
                 $datamodel{$key} = [];
             }
 
-            if ( !grep { $_ eq $value } @{ $datamodel{$key} } ) {
-                push @{ $datamodel{$key} }, $value;
+            for my $value (@values) {
+                if ( !grep { $_ eq $value } @{ $datamodel{$key} } ) {
+                    push @{ $datamodel{$key} }, $value;
+                }
             }
         }
     );
@@ -486,8 +497,21 @@ sub setup_redis_mock {
                 $datamodel{$key} = {};
             }
 
-            # Return members ordered alphabetically
-            return sort keys %{ $datamodel{$key} };
+            my @members = sort keys %{ $datamodel{$key} };
+
+            if ( $start ne "-" ) {
+                my $inclusive = substr( $start, 0, 1 ) eq "[";
+                my $lower     = substr( $start, 1 );
+                @members = grep { $inclusive ? $_ ge $lower : $_ gt $lower } @members;
+            }
+
+            if ( $end ne "+" ) {
+                my $inclusive = substr( $end, 0, 1 ) eq "[";
+                my $upper     = substr( $end, 1 );
+                @members = grep { $inclusive ? $_ le $upper : $_ lt $upper } @members;
+            }
+
+            return @members;
         }
     );
 

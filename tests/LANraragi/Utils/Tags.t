@@ -302,10 +302,10 @@ note('testing rules unflattening...');
 
 {
     my @empty_rules;
-    my @rules = LANraragi::Utils::Tags::unflat_tagrules( \@empty_rules );
-    cmp_deeply( \@rules, [], 'unflattened empty rules' );
-    my @rules = LANraragi::Utils::Tags::unflat_tagrules(undef);
-    cmp_deeply( \@rules, [], 'unflattened undef array' );
+    my @empty_result = LANraragi::Utils::Tags::unflat_tagrules( \@empty_rules );
+    cmp_deeply( \@empty_result, [], 'unflattened empty rules' );
+    my @undef_result = LANraragi::Utils::Tags::unflat_tagrules(undef);
+    cmp_deeply( \@undef_result, [], 'unflattened undef array' );
 }
 
 note('testing tag rules hash building...');

@@ -172,6 +172,12 @@ note("dedup title normalization and source extraction");
     );
 
     is(
+        scalar LANraragi::Model::Dedup::dedup_stable_tags("artist:a, temp:x, group:g, language:korean"),
+        3,
+        "stable tag helper has defined scalar-context behavior"
+    );
+
+    is(
         LANraragi::Model::Dedup::quality_proxy({ arcsize => 104857600, pagecount => 100 }),
         1048576,
         "quality proxy is bytes per page"

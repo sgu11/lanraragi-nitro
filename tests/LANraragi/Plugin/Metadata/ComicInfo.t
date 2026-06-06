@@ -2,6 +2,12 @@
 use strict;
 use warnings;
 use utf8;
+
+BEGIN {
+    binmode STDOUT, ':encoding(UTF-8)';
+    binmode STDERR, ':encoding(UTF-8)';
+}
+
 use Data::Dumper;
 use File::Temp qw(tempfile);
 use File::Copy "cp";

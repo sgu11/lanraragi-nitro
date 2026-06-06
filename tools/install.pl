@@ -102,6 +102,8 @@ install_package( "Config::AutoConf", $cpanopt );
 IPC::Cmd->import('can_run');
 require Config::AutoConf;
 
+add_homebrew_libarchive_flags() if IS_UNIX && $Config{osname} eq 'darwin';
+
 say("\r\nWill now check if all LRR software dependencies are met. \r\n");
 
 #Fails on win even if valkey or redis are in the path
@@ -126,8 +128,8 @@ Config::AutoConf->new()->check_header("archive.h")
   or die 'NOT FOUND! Please install libarchive and ensure its headers are present.';
 say("OK!");
 
-#Check for PerlMagick
-say("Checking for ImageMagick/PerlMagick...");
+#Check for PerlMagick or libvips
+say("Checking for ImageMagick/PerlMagick or libvips...");
 my $imgk;
 
 eval {
@@ -136,10 +138,15 @@ eval {
 };
 
 if ($@) {
-    say("NOT FOUND");
-    say("Please install ImageMagick with Perl for thumbnail support.");
-    say("Further instructions are available at https://www.imagemagick.org/script/perl-magick.php .");
-    say("The ImageMagick detection command returned: $imgk -- $@");
+    if ( can_run('vips') ) {
+        say("ImageMagick/PerlMagick not found; libvips is available.");
+        say("OK!");
+    } else {
+        say("NOT FOUND");
+        say("Please install ImageMagick with Perl or libvips for thumbnail support.");
+        say("Further instructions are available at https://www.imagemagick.org/script/perl-magick.php .");
+        say("The ImageMagick detection command returned: " . ( $imgk // "" ) . " -- $@");
+    }
 } else {
     say( "Returned QuantumDepth: " . $imgk );
     say("OK!");
@@ -261,4 +268,23 @@ sub install_package {
     } else {
         say("$package package installed, proceeding...");
     }
+}
+
+sub add_homebrew_libarchive_flags {
+
+    my $brew = can_run('brew') or return;
+    chomp( my $prefix = `$brew --prefix libarchive 2>/dev/null` );
+    return unless $prefix && -f "$prefix/include/archive.h";
+
+    add_env_flag( "CFLAGS",  "-I$prefix/include" );
+    add_env_flag( "LDFLAGS", "-L$prefix/lib" );
+}
+
+sub add_env_flag {
+
+    my ( $name, $flag ) = @_;
+    my $current = $ENV{$name} // "";
+    return if index( " $current ", " $flag " ) >= 0;
+
+    $ENV{$name} = length $current ? "$current $flag" : $flag;
 }

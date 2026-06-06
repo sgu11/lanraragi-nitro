@@ -65,7 +65,8 @@ sub dedup_stable_tags {
         next unless $tag =~ /^([^:]+):(.+)$/;
         push @stable, $tag if $STABLE_TAG_NS{$1};
     }
-    return sort @stable;
+    my @sorted = sort @stable;
+    return @sorted;
 }
 
 sub title_similarity_for_dedup {

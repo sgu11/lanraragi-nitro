@@ -19,6 +19,21 @@ my $PKG = 'LANraragi::Model::Plugins';
 require_ok($PKG);
 use_ok($PKG);
 
+sub metadata_redis_mock {
+    my (%archive) = @_;
+
+    my $redis_mock = Test::MockObject->new();
+    $redis_mock->mock( 'hgetall' => sub { return %archive; } );
+    $redis_mock->mock( 'hmget' => sub {
+        shift;
+        my ( $id, @fields ) = @_;
+        return [ map { $archive{$_} } @fields ];
+    } );
+    $redis_mock->mock( 'quit' => sub { return 1; } );
+
+    return $redis_mock;
+}
+
 note('calling exec_metadata_plugin without providing an ID');
 {
     no warnings 'once', 'redefine';
@@ -43,9 +58,7 @@ note('exec_metadata_plugin doesn\'t die when get_tags fails');
     $plugin_mock->mock( 'plugin_info' => sub { return (); } );
     $plugin_mock->mock( 'get_tags'    => sub { die "Ooops!\n"; } );
 
-    my $redis_mock = Test::MockObject->new();
-    $redis_mock->mock( 'hgetall' => sub { return ( 'thumbhash' => 'dummy' ); } );
-    $redis_mock->mock( 'quit'    => sub { return 1; } );
+    my $redis_mock = metadata_redis_mock( 'thumbhash' => 'dummy' );
 
     no warnings 'once', 'redefine';
     local *LANraragi::Model::Plugins::get_logger     = sub { return get_logger_mock() };
@@ -64,9 +77,7 @@ note('exec_metadata_plugin returns the tags');
     $plugin_mock->mock( 'plugin_info' => sub { return (); } );
     $plugin_mock->mock( 'get_tags'    => sub { return ( tags => 'tag1,tag2' ); } );
 
-    my $redis_mock = Test::MockObject->new();
-    $redis_mock->mock( 'hgetall' => sub { return ( 'thumbhash' => 'dummy', 'tags' => '' ); } );
-    $redis_mock->mock( 'quit'    => sub { return 1; } );
+    my $redis_mock = metadata_redis_mock( 'thumbhash' => 'dummy', 'tags' => '' );
 
     no warnings 'once', 'redefine';
     local *LANraragi::Model::Plugins::get_logger     = sub { return get_logger_mock() };
@@ -85,9 +96,7 @@ note('exec_metadata_plugin returns the tags and the title');
     $plugin_mock->mock( 'plugin_info' => sub { return (); } );
     $plugin_mock->mock( 'get_tags'    => sub { return ( tags => 'tag1,tag2', title => '  The Best Manga  ' ); } );
 
-    my $redis_mock = Test::MockObject->new();
-    $redis_mock->mock( 'hgetall' => sub { return ( 'thumbhash' => 'dummy', 'tags' => '' ); } );
-    $redis_mock->mock( 'quit'    => sub { return 1; } );
+    my $redis_mock = metadata_redis_mock( 'thumbhash' => 'dummy', 'tags' => '' );
 
     no warnings 'once', 'redefine';
     local *LANraragi::Model::Plugins::get_logger       = sub { return get_logger_mock() };

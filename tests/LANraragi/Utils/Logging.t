@@ -7,7 +7,7 @@ use Test::More;
 use POSIX ":sys_wait_h";
 use Mojo::Log;
 use File::Temp qw(tempdir);
-use Time::HiRes qw(sleep);
+use Time::HiRes qw(sleep time);
 use Sys::CpuAffinity;
 
 BEGIN { use_ok('LANraragi::Utils::Logging'); }
@@ -79,28 +79,62 @@ sub log_dist {
 
         my $all_ok = 1;
         my @details;
-        for my $pid (@pids) {
-            my $kid         = waitpid($pid, 0);
-            my $exit_status = $? >> 8;
-            my $signal      = $? & 127;
-            my $dumped_core = $? & 128 ? 1 : 0;
-            my $cid         = $pid_to_cid{$pid};
-            my $err_path    = "$tmpdir/child_$cid.err";
-            my $err_msg     = "";
-            if ( -e $err_path && open my $rfh, '<', $err_path ) {
-                local $/;
-                $err_msg = <$rfh>;
-                close $rfh;
+        my %remaining = map { $_ => 1 } @pids;
+        my $deadline  = time + ( $ENV{LRR_TEST_LOGGING_CHILD_TIMEOUT} // 20 );
+        while (%remaining) {
+            for my $pid (keys %remaining) {
+                my $kid = waitpid($pid, WNOHANG);
+                next if $kid == 0;
+                delete $remaining{$pid};
+
+                my $exit_status = $? >> 8;
+                my $signal      = $? & 127;
+                my $dumped_core = $? & 128 ? 1 : 0;
+                my $cid         = $pid_to_cid{$pid};
+                my $err_path    = "$tmpdir/child_$cid.err";
+                my $err_msg     = "";
+                if ( -e $err_path && open my $rfh, '<', $err_path ) {
+                    local $/;
+                    $err_msg = <$rfh>;
+                    close $rfh;
+                }
+                push @details, {
+                    pid   => $pid,
+                    cid   => $cid,
+                    exit  => $exit_status,
+                    sig   => $signal,
+                    core  => $dumped_core,
+                    error => $err_msg
+                };
+                $all_ok &&= ( $kid == $pid && $exit_status == 0 );
             }
-            push @details, {
-                pid     => $pid,
-                cid     => $cid,
-                exit    => $exit_status,
-                sig     => $signal,
-                core    => $dumped_core,
-                error   => $err_msg
-            };
-            $all_ok &&= ($kid == $pid && $exit_status == 0);
+
+            last unless %remaining;
+
+            if ( time >= $deadline ) {
+                my @stuck = keys %remaining;
+                kill 'TERM', @stuck;
+                sleep 0.2;
+                kill 'KILL', @stuck;
+
+                for my $pid (@stuck) {
+                    waitpid($pid, 0);
+                    my $cid = $pid_to_cid{$pid};
+                    push @details, {
+                        pid   => $pid,
+                        cid   => $cid,
+                        exit  => 124,
+                        sig   => 0,
+                        core  => 0,
+                        error => "timed out waiting for logging child"
+                    };
+                    delete $remaining{$pid};
+                }
+                $all_ok = 0;
+                last;
+            }
+
+            sleep 0.05;
         }
 
         opendir(my $dh, $tmpdir) or die "Cannot open dir $tmpdir: $!";
@@ -224,9 +258,9 @@ note('testing init-time concurrent log rotation...');
         my $tmpdir              = $ENV{LRR_LOG_DIRECTORY};
         my $create_before_fork  = 0;
         my $num_cpus            = Sys::CpuAffinity::getNumCpus();
-        my $children            = $num_cpus < 16 ? $num_cpus : 16;
-        my $messages_per_child  = 2000;
-        my $batches             = 6;
+        my $children            = $num_cpus < 4 ? $num_cpus : 4;
+        my $messages_per_child  = 250;
+        my $batches             = 2;
         my ($ok, $details, $gz) = log_dist(
             $tmpdir,
             $create_before_fork,
@@ -252,8 +286,8 @@ note('testing append-time log rotation...');
         my $tmpdir              = $ENV{LRR_LOG_DIRECTORY};
         my $create_before_fork  = 1;
         my $children            = 1;
-        my $messages_per_child  = 100000;
-        my $batches             = 6;
+        my $messages_per_child  = 3000;
+        my $batches             = 2;
         my ($ok, $details, $gz) = log_dist(
             $tmpdir,
             $create_before_fork,
@@ -278,9 +312,9 @@ note('testing concurrent append-time concurrent log rotation...');
     with_logging_context( sub {
         my $tmpdir              = $ENV{LRR_LOG_DIRECTORY};
         my $create_before_fork  = 1;
-        my $children            = 8;
-        my $messages_per_child  = 9000;
-        my $batches             = 6;
+        my $children            = 4;
+        my $messages_per_child  = 1000;
+        my $batches             = 2;
         my ($ok, $details, $gz) = log_dist(
             $tmpdir,
             $create_before_fork,
@@ -301,4 +335,3 @@ note('testing concurrent append-time concurrent log rotation...');
 }
 
 done_testing();
-

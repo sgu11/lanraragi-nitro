@@ -4,6 +4,10 @@ use strict;
 use warnings;
 use utf8;
 
+use Exporter 'import';
+
+our @EXPORT_OK = qw(extract_endpoint escape_label_value);
+
 # Extract endpoint path from request and normalize to route templates to prevent cardinality explosion.
 # During normalization, query parameters are removed and path parameters are replaced with router placeholders.
 sub extract_endpoint {

@@ -199,7 +199,8 @@ sub maybe_rotate {
 sub should_rotate {
     my $self = shift;
     my $path = $self->path;
-    return -e $path && -s $path > $self->max_rotation_size;
+    my $size = -s $path;
+    return defined $size && $size > $self->max_rotation_size;
 }
 
 # Do logfile rotation.

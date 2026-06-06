@@ -264,10 +264,9 @@ LUA
                 my $operator  = $2;
                 my $pagecount = $3;
 
-                $logger->debug("Searching for IDs with $operator $pagecount $col");
-
                 # If no operator is specified, we assume it's an exact match
                 $operator = "=" if !$operator;
+                $logger->debug("Searching for IDs with $operator $pagecount $col");
 
                 # Change the column based off the tag searched.
                 # "pages" -> "pagecount"
@@ -535,7 +534,7 @@ LUA
         my $sha;
         eval { $sha = $redis->script_load($script); };
         if ($@) {
-            $logger->error("Failed to load Lua script: $@");
+            $logger->debug("Lua script not available for lastread sort, falling back to per-ID queries.");
             _fallback_lastread( $redis, \%tmpfilter, @filtered );
         } else {
             my $result = $redis->evalsha( $sha, 0, @filtered );
@@ -597,7 +596,7 @@ LUA
         my $sha;
         eval { $sha = $redis->script_load($script); };
         if ($@) {
-            $logger->error("Failed to load Lua script: $@");
+            $logger->debug("Lua script not available for tag sort, falling back to per-ID queries.");
             _fallback_tags( $redis, \%tmpfilter, $re, @filtered );
         } else {
             my $result = $redis->evalsha( $sha, 0, @filtered );
@@ -644,6 +643,7 @@ LUA
 #
 # Namespaced tag (ns:val) → ZRANGEBYLEX on the maintained LRR_TAG_INDEX_NAMES
 # set. True O(log N + M) prefix match; this is where B.4's win lives.
+# Explicit wildcard tokens still need the fuzzy scan path.
 #
 # Bare tag (*val*) → falls back to KEYS 'INDEX_*$tag*'. The maintained-set
 # alternatives (ZRANGE+Perl-grep, ZSCAN MATCH) were measured 2-5× slower than
@@ -651,7 +651,7 @@ LUA
 # search DB (DB 3), which holds the INDEX_* sets plus a handful of small
 # keys — a few tens of ms at 10k-archive scale.
 sub _index_keys_matching ( $redis, $tag ) {
-    if ( $tag =~ /:/ ) {
+    if ( $tag =~ /:/ && $tag !~ /[*?]/ ) {
         my $prefix = "INDEX_$tag";
         return $redis->zrangebylex( "LRR_TAG_INDEX_NAMES", "[$prefix", "[$prefix\x{ff}" );
     }
