@@ -2,9 +2,9 @@
  * Non-DataTables Index functions.
  * (The split is there to permit easier switch if we ever yeet datatables from the main UI)
  */
-import * as LRR from "mod/common";
-import * as Server from "mod/server";
-import * as IndexTable from "mod/index_datatables";
+import * as LRR from "./common.js";
+import * as Server from "./server.js";
+import * as IndexTable from "./index_datatables.js";
 import I18N from "i18n";
 import * as marked from "marked";
 import DOMPurify from "dompurify";
@@ -16,10 +16,8 @@ let swiper = {};
 let serverVersion = "";
 let debugMode = false;
 export let pageSize = 100;
-let pseudoCopyBtn = undefined;
-let isMultiSelectMode = false;
+export let isMultiSelectMode = false;
 export let selectedArchives = new Set();
-let clipboard;
 
 /**
  * Initialize the Archive Index.
@@ -241,26 +239,6 @@ export function initializeAll() {
 
     updateTableHeaders();
     resizableColumns();
-
-    pseudoCopyBtn = $("#pseudo-copy-btn")
-    clipboard = new window.ClipboardJS("#pseudo-copy-btn");
-
-    clipboard.on("success", function (e) {
-        LRR.toast({
-            heading: I18N.IndexCopyLinkSuccess,
-            icon: "info",
-            hideAfter: 3000,
-        });
-        e.clearSelection();
-    });
-
-    clipboard.on("error", function (e) {
-        LRR.toast({
-            heading: I18N.IndexCopyLinkFail,
-            icon: "error",
-            hideAfter: false,
-        });
-    });
 }
 
 export function toggleOrder(e) {
@@ -792,7 +770,7 @@ function mergeSelectionIntoTankoubon() {
         // Fold non-tank archives into the existing tankoubon
         const tankId = tankIds[0];
         Server.callAPI(`/api/tankoubons/${tankId}`, "GET", null, I18N.MSMMergeError, (data) => {
-            const tankName = data.result.name;
+            const tankName = data.name;
             LRR.showPopUp({
                 text: I18N.MSMMergeExistingConfirmText(archiveIds.length, tankName),
                 showCancelButton: true,
@@ -964,23 +942,40 @@ export function migrateProgress() {
 
         const promises = [];
         localProgressKeys.forEach((id) => {
-            const progress = localStorage.getItem(`${id}-reader`);
-            const metadataUrl = id.startsWith("TANK_") ? 
-                new LRR.ApiURL(`api/tankoubons/${id}`) : 
+            const progress  = localStorage.getItem(`${id}-reader`);
+            const isTank    = id.startsWith("TANK_");
+
+            const metadataUrl = isTank ?
+                new LRR.ApiURL(`api/tankoubons/${id}`) :
                 new LRR.ApiURL(`api/archives/${id}/metadata`);
 
-            const progressUrl = id.startsWith("TANK_") ? 
-                `api/tankoubons/${id}/progress/${progress}?force=1` : 
+            const progressUrl = isTank ?
+                `api/tankoubons/${id}/progress/${progress}?force=1` :
                 `api/archives/${id}/progress/${progress}?force=1`;
 
             const promise = fetch(metadataUrl, { method: "GET" })
-                .then((response) => response.json())
+                .then((response) => {
+                    if (response.status === 404) {
+                        localStorage.removeItem(`${id}-reader`);
+                        localStorage.removeItem(`${id}-totalPages`);
+                        return null;
+                    }
+                    if (!response.ok) {
+                        // eslint-disable-next-line no-console
+                        console.warn(`Failed to migrate progress for ${id} (status ${response.status})`);
+                        return null;
+                    }
+                    return response.json();
+                })
                 .then((data) => {
+                    if (!data) return;
+
+                    const serverProgress = data.progress;
+
                     // Don't migrate if the server progress is already further
                     if (progress !== null
-                        && data !== undefined
-                        && data !== null
-                        && progress > data.progress) {
+                        && serverProgress !== undefined
+                        && progress > serverProgress) {
                         Server.callAPI(progressUrl, "PUT", null, I18N.LocalProgressionError, null);
                     }
 
@@ -1005,61 +1000,7 @@ export function migrateProgress() {
 
 // #endregion
 
-// #region Archive Context Menu
 
-/**
- * Handle context menu clicks.
- * @param {*} option The clicked option
- * @param {*} id The Archive ID
- * @returns
- */
-export function handleContextMenu(option, id) {
-    switch (option) {
-        case "edit":
-            LRR.openInNewTab(new LRR.ApiURL(`/edit?id=${id}`));
-            break;
-        case "delete": {
-            const isTank = id.startsWith("TANK_");
-            LRR.showPopUp({
-                text: isTank ? I18N.ConfirmTankoubonDeletion : I18N.ConfirmArchiveDeletion,
-                icon: "warning",
-                showCancelButton: true,
-                focusConfirm: false,
-                confirmButtonText: I18N.ConfirmYes,
-                reverseButtons: true,
-                confirmButtonColor: "#d33",
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    if (isTank) Server.deleteTankoubon(id, () => {
-                        document.location.reload(true);
-                    });
-                    else Server.deleteArchive(id, () => {
-                        document.location.reload(true);
-                    });
-                }
-            });
-            break;
-        }
-        case "read":
-            LRR.openInNewTab(new LRR.ApiURL(`/reader?id=${id}`));
-            break;
-        case "download":
-            LRR.openInNewTab(new LRR.ApiURL(`/api/archives/${id}/download`));
-            break;
-        case "copy link":
-            pseudoCopyBtn.attr("data-clipboard-text", `${window.location.origin}${new LRR.ApiURL(`/reader?id=${id}`).toString()}`);
-            pseudoCopyBtn.click()
-            break;
-        case "msm-toggle-archive":
-            if (!isMultiSelectMode) toggleMultiSelectMode();
-            toggleArchiveSelection(id);
-            break;
-        default:
-            break;
-    }
-}
-
-// #endregion
 
 // #region Category buttons
 

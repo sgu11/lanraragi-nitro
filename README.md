@@ -87,6 +87,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 - [`AGENTS.md`](AGENTS.md) documents the architecture, build, plugin contract, and code style for AI agents working in this repo.
 - [`docs/local-features/`](docs/local-features/README.md) records current fork-only feature baselines for future upstream merges.
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) documents the three-tier deployment procedure to the production instance (hot code-swap, compose edit, image rebuild) with pre-flight, verification, and rollback steps.
+- Upstream sync 2026-06-09: merged upstream `dev` through `bebac1aa`, adopting path-based JS cache busting, the extracted index context-menu module, Tankoubon progress/API fixes, log-rotation fallback handling, and build dependency updates while preserving fork reader and duplicate-detection contracts.
 
 ---
 

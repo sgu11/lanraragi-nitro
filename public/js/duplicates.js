@@ -1,4 +1,7 @@
-import * as LRR from "mod/common";
+/**
+ * Duplicate Operations
+ */
+import * as LRR from "./mod/common.js";
 
 const Duplicates = {};
 
