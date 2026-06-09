@@ -15,6 +15,7 @@ oshino
 temp
 win-dist
 .codegraph
+.env
 
 # Playwright MCP browser-test artifacts
 .playwright-mcp
