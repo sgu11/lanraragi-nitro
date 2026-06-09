@@ -7,9 +7,16 @@ use File::Temp qw(tempfile);
 use Test::More;
 use Time::HiRes qw(time);
 
-my $cwd = getcwd();
-require "$cwd/tests/mocks.pl";
-setup_redis_mock();
+# Shinobu creates a logger at file scope, and cold logger creation reads
+# devmode from Redis — so the Redis mock must be installed before the
+# BEGIN-time use_ok() compiles Shinobu.
+my $cwd;
+
+BEGIN {
+    $cwd = getcwd();
+    require "$cwd/tests/mocks.pl";
+    setup_redis_mock();
+}
 
 BEGIN { use_ok('Shinobu'); }
 
