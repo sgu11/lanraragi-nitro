@@ -14,6 +14,7 @@ Makefile
 oshino
 temp
 win-dist
+.codegraph
 
 # Playwright MCP browser-test artifacts
 .playwright-mcp
