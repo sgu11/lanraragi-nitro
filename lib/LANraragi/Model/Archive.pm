@@ -10,7 +10,7 @@ use utf8;
 use Cwd 'abs_path';
 use Redis;
 use Mojo::JSON  qw(decode_json encode_json);
-use Time::HiRes qw(usleep);
+use Time::HiRes qw(gettimeofday tv_interval usleep);
 use File::Path  qw(remove_tree);
 use File::Basename;
 use File::Copy "cp";
@@ -25,6 +25,7 @@ use LANraragi::Utils::Database   qw(invalidate_cache set_title set_tags set_summ
 use LANraragi::Utils::PageCache  qw(fetch put);
 use LANraragi::Utils::Redis      qw(redis_decode redis_encode);
 use LANraragi::Utils::Path       qw(unlink_path get_archive_path);
+use LANraragi::Model::Metrics;
 
 # get_title(id)
 #   Returns the title for the archive matching the given id.
@@ -200,6 +201,65 @@ sub generate_page_thumbnails {
     $redis->quit;
 }
 
+sub _thumbnail_format {
+    my $use_avif = LANraragi::Model::Config->enable_avif_thumbnails;
+    my $use_jxl  = LANraragi::Model::Config->get_jxlthumbpages;
+    return $use_avif ? 'avif' : $use_jxl ? 'jxl' : 'jpg';
+}
+
+sub _thumbnail_mime ($format) {
+    return {
+        avif => "image/avif",
+        jpg  => "image/jpeg",
+        jxl  => "image/jxl",
+        png  => "image/png",
+    }->{$format} // "application/octet-stream";
+}
+
+sub _render_thumbnail_file ( $self, $thumbname, $format ) {
+    $self->res->headers->cache_control('public, max-age=2592000, immutable');
+    $self->res->headers->header('Vary', 'Accept');
+    $self->render_file(
+        filepath            => $thumbname,
+        content_disposition => "inline",
+        content_type        => _thumbnail_mime($format)
+    );
+}
+
+sub _single_thumbnail_lock_key ( $id, $page, $format ) {
+    return "LRR_THUMBJOB:$id:$page:$format";
+}
+
+sub _is_active_minion_job ( $self, $job_id ) {
+    return 0 unless defined $job_id;
+
+    my $existing_job = $self->minion->job($job_id);
+    my $job_state    = $existing_job ? $existing_job->info->{state} : undef;
+    return defined $job_state && ( $job_state eq "active" || $job_state eq "inactive" );
+}
+
+sub _queue_single_thumbnail_job ( $self, $lock_key, $task, $args ) {
+    my $redis = LANraragi::Model::Config->get_redis_config;
+
+    my $existing_id = $redis->get($lock_key);
+    if ( _is_active_minion_job( $self, $existing_id ) ) {
+        $redis->quit;
+        return $existing_id;
+    }
+    $redis->del($lock_key) if defined $existing_id;
+
+    my $job_id = $self->minion->enqueue( $task => [ @$args, $lock_key ] => { priority => 0, attempts => 3 } );
+    my $claimed = $redis->set( $lock_key, $job_id, "NX", "EX", 600 );
+    if ( !$claimed ) {
+        my $winner = $redis->get($lock_key);
+        eval { $self->minion->job($job_id)->remove; };
+        $job_id = $winner if defined $winner;
+    }
+
+    $redis->quit;
+    return $job_id;
+}
+
 sub serve_thumbnail {
 
     my ( $self, $id ) = @_;
@@ -211,9 +271,7 @@ sub serve_thumbnail {
     my $no_fallback = $self->req->param('no_fallback');
     $no_fallback = ( $no_fallback && $no_fallback eq "true" ) || "0";    # Prevent undef warnings by checking the variable first
 
-    my $thumbdir        = LANraragi::Model::Config->get_thumbdir;
-    my $use_avif        = LANraragi::Model::Config->enable_avif_thumbnails;
-    my $use_jxl         = LANraragi::Model::Config->get_jxlthumbpages;
+    my $thumbdir = LANraragi::Model::Config->get_thumbdir;
 
     my $subfolder = substr( $id, 0, 2 );
     my $thumbbase = ($is_first_page) ? "$thumbdir/$subfolder/$id" : "$thumbdir/$subfolder/$id/$page";
@@ -246,9 +304,11 @@ sub serve_thumbnail {
 
         if ($no_fallback) {
 
-            # Queue a minion job to generate the thumbnail.
-            my $format = $use_avif ? 'avif' : $use_jxl ? 'jxl' : 'jpg';
-            my $job_id = $self->minion->enqueue( thumbnail_task => [ $thumbdir, $id, $page ] => { priority => 0, attempts => 3 } );
+            # Queue a Minion job to generate the thumbnail. The config-DB lock coalesces
+            # duplicate misses for the same page/format while the job is active.
+            my $format   = _thumbnail_format();
+            my $lock_key = _single_thumbnail_lock_key( $id, $page, $format );
+            my $job_id   = _queue_single_thumbnail_job( $self, $lock_key, thumbnail_task => [ $thumbdir, $id, $page ] );
             $self->render(
                 openapi => {
                     operation => "serve_thumbnail",
@@ -263,22 +323,26 @@ sub serve_thumbnail {
         return;
     }
 
-    $self->res->headers->cache_control('public, max-age=2592000, immutable');
-    $self->res->headers->header('Vary', 'Accept');
-    $self->render_file( filepath => $thumbname );
+    my ( $n, $p, $file_ext ) = fileparse( $thumbname, qr/\.[^.]*/ );
+    _render_thumbnail_file( $self, $thumbname, substr( $file_ext, 1 ) );
 }
 
-sub get_page_data ( $id, $path ) {
+sub get_page_data ( $id, $path, $metrics = undef ) {
     my $cachekey = "page/$id/$path";
     my $content  = fetch($cachekey);
     if ( !defined($content) ) {
+        $metrics->{cache_status} = "miss" if defined $metrics;
 
         # Extract the file from the parent archive if it doesn't exist
+        my $extract_start = [gettimeofday];
         my $redis   = LANraragi::Model::Config->get_redis;
         my $archive = get_archive_path( $redis, $id );
         $redis->quit();
         $content = extract_single_file( $archive, $path );
+        $metrics->{extract_seconds} = tv_interval($extract_start) if defined $metrics;
         put( $cachekey, $content );
+    } else {
+        $metrics->{cache_status} = "hit" if defined $metrics;
     }
     return $content;
 }
@@ -290,8 +354,18 @@ sub serve_page {
 
     $logger->debug("Page /$id/$path was requested");
 
+    my $serving_start = [gettimeofday];
+    my %image_metrics = (
+        kind             => "page",
+        variant          => "original",
+        cache_status     => "miss",
+        extract_seconds  => 0,
+        resize_seconds   => 0,
+    );
+
     # Apply resizing transformation if set in Settings
     if ( LANraragi::Model::Config->enable_resize ) {
+        $image_metrics{variant} = "resized";
 
         # Store resized files in a subfolder of the ID's temp folder, keyed by quality
         my $threshold = LANraragi::Model::Config->get_threshold;
@@ -300,12 +374,26 @@ sub serve_page {
         my $cachekey = "resize_page/$id/$path/$threshold/$quality";
         my $content  = fetch($cachekey);
         if ( !defined($content) ) {
-            $content = LANraragi::Model::Reader::resize_image( get_page_data( $id, $path ), $quality, $threshold );
+            $image_metrics{cache_status} = "miss";
+            my %page_metrics;
+            my $page_content = get_page_data( $id, $path, \%page_metrics );
+            my $resize_start = [gettimeofday];
+            $content = LANraragi::Model::Reader::resize_image( $page_content, $quality, $threshold );
+            $image_metrics{extract_seconds} = $page_metrics{extract_seconds} // 0;
+            $image_metrics{resize_seconds}  = tv_interval($resize_start);
             put( $cachekey, $content );
+        } else {
+            $image_metrics{cache_status} = "hit";
         }
 
         # Archive IDs are content-hashed, so (id, path) is stable; private because No-Fun Mode can gate access.
         $self->res->headers->cache_control('private, max-age=3600, immutable');
+
+        LANraragi::Model::Metrics::record_image_serving_metrics(
+            %image_metrics,
+            duration_seconds => tv_interval($serving_start),
+            bytes            => length($content)
+        );
 
         # resize_image always converts the image to jpg
         $self->render_file(
@@ -317,10 +405,16 @@ sub serve_page {
 
         # Get the file extension to report content-type properly
         my ( $n, $p, $file_ext ) = fileparse( $path, qr/\.[^.]*/ );
-        my $content = get_page_data( $id, $path );
+        my $content = get_page_data( $id, $path, \%image_metrics );
         $logger->debug( "Data size:" . length($content) );
 
         $self->res->headers->cache_control('private, max-age=3600, immutable');
+
+        LANraragi::Model::Metrics::record_image_serving_metrics(
+            %image_metrics,
+            duration_seconds => tv_interval($serving_start),
+            bytes            => length($content)
+        );
 
         # Serve extracted file directly
         $self->render_file(

@@ -201,7 +201,7 @@ export function renderTitle(data, type) {
                     ${LRR.encodeHTML(data.title)}
                 </a>
                 <div class="caption" style="display: none;">
-                    <img style="height:300px" src="${thumbSrc}"
+                    <img class="lazy-tooltip-thumbnail" style="height:300px" data-src="${thumbSrc}" loading="lazy"
                          onerror="this.src='${new LRR.ApiURL("/img/noThumb.png")}'">
                 </div>`;
     }
@@ -417,8 +417,16 @@ export function consumeURLParameters() {
 export function buildImageTooltip(target) {
     if (target.innerHTML === "") return;
 
+    const content = $(target).next("div").clone().attr("style", "height:300px;")[0];
+    $(content).find(".lazy-tooltip-thumbnail").each((_, image) => {
+        const src = $(image).attr("data-src");
+        if (src && !$(image).attr("src")) {
+            $(image).attr("src", src);
+        }
+    });
+
     tippy(target, {
-        content: $(target).next("div").clone().attr("style", "height:300px;")[0],
+        content,
         delay: 0,
         animation: false,
         maxWidth: "none",

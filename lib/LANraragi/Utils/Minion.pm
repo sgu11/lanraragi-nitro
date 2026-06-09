@@ -57,6 +57,18 @@ sub _dedup_config_from_redis {
     };
 }
 
+sub _clear_thumbnail_job_lock {
+    my ( $lock_key, $job_id ) = @_;
+    return unless $lock_key && defined $job_id;
+
+    my $redis = LANraragi::Model::Config->get_redis_config;
+    my $stored = $redis->get($lock_key);
+    if ( defined $stored && $stored eq $job_id ) {
+        $redis->del($lock_key);
+    }
+    $redis->quit;
+}
+
 # Add Tasks to the Minion instance.
 sub add_tasks {
     my $minion = shift;
@@ -64,7 +76,7 @@ sub add_tasks {
     $minion->add_task(
         thumbnail_task => sub {
             my ( $job, @args ) = @_;
-            my ( $thumbdir, $id, $page ) = @args;
+            my ( $thumbdir, $id, $page, $lock_key ) = @args;
 
             my $logger = get_logger( "Minion", "minion" );
 
@@ -79,6 +91,7 @@ sub add_tasks {
                 $logger->error($msg);
                 $job->fail( { errors => [$msg] } );
             } else {
+                _clear_thumbnail_job_lock( $lock_key, $job->id );
                 $job->finish($thumbname);
             }
 
@@ -88,7 +101,7 @@ sub add_tasks {
     $minion->add_task(
         tank_thumbnail_task => sub {
             my ( $job, @args ) = @_;
-            my ( $thumbdir, $tank_id ) = @args;
+            my ( $thumbdir, $tank_id, $lock_key ) = @args;
 
             my $logger = get_logger( "Minion", "minion" );
 
@@ -98,6 +111,7 @@ sub add_tasks {
 
             unless (@archives) {
                 $logger->info("Tank $tank_id has no archives, skipping thumbnail generation.");
+                _clear_thumbnail_job_lock( $lock_key, $job->id );
                 $job->finish("No archives in tank.");
                 return;
             }
@@ -125,6 +139,7 @@ sub add_tasks {
                 $logger->error($msg);
                 $job->fail( { errors => [$msg] } );
             } else {
+                _clear_thumbnail_job_lock( $lock_key, $job->id );
                 $job->finish($thumbname);
             }
         }
@@ -1058,15 +1073,19 @@ sub add_tasks {
     $minion->on(
         failed => sub {
             my ( $minion, $job ) = @_;
-            return unless $job->task eq 'page_thumbnails';
-            my ($id) = @{ $job->args };
-            return unless $id;
-            my $redis = LANraragi::Model::Config->get_redis;
-            my $stored = $redis->hget( $id, "thumbjob" );
-            if ( defined $stored && $stored eq $job->id ) {
-                $redis->hdel( $id, "thumbjob" );
+            if ( $job->task eq 'page_thumbnails' ) {
+                my ($id) = @{ $job->args };
+                return unless $id;
+                my $redis = LANraragi::Model::Config->get_redis;
+                my $stored = $redis->hget( $id, "thumbjob" );
+                if ( defined $stored && $stored eq $job->id ) {
+                    $redis->hdel( $id, "thumbjob" );
+                }
+                $redis->quit;
+            } elsif ( $job->task eq 'thumbnail_task' || $job->task eq 'tank_thumbnail_task' ) {
+                my $lock_key = $job->args->[-1];
+                _clear_thumbnail_job_lock( $lock_key, $job->id );
             }
-            $redis->quit;
         }
     );
 

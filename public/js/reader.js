@@ -15,7 +15,10 @@ let currentPage = -1;
 let currentChapter = null;
 let showingSinglePage = true;
 let pageThumbnails = [];
+const MAX_PRELOADED_IMAGES = 8;
 let preloadedImg = {};
+let preloadedPromises = {};
+let preloadedOrder = [];
 let preloadedSizes = {};
 let preloadedDimensions = {};   // fork: page index -> { width, height }, for the first-portrait dampener
 let spaceScroll = { timeout: null, animationId: null };
@@ -1528,6 +1531,32 @@ function preloadImages() {
     }
 }
 
+function touchPreloadedImage(src) {
+    preloadedOrder = preloadedOrder.filter((existingSrc) => existingSrc !== src);
+    preloadedOrder.push(src);
+    prunePreloadedImages();
+}
+
+function prunePreloadedImages() {
+    while (preloadedOrder.length > MAX_PRELOADED_IMAGES) {
+        const src = preloadedOrder.shift();
+        const blobUrl = preloadedImg[src];
+        if (blobUrl) {
+            URL.revokeObjectURL(blobUrl);
+            delete preloadedImg[src];
+        }
+    }
+}
+
+function revokePreloadedImages() {
+    Object.values(preloadedImg).forEach((blobUrl) => URL.revokeObjectURL(blobUrl));
+    preloadedImg = {};
+    preloadedPromises = {};
+    preloadedOrder = [];
+}
+
+window.addEventListener("pagehide", revokePreloadedImages);
+
 async function decodeImage(src) {
     const img = new Image();
     img.src = src;
@@ -1537,12 +1566,30 @@ async function decodeImage(src) {
 async function loadImage(index) {
     const src = pages[index];
 
-    if (!preloadedImg[src]) {
-        const res = await fetch(src);
-        preloadedSizes[index] = parseInt(res.headers.get("Content-Length") / 1024, 10);
-        const blob = await res.blob();
-        preloadedImg[src] = URL.createObjectURL(blob);
+    const displayedImage = index === currentPage ? $("#img").get(0) : null;
+    if (!preloadedImg[src] && displayedImage?.getAttribute("src") === src && displayedImage.complete) {
+        preloadedDimensions[index] = {
+            width: displayedImage.naturalWidth,
+            height: displayedImage.naturalHeight,
+        };
+        return src;
     }
+
+    if (!preloadedImg[src]) {
+        if (!preloadedPromises[src]) {
+            preloadedPromises[src] = fetch(src)
+                .then(async (res) => {
+                    preloadedSizes[index] = parseInt(res.headers.get("Content-Length") / 1024, 10);
+                    const blob = await res.blob();
+                    return URL.createObjectURL(blob);
+                })
+                .finally(() => {
+                    delete preloadedPromises[src];
+                });
+        }
+        preloadedImg[src] = await preloadedPromises[src];
+    }
+    touchPreloadedImage(src);
 
     // Cache natural dimensions for the first-portrait dampener (separate from the
     // byte sizes in preloadedSizes). Decoded off the already-fetched blob.

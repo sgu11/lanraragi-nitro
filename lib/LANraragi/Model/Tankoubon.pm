@@ -28,6 +28,58 @@ my %TANK_METADATA = ( "name", 0, "summary", -1, "tags", -2, "progress", -3 );
 use Exporter 'import';
 our @EXPORT_OK = qw(tank_has_archive_in_set set_tank_tags get_tank_unified_tags update_tank_imputed_indexes serve_tankoubon_thumbnail update_tankoubon_thumbnail update_tank_progress);
 
+sub _tank_thumbnail_mime ($format) {
+    return {
+        jpg => "image/jpeg",
+        jxl => "image/jxl",
+        png => "image/png",
+    }->{$format} // "application/octet-stream";
+}
+
+sub _render_tank_thumbnail_file ( $self, $thumbname, $format ) {
+    $self->res->headers->cache_control('public, max-age=2592000, immutable');
+    $self->res->headers->header('Vary', 'Accept');
+    $self->render_file(
+        filepath            => $thumbname,
+        content_disposition => "inline",
+        content_type        => _tank_thumbnail_mime($format)
+    );
+}
+
+sub _tank_thumbnail_lock_key ( $tank_id, $format ) {
+    return "LRR_TANK_THUMBJOB:$tank_id:$format";
+}
+
+sub _is_active_minion_job ( $self, $job_id ) {
+    return 0 unless defined $job_id;
+
+    my $existing_job = $self->minion->job($job_id);
+    my $job_state    = $existing_job ? $existing_job->info->{state} : undef;
+    return defined $job_state && ( $job_state eq "active" || $job_state eq "inactive" );
+}
+
+sub _queue_single_tank_thumbnail_job ( $self, $lock_key, $task, $args ) {
+    my $redis = LANraragi::Model::Config->get_redis_config;
+
+    my $existing_id = $redis->get($lock_key);
+    if ( _is_active_minion_job( $self, $existing_id ) ) {
+        $redis->quit;
+        return $existing_id;
+    }
+    $redis->del($lock_key) if defined $existing_id;
+
+    my $job_id = $self->minion->enqueue( $task => [ @$args, $lock_key ] => { priority => 0, attempts => 3 } );
+    my $claimed = $redis->set( $lock_key, $job_id, "NX", "EX", 600 );
+    if ( !$claimed ) {
+        my $winner = $redis->get($lock_key);
+        eval { $self->minion->job($job_id)->remove; };
+        $job_id = $winner if defined $winner;
+    }
+
+    $redis->quit;
+    return $job_id;
+}
+
 # get_tankoubon_list(page)
 #   Returns a list of all the Tankoubon objects.
 sub get_tankoubon_list ( $page = 0 ) {
@@ -827,7 +879,8 @@ sub serve_tankoubon_thumbnail {
 
         if ($no_fallback) {
 
-            my $job_id = $self->minion->enqueue( tank_thumbnail_task => [ $thumbdir, $tank_id ] => { priority => 0, attempts => 3 } );
+            my $lock_key = _tank_thumbnail_lock_key( $tank_id, $format );
+            my $job_id = _queue_single_tank_thumbnail_job( $self, $lock_key, tank_thumbnail_task => [ $thumbdir, $tank_id ] );
             $self->render(
                 openapi => {
                     operation => "serve_tankoubon_thumbnail",
@@ -842,7 +895,7 @@ sub serve_tankoubon_thumbnail {
         return;
     }
 
-    $self->render_file( filepath => $thumbname );
+    _render_tank_thumbnail_file( $self, $thumbname, $thumbname =~ /\.jxl$/ ? "jxl" : "jpg" );
 }
 
 # update_tankoubon_thumbnail(self, tank_id)

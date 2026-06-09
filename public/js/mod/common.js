@@ -341,7 +341,7 @@ export function buildThumbnailDiv(data, tagTooltip = true) {
                     <a href="${reader_url}" title="${encodeHTML(data.title)}">
                         <img style="position:relative;" id="${id}_thumb" src="${new ApiURL("/img/wait_warmly.jpg")}"/>
                         <i id="${id}_spinner" class="fa fa-4x fa-cog fa-spin ttspinner"></i>
-                        <img src="${thumbSrc}"
+                        <img loading="lazy" src="${thumbSrc}"
                                 onload="$('#${id}_thumb').remove(); $('#${id}_spinner').remove();"
                                 onerror="this.src='${new ApiURL("/img/noThumb.png")}'"/>
                     </a>

@@ -26,9 +26,10 @@ my $REQUEST_METRICS_UPDATE_COUNT     = 0;
 sub get_prometheus_metrics {
     my $controller          = shift;
     my @api_metrics         = get_prometheus_api_metrics();
+    my @image_metrics       = get_prometheus_image_metrics();
     my @process_metrics     = get_prometheus_process_metrics();
     my @stats_metrics       = get_prometheus_stats_metrics($controller);
-    my @output              = (@api_metrics, @process_metrics, @stats_metrics);
+    my @output              = (@api_metrics, @image_metrics, @process_metrics, @stats_metrics);
     push @output, "# EOF";
     return join("\n", @output) . "\n";
 }
@@ -107,6 +108,115 @@ sub get_prometheus_api_metrics {
     push @output, "# TYPE lanraragi_active_workers gauge";
     push @output, "# HELP lanraragi_active_workers Number of active LANraragi workers";
     push @output, "lanraragi_active_workers $worker_count";
+
+    $metrics_redis->quit();
+    return @output;
+}
+
+sub _safe_image_metric_label {
+    my $value = shift;
+    $value //= "unknown";
+    $value = lc $value;
+    $value =~ s/[^a-z0-9_-]/_/g;
+    return $value;
+}
+
+sub record_image_serving_metrics {
+    my (%args) = @_;
+
+    return unless LANraragi::Model::Config->enable_metrics;
+
+    my $kind         = _safe_image_metric_label( $args{kind} );
+    my $variant      = _safe_image_metric_label( $args{variant} );
+    my $cache_status = _safe_image_metric_label( $args{cache_status} );
+    my $key          = "metrics:image:$kind:$variant:$cache_status";
+
+    my $redis = LANraragi::Model::Config->get_redis_metrics;
+    return unless $redis;
+
+    my $error;
+    eval {
+        $redis->hincrby( $key, "count", 1 );
+        $redis->hincrbyfloat( $key, "duration_sum",         $args{duration_seconds} // 0 );
+        $redis->hincrbyfloat( $key, "extract_duration_sum", $args{extract_seconds}  // 0 );
+        $redis->hincrbyfloat( $key, "resize_duration_sum",  $args{resize_seconds}   // 0 );
+        $redis->hincrby( $key, "bytes_sum", $args{bytes} // 0 );
+    };
+    $error = $@;
+    $redis->quit();
+
+    if ($error) {
+        my $logger = get_logger( "Metrics", "lanraragi" );
+        $logger->error("Failed to update image serving metrics: $error");
+    }
+}
+
+sub get_prometheus_image_metrics {
+    my $metrics_redis = LANraragi::Model::Config->get_redis_metrics;
+    return () unless $metrics_redis;
+
+    my @output;
+    my @metric_keys = $metrics_redis->keys("metrics:image:*");
+    my %aggregated_image_metrics;
+
+    foreach my $key (@metric_keys) {
+        next unless $key =~ /^metrics:image:([^:]+):([^:]+):([^:]+)$/;
+        my ( $kind, $variant, $cache_status ) = ( $1, $2, $3 );
+        my %metric_data = $metrics_redis->hgetall($key);
+        next unless %metric_data;
+
+        my $labels = sprintf(
+            'kind="%s",variant="%s",cache="%s"',
+            LANraragi::Utils::Metrics::escape_label_value($kind),
+            LANraragi::Utils::Metrics::escape_label_value($variant),
+            LANraragi::Utils::Metrics::escape_label_value($cache_status)
+        );
+
+        $aggregated_image_metrics{"lanraragi_image_serving_requests_total"}{$labels}       += $metric_data{count}                 || 0;
+        $aggregated_image_metrics{"lanraragi_image_serving_duration_seconds_total"}{$labels} += $metric_data{duration_sum}          || 0;
+        $aggregated_image_metrics{"lanraragi_image_serving_extract_seconds_total"}{$labels}  += $metric_data{extract_duration_sum}  || 0;
+        $aggregated_image_metrics{"lanraragi_image_serving_resize_seconds_total"}{$labels}   += $metric_data{resize_duration_sum}   || 0;
+        $aggregated_image_metrics{"lanraragi_image_serving_bytes_total"}{$labels}            += $metric_data{bytes_sum}             || 0;
+    }
+
+    push @output, "# TYPE lanraragi_image_serving_requests_total counter";
+    push @output, "# HELP lanraragi_image_serving_requests_total Total number of image serving requests";
+    foreach my $labels ( sort keys %{ $aggregated_image_metrics{"lanraragi_image_serving_requests_total"} || {} } ) {
+        my $value = $aggregated_image_metrics{"lanraragi_image_serving_requests_total"}{$labels};
+        push @output, "lanraragi_image_serving_requests_total{$labels} $value";
+    }
+
+    push @output, "# TYPE lanraragi_image_serving_duration_seconds_total counter";
+    push @output, "# UNIT lanraragi_image_serving_duration_seconds_total seconds";
+    push @output, "# HELP lanraragi_image_serving_duration_seconds_total Total time spent serving images";
+    foreach my $labels ( sort keys %{ $aggregated_image_metrics{"lanraragi_image_serving_duration_seconds_total"} || {} } ) {
+        my $value = $aggregated_image_metrics{"lanraragi_image_serving_duration_seconds_total"}{$labels};
+        push @output, "lanraragi_image_serving_duration_seconds_total{$labels} $value";
+    }
+
+    push @output, "# TYPE lanraragi_image_serving_extract_seconds_total counter";
+    push @output, "# UNIT lanraragi_image_serving_extract_seconds_total seconds";
+    push @output, "# HELP lanraragi_image_serving_extract_seconds_total Total archive extraction time while serving images";
+    foreach my $labels ( sort keys %{ $aggregated_image_metrics{"lanraragi_image_serving_extract_seconds_total"} || {} } ) {
+        my $value = $aggregated_image_metrics{"lanraragi_image_serving_extract_seconds_total"}{$labels};
+        push @output, "lanraragi_image_serving_extract_seconds_total{$labels} $value";
+    }
+
+    push @output, "# TYPE lanraragi_image_serving_resize_seconds_total counter";
+    push @output, "# UNIT lanraragi_image_serving_resize_seconds_total seconds";
+    push @output, "# HELP lanraragi_image_serving_resize_seconds_total Total resize time while serving images";
+    foreach my $labels ( sort keys %{ $aggregated_image_metrics{"lanraragi_image_serving_resize_seconds_total"} || {} } ) {
+        my $value = $aggregated_image_metrics{"lanraragi_image_serving_resize_seconds_total"}{$labels};
+        push @output, "lanraragi_image_serving_resize_seconds_total{$labels} $value";
+    }
+
+    push @output, "# TYPE lanraragi_image_serving_bytes_total counter";
+    push @output, "# UNIT lanraragi_image_serving_bytes_total bytes";
+    push @output, "# HELP lanraragi_image_serving_bytes_total Total bytes served by image endpoints";
+    foreach my $labels ( sort keys %{ $aggregated_image_metrics{"lanraragi_image_serving_bytes_total"} || {} } ) {
+        my $value = $aggregated_image_metrics{"lanraragi_image_serving_bytes_total"}{$labels};
+        push @output, "lanraragi_image_serving_bytes_total{$labels} $value";
+    }
 
     $metrics_redis->quit();
     return @output;
@@ -386,7 +496,8 @@ sub cleanup_metrics {
         my @http_keys       = $metrics_redis->keys("metrics:http:*");
         my @minion_keys     = $metrics_redis->keys("metrics:minion:*");
         my @shinobu_keys    = $metrics_redis->keys("metrics:shinobu:*");
-        my @all_keys        = (@api_keys, @http_keys, @minion_keys, @shinobu_keys);
+        my @image_keys      = $metrics_redis->keys("metrics:image:*");
+        my @all_keys        = (@api_keys, @http_keys, @minion_keys, @shinobu_keys, @image_keys);
         if ( @all_keys ) {
             $metrics_redis->del(@all_keys);
             my $count = scalar(@all_keys);

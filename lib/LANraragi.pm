@@ -29,6 +29,18 @@ use LANraragi::Model::Metrics;
 
 use constant IS_UNIX => ( $Config{osname} ne 'MSWin32' );
 
+sub is_baseurl_cookie_exempt {
+    my $path = shift // "";
+
+    return 1 if $path =~ m{(?:^|/)(?:css|js|themes|img)/};
+    return 1 if $path =~ m{/(?:favicon\.ico|robots\.txt|app\.webappmanifest)$};
+    return 1 if $path =~ m{(?:^|/)api/archives/[A-Fa-f0-9]{40}/thumbnail$};
+    return 1 if $path =~ m{(?:^|/)api/archives/[A-Fa-f0-9]{40}/page$};
+    return 1 if $path =~ m{(?:^|/)api/tankoubons/TANK_[^/]+/thumbnail$};
+
+    return 0;
+}
+
 # This method will run once at server start
 sub startup {
     my $self = shift;
@@ -224,7 +236,7 @@ sub startup {
             # The lrr_baseurl cookie is only consumed by page-level JS, not by /css|js|themes|img/*.
             # Match the tail of the path so this works with or without a base_url_path prefix.
             my $path = $c->req->url->path->to_string;
-            unless ( $path =~ m{(?:^|/)(?:css|js|themes|img)/} || $path =~ m{/(?:favicon\.ico|robots\.txt|app\.webappmanifest)$} ) {
+            unless ( is_baseurl_cookie_exempt($path) ) {
                 # SameSite=Lax is the default behavior here; I set it
                 # explicitly to get rid of a warning in the browser
                 $c->cookie( "lrr_baseurl" => $prefix, { samesite => "lax", path => "/" } );
