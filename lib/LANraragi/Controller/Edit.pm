@@ -18,8 +18,13 @@ sub index {
     # Does the passed file exist in the database?
     my $id = $self->req->param('id');
 
+    unless ($id) {
+        $self->redirect_to('index');
+        return;
+    }
+
     # Tankoubon IDs follow the pattern TANK_\d{10}
-    if ( $id && $id =~ /^TANK_/ ) {
+    if ( $id =~ /^TANK_/ ) {
         return $self->edit_tankoubon($id);
     }
 
