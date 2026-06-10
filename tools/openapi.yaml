@@ -1106,8 +1106,7 @@ paths:
           description: ID of the archive to process
           schema:
             type: string
-            maxLength: 40
-            minLength: 40
+            pattern: '^(?:[A-Za-z0-9_]{40}|tachiyomi)$'
         - name: no_fallback
           in: query
           required: false

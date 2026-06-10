@@ -46,6 +46,15 @@ sub _render_tank_thumbnail_file ( $self, $thumbname, $format ) {
     );
 }
 
+sub _render_tank_thumbnail_placeholder ($self) {
+    $self->res->headers->cache_control('public, max-age=86400');
+    $self->render_file(
+        filepath            => "./public/img/noThumb.png",
+        content_disposition => "inline",
+        content_type        => "image/png"
+    );
+}
+
 sub _tank_thumbnail_lock_key ( $tank_id, $format ) {
     return "LRR_TANK_THUMBJOB:$tank_id:$format";
 }
@@ -890,7 +899,7 @@ sub serve_tankoubon_thumbnail {
                 status => 202
             );
         } else {
-            $self->render_file( filepath => "./public/img/noThumb.png" );
+            _render_tank_thumbnail_placeholder($self);
         }
         return;
     }

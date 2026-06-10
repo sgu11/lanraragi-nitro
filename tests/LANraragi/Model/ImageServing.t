@@ -192,6 +192,17 @@ note("archive thumbnails are served as inline cacheable image responses");
       ->header_like( "Vary", qr{\bAccept\b}, "archive thumbnail varies on Accept" );
 }
 
+note("archive thumbnail placeholder is served inline with cache headers");
+{
+    my $id = "feedfacefeedfacefeedfacefeedfacefeedface";
+    my $t = build_image_app();
+    $t->get_ok("/archives/$id/thumbnail")
+      ->status_is(200)
+      ->header_like( "Content-Type", qr{^image/png}, "archive placeholder content type is image/png" )
+      ->header_like( "Content-Disposition", qr{\binline\b}, "archive placeholder is displayed inline" )
+      ->header_like( "Cache-Control", qr{public, max-age=86400}, "archive placeholder has cache headers" );
+}
+
 note("tankoubon thumbnails are served as inline cacheable image responses");
 {
     my $tank_id = "TANK_1234567890";
@@ -208,6 +219,17 @@ note("tankoubon thumbnails are served as inline cacheable image responses");
       ->header_like( "Content-Disposition", qr{\binline\b}, "tank thumbnail is displayed inline" )
       ->header_like( "Cache-Control", qr{public, max-age=2592000, immutable}, "tank thumbnail has long cache headers" )
       ->header_like( "Vary", qr{\bAccept\b}, "tank thumbnail varies on Accept" );
+}
+
+note("tankoubon thumbnail placeholder is served inline with cache headers");
+{
+    my $tank_id = "TANK_0000000000";
+    my $t = build_image_app();
+    $t->get_ok("/tankoubons/$tank_id/thumbnail")
+      ->status_is(200)
+      ->header_like( "Content-Type", qr{^image/png}, "tank placeholder content type is image/png" )
+      ->header_like( "Content-Disposition", qr{\binline\b}, "tank placeholder is displayed inline" )
+      ->header_like( "Cache-Control", qr{public, max-age=86400}, "tank placeholder has cache headers" );
 }
 
 done_testing();

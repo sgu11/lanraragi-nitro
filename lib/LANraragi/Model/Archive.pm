@@ -226,6 +226,15 @@ sub _render_thumbnail_file ( $self, $thumbname, $format ) {
     );
 }
 
+sub _render_thumbnail_placeholder ($self) {
+    $self->res->headers->cache_control('public, max-age=86400');
+    $self->render_file(
+        filepath            => "./public/img/noThumb.png",
+        content_disposition => "inline",
+        content_type        => "image/png"
+    );
+}
+
 sub _single_thumbnail_lock_key ( $id, $page, $format ) {
     return "LRR_THUMBJOB:$id:$page:$format";
 }
@@ -318,7 +327,7 @@ sub serve_thumbnail {
                 status => 202
             );
         } else {
-            $self->render_file( filepath => "./public/img/noThumb.png" );
+            _render_thumbnail_placeholder($self);
         }
         return;
     }

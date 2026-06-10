@@ -60,6 +60,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 - **Filelist cache (B.1)** — `pagefiles` on the archive hash (Storable-frozen, invalidated by Shinobu on arcsize mismatch and by `change_archive_id`). Reader opens on warm cache skip the libarchive scan — 237 → 49 ms on truly cold archives.
 - **Inline first-page `src=` (A.6)** — template sets the reader's `<img src>` to the first page URL when pagefiles cache is warm, so the browser starts the page fetch during HTML parse instead of waiting for the `/files` API.
 - **Generation-keyed TTL search cache (B.6)** — `LRR_SEARCHCACHE:$gen:$key` with `EX 300`; `invalidate_cache` bumps `LRR_SEARCHCACHE_GEN` instead of mass-DEL. Old entries expire on their own — no blocking mass delete.
+- **Tachiyomi-compatible API hot path** — Tachiyomi/Mihon-style clients get archive-only search results by default, short-lived repeated `/api/search` and one-item random-search caches, a duplicate metadata-call cache, opportunistic `pagefiles` warm jobs, and cacheable inline placeholder thumbnails without requiring an APK rebuild.
 
 **Tier B-redis** — maintained sets + pipelined rebuild:
 - **`LRR_ALL_ARCHIVES` / `LRR_CATEGORIES` / `LRR_TANKS` (B.3)** — maintained sets replace every `KEYS '?'x40`, `KEYS 'SET_*'`, `KEYS 'TANK_*'` scan. Lazy backfill from `KEYS` on first read covers existing installs.

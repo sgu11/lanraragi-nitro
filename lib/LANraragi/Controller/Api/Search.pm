@@ -4,11 +4,18 @@ use Mojo::Base 'Mojolicious::Controller';
 use feature qw(say signatures);
 no warnings 'experimental::signatures';
 
+use Digest::SHA qw(sha1_hex);
 use List::Util qw(min);
+use Storable qw(nfreeze thaw);
 
+use LANraragi::Model::Config;
 use LANraragi::Model::Search;
-use LANraragi::Utils::Generic  qw(render_api_response);
-use LANraragi::Utils::Database qw(invalidate_cache get_archive_json_multi);
+use LANraragi::Utils::Generic   qw(render_api_response);
+use LANraragi::Utils::Database  qw(invalidate_cache get_archive_json_multi);
+use LANraragi::Utils::Tachiyomi qw(is_tachiyomi_client tachiyomi_cache_identity);
+
+use constant TACHIYOMI_SEARCH_CACHE_TTL => 30;
+use constant TACHIYOMI_RANDOM_CACHE_TTL => 10;
 
 # Undocumented API matching the Datatables spec.
 sub handle_datatables ($self) {
@@ -73,6 +80,8 @@ sub handle_api {
     my $self = shift->openapi->valid_input or return;
     my $req  = $self->req;
 
+    my $tachiyomi = is_tachiyomi_client($self);
+
     my $filter        = $req->param('filter');
     my $category      = $req->param('category') || "";
     my $start         = $req->param('start')    || 0;
@@ -80,15 +89,26 @@ sub handle_api {
     my $sortorder     = $req->param('order');
     my $newfilter     = $req->param('newonly')       // "false";
     my $untaggedf     = $req->param('untaggedonly')  // "false";
-    my $grouptanks    = $req->param('groupby_tanks') // "true";
+    my $grouptanks    = $req->param('groupby_tanks') // ( $tachiyomi ? "false" : "true" );
     my $hidecompleted = $req->param('hidecompleted') // "false";
 
     $sortorder = ( $sortorder && $sortorder eq 'desc' ) ? 1 : 0;
 
+    my $cachekey;
+    if ( $tachiyomi && ( $sortkey // "" ) ne "lastread" ) {
+        $cachekey = _tachiyomi_cache_key(
+            $self, "search", $filter, $category, $start, $sortkey, $sortorder, $newfilter,
+            $untaggedf, $grouptanks, $hidecompleted
+        );
+        if ( my $cached = _get_tachiyomi_cache($cachekey) ) {
+            return $self->render( openapi => $cached );
+        }
+    }
+
     my ( $total, $filtered, @ids ) = LANraragi::Model::Search::do_search(
         $filter,    $category,            $start,               $sortkey,
-        $sortorder, $newfilter eq "true", $untaggedf eq "true", $grouptanks eq "true",
-        $hidecompleted eq "true"
+        $sortorder, $newfilter eq "true" ? 1 : 0, $untaggedf eq "true" ? 1 : 0, $grouptanks eq "true" ? 1 : 0,
+        $hidecompleted eq "true" ? 1 : 0
     );
 
     if ( $total eq -1 && $filtered eq -1 ) {
@@ -103,7 +123,9 @@ sub handle_api {
             status => 204
         );
     } else {
-        $self->render( openapi => get_api_object( $total, $filtered, @ids ) );
+        my $response = get_api_object( $total, $filtered, @ids );
+        _set_tachiyomi_cache( $cachekey, $response, TACHIYOMI_SEARCH_CACHE_TTL ) if $cachekey;
+        $self->render( openapi => $response );
     }
 }
 
@@ -118,6 +140,8 @@ sub get_random_archives {
     my $self = shift->openapi->valid_input or return;
     my $req  = $self->req;
 
+    my $tachiyomi = is_tachiyomi_client($self);
+
     my $filter        = $req->param('filter');
     my $category      = $req->param('category')      || "";
     my $newfilter     = $req->param('newonly')       // "false";
@@ -125,6 +149,17 @@ sub get_random_archives {
     my $grouptanks    = $req->param('groupby_tanks') // "false";
     my $hidecompleted = $req->param('hidecompleted') // "false";
     my $random_count  = $req->param('count')         || 5;
+
+    my $cachekey;
+    if ( $tachiyomi && $random_count == 1 ) {
+        $cachekey = _tachiyomi_cache_key(
+            $self, "random", $filter, $category, $newfilter, $untaggedf,
+            $grouptanks, $hidecompleted, $random_count
+        );
+        if ( my $cached = _get_tachiyomi_cache($cachekey) ) {
+            return $self->render( openapi => $cached );
+        }
+    }
 
     # Use the search engine to get IDs matching the filter/category selection, with start=-1 to get all data
     my ( $total, $filtered, @ids ) = LANraragi::Model::Search::do_search(
@@ -145,12 +180,39 @@ sub get_random_archives {
     }
 
     my @data = get_archive_json_multi(@random_ids);
-    $self->render(
-        openapi => {
-            data         => \@data,
-            recordsTotal => $random_count
-        }
-    );
+    my $response = {
+        data         => \@data,
+        recordsTotal => $random_count
+    };
+    _set_tachiyomi_cache( $cachekey, $response, TACHIYOMI_RANDOM_CACHE_TTL ) if $cachekey;
+    $self->render( openapi => $response );
+}
+
+sub _tachiyomi_cache_key ( $self, $scope, @parts ) {
+    my $identity = tachiyomi_cache_identity($self);
+    return "LRR_TACHIYOMI_API:$scope:" . sha1_hex( join "\x1f", $identity, map { defined $_ ? $_ : "" } @parts );
+}
+
+sub _get_tachiyomi_cache ($cachekey) {
+    return unless $cachekey;
+
+    my $redis = LANraragi::Model::Config->get_redis_search;
+    my $gen   = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
+    my $blob  = $redis->get("LRR_SEARCHCACHE:$gen:$cachekey");
+    $redis->quit;
+
+    return unless defined $blob && length $blob;
+    my $payload = eval { thaw($blob) };
+    return $@ ? undef : $payload;
+}
+
+sub _set_tachiyomi_cache ( $cachekey, $payload, $ttl ) {
+    return unless $cachekey && $payload;
+
+    my $redis = LANraragi::Model::Config->get_redis_search;
+    my $gen   = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
+    eval { $redis->set( "LRR_SEARCHCACHE:$gen:$cachekey", nfreeze($payload), 'EX', $ttl ); };
+    $redis->quit;
 }
 
 # Creates a Datatables-compatible json from the given data.
