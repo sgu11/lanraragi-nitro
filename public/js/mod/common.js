@@ -589,3 +589,7 @@ export function setProgressTracking(_isProgressLocal, _isProgressAuthenticated) 
     isProgressLocal = _isProgressLocal;
     isProgressAuthenticated = _isProgressAuthenticated;
 }
+
+export function getProgressTracking() {
+    return { isProgressLocal, isProgressAuthenticated };
+}

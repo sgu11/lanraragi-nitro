@@ -5,6 +5,11 @@
 import * as LRR from "./common.js";
 import * as Server from "./server.js";
 import * as IndexTable from "./index_datatables.js";
+import {
+    metadataResponseMeansMissing,
+    shouldMigrateProgressValue,
+    shouldRunProgressMigration,
+} from "./progress-migration.js";
 import I18N from "i18n";
 import * as marked from "marked";
 import DOMPurify from "dompurify";
@@ -997,7 +1002,8 @@ export function fetchChangelog() {
  */
 export function migrateProgress() {
     // No migration if local progress is enabled, or if progress is authenticated and we're not logged in.
-    if (LRR.isProgressLocal || (LRR.isProgressAuthenticated && !LRR.isUserLogged())) {
+    const { isProgressLocal, isProgressAuthenticated } = LRR.getProgressTracking();
+    if (!shouldRunProgressMigration(isProgressLocal, isProgressAuthenticated, LRR.isUserLogged())) {
         return;
     }
 
@@ -1009,6 +1015,11 @@ export function migrateProgress() {
             icon: "info",
             hideAfter: 23000,
         });
+
+        const clearLocalProgress = (id) => {
+            localStorage.removeItem(`${id}-reader`);
+            localStorage.removeItem(`${id}-totalPages`);
+        };
 
         const promises = [];
         localProgressKeys.forEach((id) => {
@@ -1024,44 +1035,60 @@ export function migrateProgress() {
                 `api/archives/${id}/progress/${progress}?force=1`;
 
             const promise = fetch(metadataUrl, { method: "GET" })
-                .then((response) => {
-                    if (response.status === 404) {
-                        localStorage.removeItem(`${id}-reader`);
-                        localStorage.removeItem(`${id}-totalPages`);
+                .then((response) => response.json()
+                    .catch(() => null)
+                    .then((data) => ({ response, data })))
+                .then(({ response, data }) => {
+                    if (metadataResponseMeansMissing(response, data)) {
+                        clearLocalProgress(id);
                         return null;
                     }
-                    if (!response.ok) {
+
+                    if (!response.ok || data === null) {
                         // eslint-disable-next-line no-console
                         console.warn(`Failed to migrate progress for ${id} (status ${response.status})`);
                         return null;
                     }
-                    return response.json();
+
+                    return data;
                 })
                 .then((data) => {
-                    if (!data) return;
+                    if (!data) return false;
 
                     const serverProgress = data.progress;
 
                     // Don't migrate if the server progress is already further
-                    if (progress !== null
-                        && serverProgress !== undefined
-                        && progress > serverProgress) {
-                        Server.callAPI(progressUrl, "PUT", null, I18N.LocalProgressionError, null);
+                    if (shouldMigrateProgressValue(progress, serverProgress)) {
+                        return Server.callAPI(progressUrl, "PUT", null, I18N.LocalProgressionError, () => true)
+                            .then((success) => {
+                                if (success === true) {
+                                    clearLocalProgress(id);
+                                    return true;
+                                }
+
+                                return false;
+                            });
                     }
 
                     // Clear out localStorage'd progress
-                    localStorage.removeItem(`${id}-reader`);
-                    localStorage.removeItem(`${id}-totalPages`);
+                    clearLocalProgress(id);
+                    return true;
                 });
             promises.push(promise);
         });
 
-        Promise.all(promises).then(() => LRR.toast({
-            heading: I18N.LocalProgressionComplete + " 🎉",
-            text: I18N.LocalProgressionCompleteDesc,
-            icon: "success",
-            hideAfter: 13000,
-        }));
+        Promise.all(promises).then((results) => {
+            if (!results.every(Boolean)) {
+                return;
+            }
+
+            LRR.toast({
+                heading: I18N.LocalProgressionComplete + " 🎉",
+                text: I18N.LocalProgressionCompleteDesc,
+                icon: "success",
+                hideAfter: 13000,
+            });
+        });
     } else {
         // eslint-disable-next-line no-console
         console.log("No local reading progression to migrate");
