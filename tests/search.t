@@ -359,4 +359,16 @@ note('testing gen-keyed sort-order cache (N-11)...');
     ok( defined $redis->get("LRR_SORTCACHE:1:artist"), 'Artist sort order re-cached under bumped gen' );
 }
 
+note('testing per-query search cache writes (nfreeze precedence regression)...');
+
+{
+    # do_search must leave a frozen result blob behind. This went silently
+    # broken in production once: "nfreeze [ ... ], 'EX', 300" parsed the SET
+    # options as nfreeze arguments, croaked inside the eval, and every search
+    # became a full DB parse. Gen is 1 here after the invalidate_cache above.
+    LANraragi::Model::Search::do_search( "uniquecachewrite", "", 0, 0, 0, 0, 0, 0, 0 );
+    ok( defined $redis->get("LRR_SEARCHCACHE:1:-uniquecachewrite-0-0-0-0-0-0"),
+        'do_search writes its per-query cache entry' );
+}
+
 done_testing();
