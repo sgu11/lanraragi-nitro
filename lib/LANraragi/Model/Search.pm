@@ -117,8 +117,11 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
         # those old keys expire naturally via TTL rather than via a blocking mass DEL.
         eval {
             my $gen = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
-            $redis->set( "LRR_SEARCHCACHE:$gen:$cachekey", nfreeze [ $keyed_count, @filtered ], 'EX', 300 );
+            $redis->set( "LRR_SEARCHCACHE:$gen:$cachekey", nfreeze( [ $keyed_count, @filtered ] ), 'EX', 300 );
         };
+        if ($@) {
+            $logger->warn("Failed to write search result cache: $@");
+        }
     }
     $redis->quit();
 
