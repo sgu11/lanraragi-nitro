@@ -117,6 +117,7 @@
 				<input id='apply-search' class='searchbtn stdbtn' type='button' value='[% c.lh("Apply Filter") %]' />
 				<input id='clear-search' class='searchbtn stdbtn' type='button' value='[% c.lh("Clear Filter") %]' />
 				<input id='msm-toggle' class='searchbtn stdbtn' type='button' value='[% c.lh("Select Archives") %]' />
+				<input id='toggle-carousel-visibility' class='searchbtn stdbtn' type='button' value='[% c.lh("Show Carousel") %]' />
 			</div>
 
 			<ul class="collapsible index-carousel with-right-caret">

@@ -12,6 +12,9 @@ import DOMPurify from "dompurify";
 let selectedCategory = "";
 let awesomplete = {};
 let carouselInitialized = false;
+// Carousel content is stale (searches ran while it was hidden/collapsed).
+// Revealing the carousel triggers a single refresh when this is set.
+let carouselDirty = true;
 let swiper = {};
 let serverVersion = "";
 let debugMode = false;
@@ -34,6 +37,7 @@ export function initializeAll() {
     $(document).on("click.order-sortby", "#order-sortby", toggleOrder);
     $(document).on("click.open-carousel", ".collapsible-title", toggleCarousel);
     $(document).on("click.reload-carousel", "#reload-carousel", updateCarousel);
+    $(document).on("click.toggle-carousel-visibility", "#toggle-carousel-visibility", toggleCarouselVisibility);
     $(document).on("click.close-overlay", "#overlay-shade", LRR.closeOverlay);
     $(document).on("click.thumbnail-bookmark-icon", ".thumbnail-bookmark-icon", toggleBookmarkStatusByIcon);
     $(document).on("click.title-bookmark-icon", ".title-bookmark-icon", toggleBookmarkStatusByIcon);
@@ -83,12 +87,22 @@ export function initializeAll() {
         localStorage.carouselOpen = 1;
     }
 
-    // Force-open the collapsible if carouselOpen = true
-    if (localStorage.carouselOpen === "1") {
-        $(".collapsible-title").trigger("click", [false]);
-        // Index.updateCarousel(); will be executed by toggleCarousel
-    } else {
-        updateCarousel();
+    // Default to a hidden carousel: when visible it costs an extra search per
+    // index interaction, so it's opt-in via the Show Carousel button.
+    if (localStorage.getItem("carouselHidden") === null) {
+        localStorage.carouselHidden = "1";
+    }
+
+    applyCarouselVisibility();
+
+    if (localStorage.carouselHidden !== "1") {
+        // Force-open the collapsible if carouselOpen = true
+        if (localStorage.carouselOpen === "1") {
+            $(".collapsible-title").trigger("click", [false]);
+            // Index.updateCarousel(); will be executed by toggleCarousel
+        } else {
+            updateCarousel();
+        }
     }
 
     // Initialize carousel mode menu
@@ -369,8 +383,42 @@ export function loadTagSuggestions() {
 
 // #region Carousel
 
+/**
+ * Show or hide the whole carousel block per the carouselHidden pref and
+ * update the toggle button label accordingly.
+ */
+export function applyCarouselVisibility() {
+    const hidden = localStorage.carouselHidden === "1";
+    $(".index-carousel").toggle(!hidden);
+    $("#toggle-carousel-visibility").val(hidden ? I18N.ShowCarousel : I18N.HideCarousel);
+}
+
+/**
+ * Toggle carousel visibility. Hiding leaves all carousel state untouched
+ * (and stops all carousel fetches); showing refreshes the content if
+ * searches happened while it was hidden.
+ */
+export function toggleCarouselVisibility(e) {
+    e?.preventDefault();
+    localStorage.carouselHidden = (localStorage.carouselHidden === "1") ? "0" : "1";
+    applyCarouselVisibility();
+
+    if (localStorage.carouselHidden === "1") {
+        return;
+    }
+
+    if (localStorage.carouselOpen === "1") {
+        if (!carouselInitialized) {
+            // Force-open triggers carousel init + first load
+            $(".collapsible-title").trigger("click", [false]);
+        } else if (carouselDirty) {
+            updateCarousel();
+        }
+    }
+}
+
 export function toggleCarousel(e, updateLocalStorage = true) {
-    if (updateLocalStorage) 
+    if (updateLocalStorage)
         localStorage.carouselOpen = (localStorage.carouselOpen === "1") ? "0" : "1";
 
     if (!carouselInitialized) {
@@ -419,6 +467,12 @@ export function toggleCarousel(e, updateLocalStorage = true) {
         });
 
         updateCarousel();
+        return;
+    }
+
+    // Re-opened with stale content (searches ran while collapsed) → refresh
+    if (carouselDirty && $(".collapsible-title").hasClass("active")) {
+        updateCarousel();
     }
 }
 
@@ -429,12 +483,6 @@ export function updateCarousel(e) {
     if (isMultiSelectMode) {
         return;
     }
-
-    $("#carousel-empty").hide();
-    $("#carousel-loading").show();
-    $(".swiper-wrapper").hide();
-
-    $("#reload-carousel").addClass("fa-spin");
 
     // Hit a different API endpoint depending on the requested localStorage carousel type
     let endpoint;
@@ -477,25 +525,40 @@ export function updateCarousel(e) {
             break;
     }
 
-    if (carouselInitialized) {
-        Server.callAPI(endpoint, "GET", null, I18N.CarouselError,
-            (results) => {
-                swiper.virtual.removeAllSlides();
-                const slides = results.data
-                    .map((archive) => LRR.buildThumbnailDiv(archive));
-                swiper.virtual.appendSlide(slides);
-                swiper.virtual.update();
-
-                if (results.data.length === 0) {
-                    $("#carousel-empty").show();
-                }
-
-                $("#carousel-loading").hide();
-                $(".swiper-wrapper").show();
-                $("#reload-carousel").removeClass("fa-spin");
-            },
-        );
+    // Resource guard: while the carousel is hidden, collapsed or not yet
+    // initialized, skip the fetch and slide rebuild entirely (only the cheap
+    // header icon/title update above runs). Content is marked stale instead;
+    // revealing the carousel triggers a single refresh.
+    if (!carouselInitialized || localStorage.carouselHidden === "1"
+        || !$(".collapsible-title").hasClass("active")) {
+        carouselDirty = true;
+        return;
     }
+    carouselDirty = false;
+
+    $("#carousel-empty").hide();
+    $("#carousel-loading").show();
+    $(".swiper-wrapper").hide();
+
+    $("#reload-carousel").addClass("fa-spin");
+
+    Server.callAPI(endpoint, "GET", null, I18N.CarouselError,
+        (results) => {
+            swiper.virtual.removeAllSlides();
+            const slides = results.data
+                .map((archive) => LRR.buildThumbnailDiv(archive));
+            swiper.virtual.appendSlide(slides);
+            swiper.virtual.update();
+
+            if (results.data.length === 0) {
+                $("#carousel-empty").show();
+            }
+
+            $("#carousel-loading").hide();
+            $(".swiper-wrapper").show();
+            $("#reload-carousel").removeClass("fa-spin");
+        },
+    );
 }
 
 // #endregion
@@ -538,6 +601,10 @@ export function toggleMultiSelectMode() {
  * show MSM controls, and update the header.
  */
 export function enterSelectionCarouselMode() {
+    // MSM uses the carousel as its selection panel — force it visible
+    // regardless of the carouselHidden pref (restored on exit).
+    $(".index-carousel").show();
+
     // Initialize the carousel if it hasn't been opened yet
     if (!carouselInitialized) {
         toggleCarousel(null, false);
@@ -586,6 +653,9 @@ export function exitSelectionCarouselMode() {
     if (localStorage.carouselOpen !== "1") {
         $(".collapsible-title").trigger("click", [false]);
     }
+
+    // Re-hide the carousel if the visibility pref says so (MSM force-showed it)
+    applyCarouselVisibility();
 
     // Restore empty state text
     $("#carousel-empty-text").text(I18N.CarouselEmpty);

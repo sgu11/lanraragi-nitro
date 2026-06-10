@@ -2079,3 +2079,10 @@ msgstr ""
 
 msgid "This will merge \${n} Archives into Tankoubon \${name}. Proceed?"
 msgstr "${n}개의 아카이브를 단행본 ${name}(으)로 병합합니다. 진행하시겠습니까?"
+
+# ------Carousel visibility toggle (fork)------
+msgid "Hide Carousel"
+msgstr "캐러셀 숨기기"
+
+msgid "Show Carousel"
+msgstr "캐러셀 표시"
