@@ -18,6 +18,7 @@ use File::Path qw(make_path);
 use LANraragi::Utils::Archive  qw(extract_thumbnail);
 use LANraragi::Utils::Database qw(invalidate_cache get_archive_json_multi get_tankoubons_by_file update_indexes);
 use LANraragi::Utils::Generic  qw(array_difference filter_hash_by_keys render_api_response);
+use LANraragi::Utils::ImageResponse qw(render_thumbnail_placeholder);
 use LANraragi::Utils::Logging  qw(get_logger);
 use LANraragi::Utils::Redis    qw(redis_decode redis_encode);
 use LANraragi::Utils::String   qw(trim);
@@ -43,15 +44,6 @@ sub _render_tank_thumbnail_file ( $self, $thumbname, $format ) {
         filepath            => $thumbname,
         content_disposition => "inline",
         content_type        => _tank_thumbnail_mime($format)
-    );
-}
-
-sub _render_tank_thumbnail_placeholder ($self) {
-    $self->res->headers->cache_control('public, max-age=86400');
-    $self->render_file(
-        filepath            => "./public/img/noThumb.png",
-        content_disposition => "inline",
-        content_type        => "image/png"
     );
 }
 
@@ -899,7 +891,7 @@ sub serve_tankoubon_thumbnail {
                 status => 202
             );
         } else {
-            _render_tank_thumbnail_placeholder($self);
+            render_thumbnail_placeholder($self);
         }
         return;
     }

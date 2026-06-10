@@ -22,6 +22,7 @@ use LANraragi::Utils::TempFolder qw(get_temp);
 use LANraragi::Utils::Logging    qw(get_logger);
 use LANraragi::Utils::Archive    qw(extract_single_file extract_single_file extract_thumbnail);
 use LANraragi::Utils::Database   qw(invalidate_cache set_title set_tags set_summary get_archive_json get_archive_json_multi);
+use LANraragi::Utils::ImageResponse qw(render_thumbnail_placeholder);
 use LANraragi::Utils::PageCache  qw(fetch put);
 use LANraragi::Utils::Redis      qw(redis_decode redis_encode);
 use LANraragi::Utils::Path       qw(unlink_path get_archive_path);
@@ -226,15 +227,6 @@ sub _render_thumbnail_file ( $self, $thumbname, $format ) {
     );
 }
 
-sub _render_thumbnail_placeholder ($self) {
-    $self->res->headers->cache_control('public, max-age=86400');
-    $self->render_file(
-        filepath            => "./public/img/noThumb.png",
-        content_disposition => "inline",
-        content_type        => "image/png"
-    );
-}
-
 sub _single_thumbnail_lock_key ( $id, $page, $format ) {
     return "LRR_THUMBJOB:$id:$page:$format";
 }
@@ -327,7 +319,7 @@ sub serve_thumbnail {
                 status => 202
             );
         } else {
-            _render_thumbnail_placeholder($self);
+            render_thumbnail_placeholder($self);
         }
         return;
     }

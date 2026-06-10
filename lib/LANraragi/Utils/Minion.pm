@@ -15,10 +15,9 @@ use Config;
 
 use LANraragi::Utils::Logging    qw(get_logger);
 use LANraragi::Utils::Redis      qw(redis_decode);
-use LANraragi::Utils::Archive    qw(extract_thumbnail get_filelist);
+use LANraragi::Utils::Archive    qw(extract_thumbnail);
 use LANraragi::Utils::Database   ();
 use LANraragi::Utils::Plugins    qw(get_downloader_for_url get_plugin get_plugin_parameters use_plugin);
-use LANraragi::Utils::Path       qw(get_archive_path);
 use LANraragi::Utils::String     qw(trim_url);
 use LANraragi::Utils::TempFolder qw(get_temp);
 
@@ -27,6 +26,7 @@ use LANraragi::Model::Config;
 use LANraragi::Model::Stats;
 use LANraragi::Model::Backup;
 use LANraragi::Utils::Minion::Dedup;
+use LANraragi::Utils::Minion::Tachiyomi;
 
 use constant IS_UNIX => ( $Config{osname} ne 'MSWin32' );
 
@@ -299,36 +299,7 @@ sub add_tasks {
 
     # Fork: dedup task suite lives in its own module to keep upstream merges small.
     LANraragi::Utils::Minion::Dedup::add_tasks($minion);
-
-    $minion->add_task(
-        warm_filelist => sub {
-            my ( $job, @args ) = @_;
-            my ($id) = @args;
-
-            my $logger = get_logger( "Minion", "minion" );
-            my $redis  = LANraragi::Model::Config->get_redis;
-
-            if ( $redis->hget( $id, "pagefiles" ) ) {
-                $redis->quit;
-                $job->finish( { success => 1, cached => 1 } );
-                return;
-            }
-
-            my $archive = get_archive_path( $redis, $id );
-            $redis->quit;
-
-            my @files;
-            eval { @files = get_filelist( $archive, $id, 0 ); };
-            if ($@) {
-                my $msg = "Error warming filelist for $id: $@";
-                $logger->debug($msg);
-                $job->fail( { error => $msg } );
-                return;
-            }
-
-            $job->finish( { success => 1, cached => 0, pages => scalar @files } );
-        }
-    );
+    LANraragi::Utils::Minion::Tachiyomi::add_tasks($minion);
 
     $minion->add_task(
         build_stat_hashes => sub {

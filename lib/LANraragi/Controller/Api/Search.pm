@@ -4,18 +4,15 @@ use Mojo::Base 'Mojolicious::Controller';
 use feature qw(say signatures);
 no warnings 'experimental::signatures';
 
-use Digest::SHA qw(sha1_hex);
 use List::Util qw(min);
-use Storable qw(nfreeze thaw);
 
-use LANraragi::Model::Config;
 use LANraragi::Model::Search;
 use LANraragi::Utils::Generic   qw(render_api_response);
 use LANraragi::Utils::Database  qw(invalidate_cache get_archive_json_multi);
-use LANraragi::Utils::Tachiyomi qw(is_tachiyomi_client tachiyomi_cache_identity);
-
-use constant TACHIYOMI_SEARCH_CACHE_TTL => 30;
-use constant TACHIYOMI_RANDOM_CACHE_TTL => 10;
+use LANraragi::Utils::Tachiyomi qw(
+  get_tachiyomi_response_cache is_tachiyomi_client set_tachiyomi_random_cache
+  set_tachiyomi_search_cache tachiyomi_cache_key
+);
 
 # Undocumented API matching the Datatables spec.
 sub handle_datatables ($self) {
@@ -96,11 +93,11 @@ sub handle_api {
 
     my $cachekey;
     if ( $tachiyomi && ( $sortkey // "" ) ne "lastread" ) {
-        $cachekey = _tachiyomi_cache_key(
+        $cachekey = tachiyomi_cache_key(
             $self, "search", $filter, $category, $start, $sortkey, $sortorder, $newfilter,
             $untaggedf, $grouptanks, $hidecompleted
         );
-        if ( my $cached = _get_tachiyomi_cache($cachekey) ) {
+        if ( my $cached = get_tachiyomi_response_cache($cachekey) ) {
             return $self->render( openapi => $cached );
         }
     }
@@ -124,7 +121,7 @@ sub handle_api {
         );
     } else {
         my $response = get_api_object( $total, $filtered, @ids );
-        _set_tachiyomi_cache( $cachekey, $response, TACHIYOMI_SEARCH_CACHE_TTL ) if $cachekey;
+        set_tachiyomi_search_cache( $cachekey, $response ) if $cachekey;
         $self->render( openapi => $response );
     }
 }
@@ -152,11 +149,11 @@ sub get_random_archives {
 
     my $cachekey;
     if ( $tachiyomi && $random_count == 1 ) {
-        $cachekey = _tachiyomi_cache_key(
+        $cachekey = tachiyomi_cache_key(
             $self, "random", $filter, $category, $newfilter, $untaggedf,
             $grouptanks, $hidecompleted, $random_count
         );
-        if ( my $cached = _get_tachiyomi_cache($cachekey) ) {
+        if ( my $cached = get_tachiyomi_response_cache($cachekey) ) {
             return $self->render( openapi => $cached );
         }
     }
@@ -184,35 +181,8 @@ sub get_random_archives {
         data         => \@data,
         recordsTotal => $random_count
     };
-    _set_tachiyomi_cache( $cachekey, $response, TACHIYOMI_RANDOM_CACHE_TTL ) if $cachekey;
+    set_tachiyomi_random_cache( $cachekey, $response ) if $cachekey;
     $self->render( openapi => $response );
-}
-
-sub _tachiyomi_cache_key ( $self, $scope, @parts ) {
-    my $identity = tachiyomi_cache_identity($self);
-    return "LRR_TACHIYOMI_API:$scope:" . sha1_hex( join "\x1f", $identity, map { defined $_ ? $_ : "" } @parts );
-}
-
-sub _get_tachiyomi_cache ($cachekey) {
-    return unless $cachekey;
-
-    my $redis = LANraragi::Model::Config->get_redis_search;
-    my $gen   = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
-    my $blob  = $redis->get("LRR_SEARCHCACHE:$gen:$cachekey");
-    $redis->quit;
-
-    return unless defined $blob && length $blob;
-    my $payload = eval { thaw($blob) };
-    return $@ ? undef : $payload;
-}
-
-sub _set_tachiyomi_cache ( $cachekey, $payload, $ttl ) {
-    return unless $cachekey && $payload;
-
-    my $redis = LANraragi::Model::Config->get_redis_search;
-    my $gen   = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
-    eval { $redis->set( "LRR_SEARCHCACHE:$gen:$cachekey", nfreeze($payload), 'EX', $ttl ); };
-    $redis->quit;
 }
 
 # Creates a Datatables-compatible json from the given data.

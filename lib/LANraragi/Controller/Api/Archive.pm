@@ -17,8 +17,11 @@ use LANraragi::Utils::Logging  qw(get_logger);
 use LANraragi::Utils::Redis    qw(redis_encode);
 use LANraragi::Utils::Path     qw(compat_path get_archive_path move_path);
 
-use LANraragi::Utils::Login qw(is_logged_in_api);
-use LANraragi::Utils::Tachiyomi qw(is_tachiyomi_client);
+use LANraragi::Utils::Login     qw(is_logged_in_api);
+use LANraragi::Utils::Tachiyomi qw(
+  enqueue_tachiyomi_filelist_warm get_tachiyomi_metadata_cache
+  is_tachiyomi_client set_tachiyomi_metadata_cache
+);
 
 use LANraragi::Model::Archive;
 use LANraragi::Model::Category;
@@ -26,11 +29,6 @@ use LANraragi::Model::Config;
 use LANraragi::Model::Reader;
 
 use constant IS_UNIX => ( $Config{osname} ne 'MSWin32' );
-use constant TACHIYOMI_METADATA_CACHE_TTL => 30;
-use constant TACHIYOMI_WARM_FILELIST_TTL  => 60;
-
-my %TACHIYOMI_METADATA_CACHE;
-my %TACHIYOMI_FILELIST_WARMED;
 
 # Archive API.
 
@@ -58,7 +56,7 @@ sub serve_metadata {
 
     my $tachiyomi = is_tachiyomi_client($self);
     if ($tachiyomi) {
-        if ( my $cached = _get_tachiyomi_metadata_cache($id) ) {
+        if ( my $cached = get_tachiyomi_metadata_cache($id) ) {
             $redis->quit;
             return $self->render( openapi => $cached );
         }
@@ -69,45 +67,13 @@ sub serve_metadata {
 
     if ($arcdata) {
         if ($tachiyomi) {
-            _set_tachiyomi_metadata_cache( $id, $arcdata );
-            _enqueue_tachiyomi_filelist_warm( $self, $id );
+            set_tachiyomi_metadata_cache( $id, $arcdata );
+            enqueue_tachiyomi_filelist_warm( $self, $id );
         }
         $self->render( openapi => $arcdata );
     } else {
         render_api_response( $self, "metadata", "This ID doesn't exist on the server." );
     }
-}
-
-sub _get_tachiyomi_metadata_cache {
-    my ($id) = @_;
-    my $entry = $TACHIYOMI_METADATA_CACHE{$id};
-    return unless $entry;
-
-    if ( $entry->{expiry} <= time ) {
-        delete $TACHIYOMI_METADATA_CACHE{$id};
-        return;
-    }
-
-    return $entry->{value};
-}
-
-sub _set_tachiyomi_metadata_cache {
-    my ( $id, $value ) = @_;
-    $TACHIYOMI_METADATA_CACHE{$id} = {
-        value  => $value,
-        expiry => time + TACHIYOMI_METADATA_CACHE_TTL
-    };
-}
-
-sub _enqueue_tachiyomi_filelist_warm {
-    my ( $self, $id ) = @_;
-    return unless defined $id && $id =~ /^[A-Za-z0-9_]{40}$/;
-
-    my $now = time;
-    return if ( $TACHIYOMI_FILELIST_WARMED{$id} // 0 ) > $now;
-
-    $TACHIYOMI_FILELIST_WARMED{$id} = $now + TACHIYOMI_WARM_FILELIST_TTL;
-    eval { $self->minion->enqueue( warm_filelist => [$id] => { priority => 0, attempts => 1 } ); };
 }
 
 # Find which categories this ID is saved in.
