@@ -21,13 +21,46 @@ use LANraragi::Utils::Logging qw(get_logger);
 
 use LANraragi::Model::Archive;
 use LANraragi::Model::Category;
+use LANraragi::Model::Metrics;
 use LANraragi::Model::Tankoubon qw(tank_has_archive_in_set);
+
+# Wall time of the sort phase of the last search_uncached call, read back by
+# do_search for phase metrics. Workers serve one request at a time, so a
+# package scalar is safe scratch space.
+my $last_sort_seconds = 0;
+
+# Per-worker memo of Lua script SHAs so the script body is uploaded once per
+# process instead of on every request. EVALSHA after a Redis restart (script
+# cache flushed) raises NOSCRIPT — reload once and retry. Dies if Lua is
+# unavailable, so callers keep their existing eval + per-ID fallbacks.
+my %LUA_SHA;
+
+sub _evalsha_cached ( $redis, $name, $script, @args ) {
+
+    my $sha = $LUA_SHA{$name};
+    unless ($sha) {
+        $sha = $redis->script_load($script);
+        $LUA_SHA{$name} = $sha;
+    }
+
+    my $result = eval { $redis->evalsha( $sha, 0, @args ) };
+    if ($@) {
+        die $@ unless $@ =~ /NOSCRIPT/i;
+        $sha = $redis->script_load($script);
+        $LUA_SHA{$name} = $sha;
+        $result = $redis->evalsha( $sha, 0, @args );
+    }
+    return $result;
+}
 
 # do_search (filter, category_id, page, key, order, newonly, untaggedonly, grouptanks, hidecompleted)
 # Performs a search on the database.
 sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $untaggedonly, $grouptanks, $hidecompleted ) {
 
-    $filter //= "";
+    my $start_time = time();
+
+    $filter  //= "";
+    $sortkey //= "";
 
     my $redis  = LANraragi::Model::Config->get_redis_search;
     my $logger = get_logger( "Search Engine", "lanraragi" );
@@ -62,7 +95,14 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
     my $cachekey      = redis_encode("$category_id-$filter-$sortkey-$sortorder-$newonly-$untaggedonly-$grouptanks-$hidecompleted");
     my $cachekey_inv =
       redis_encode("$category_id-$filter-$sortkey-$sortorder_inv-$newonly-$untaggedonly-$grouptanks-$hidecompleted");
+
+    my $preamble_done = time();
     my ( $cachehit, @filtered ) = check_cache( $cachekey, $cachekey_inv );
+    my $cacheget_done = time();
+
+    my $cache_status   = $cachehit ? ( $sortkey eq "lastread" ? "bypass" : "hit" ) : "miss";
+    my $search_seconds = 0;
+    my $sort_seconds   = 0;
 
     # Don't use cache for history searches since setting lastreadtime doesn't (and shouldn't) cachebust
     unless ( $cachehit && $sortkey ne "lastread" ) {
@@ -70,6 +110,8 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
         my $keyed_count;
         ( $keyed_count, @filtered ) =
           search_uncached( $category_id, $filter, $sortkey, $sortorder, $newonly, $untaggedonly, $grouptanks, $hidecompleted );
+        $search_seconds = time() - $cacheget_done;
+        $sort_seconds   = $last_sort_seconds;
 
         # Per-entry TTL (5 min). invalidate_cache bumps LRR_SEARCHCACHE_GEN which makes every prior key unreachable;
         # those old keys expire naturally via TTL rather than via a blocking mass DEL.
@@ -79,6 +121,15 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
         };
     }
     $redis->quit();
+
+    LANraragi::Model::Metrics::record_search_metrics(
+        cache_status     => $cache_status,
+        duration_seconds => time() - $start_time,
+        preamble_seconds => $preamble_done - $start_time,
+        cacheget_seconds => $cacheget_done - $preamble_done,
+        filter_seconds   => $search_seconds - $sort_seconds,
+        sort_seconds     => $sort_seconds,
+    );
 
     # If start is negative, return all possible data.
     if ( $start == -1 ) {
@@ -212,29 +263,16 @@ sub search_uncached ( $category_id, $filter, $sortkey, $sortorder, $newonly, $un
             return cjson.encode(result)
 LUA
 
-            my $sha;
-            eval { $sha = $redis_db->script_load($script); };
-
+            my $data = eval { decode_json( _evalsha_cached( $redis_db, "hidecompleted", $script, @non_tanks ) ) };
             if ($@) {
-                $logger->debug("Lua script not available for hidecompleted filter, falling back to per-ID queries.");
+                $logger->debug("Lua unavailable or failed for hidecompleted filter, falling back to per-ID queries. ($@)");
                 @non_tanks = grep {
                     my $progress  = $redis_db->hget( $_, "progress" )  || 0;
                     my $pagecount = $redis_db->hget( $_, "pagecount" ) || 0;
                     !( $pagecount > 0 && ( $progress / $pagecount > 0.85 ) );
                 } @non_tanks;
             } else {
-                my $result = $redis_db->evalsha( $sha, 0, @non_tanks );
-                my $data   = eval { decode_json($result) };
-                if ($@) {
-                    $logger->error("Failed to decode hidecompleted Lua result: $@");
-                    @non_tanks = grep {
-                        my $progress  = $redis_db->hget( $_, "progress" )  || 0;
-                        my $pagecount = $redis_db->hget( $_, "pagecount" ) || 0;
-                        !( $pagecount > 0 && ( $progress / $pagecount > 0.85 ) );
-                    } @non_tanks;
-                } else {
-                    @non_tanks = @$data;
-                }
+                @non_tanks = @$data;
             }
         }
 
@@ -317,26 +355,39 @@ LUA
                 }
             }
 
-            # Append fuzzy title search
-            my $namesearch = $isexact ? "$tag\x00*" : "*$tag*";
-            my $scan       = -1;
-            while ( $scan != 0 ) {
-
-                # First iteration
-                if ( $scan == -1 ) { $scan = 0; }
-                $logger->trace("Scanning for $namesearch, cursor=$scan");
-
-                my @result = $redis->zscan( "LRR_TITLES", $scan, "MATCH", $namesearch, "COUNT", 100 );
-                $scan = $result[0];
-
-                foreach my $title ( @{ $result[1] } ) {
-
-                    if ( $title eq "0" ) { next; }    # Skip scores
+            # Append fuzzy title search.
+            # Exact tokens without glob/escape chars are a pure "title\x00" prefix
+            # match — LRR_TITLES is lex-sorted (all scores 0), so ZRANGEBYLEX
+            # answers in one round-trip instead of a full COUNT-chunked ZSCAN.
+            if ( $isexact && $tag !~ /[\\*?\[\]]/ ) {
+                my @matches = $redis->zrangebylex( "LRR_TITLES", "[$tag\x00", "[$tag\x00\x{ff}" );
+                foreach my $title (@matches) {
                     $logger->trace("Found title match: $title");
+                    push @ids, substr( $title, index( $title, "\x00" ) + 1 );
+                }
+            } else {
+                my $namesearch = $isexact ? "$tag\x00*" : "*$tag*";
+                my $scan       = -1;
+                while ( $scan != 0 ) {
 
-                    # Strip everything before \x00 to get the ID out of the key
-                    my $id = substr( $title, index( $title, "\x00" ) + 1 );
-                    push @ids, $id;
+                    # First iteration
+                    if ( $scan == -1 ) { $scan = 0; }
+                    $logger->trace("Scanning for $namesearch, cursor=$scan");
+
+                    # COUNT 5000: at 10k-archive scale a COUNT of 100 turns this
+                    # scan into ~100 sequential round-trips per token.
+                    my @result = $redis->zscan( "LRR_TITLES", $scan, "MATCH", $namesearch, "COUNT", 5000 );
+                    $scan = $result[0];
+
+                    foreach my $title ( @{ $result[1] } ) {
+
+                        if ( $title eq "0" ) { next; }    # Skip scores
+                        $logger->trace("Found title match: $title");
+
+                        # Strip everything before \x00 to get the ID out of the key
+                        my $id = substr( $title, index( $title, "\x00" ) + 1 );
+                        push @ids, $id;
+                    }
                 }
             }
 
@@ -360,45 +411,76 @@ LUA
         }
     }
 
+    $last_sort_seconds = 0;
+
     if ( scalar @filtered > 0 ) {
         $logger->debug( "Found " . scalar @filtered . " results after filtering." );
+
+        my $sort_start = time();
 
         if ( !$sortkey ) {
             $sortkey = "title";
         }
 
-        if ( $sortkey eq "title" ) {
-            my @ordered = ();
+        if ( $sortkey eq "lastread" ) {
 
-            # For title sorting, we can just use the LRR_TITLES set, which is sorted lexicographically (but not naturally).
-            @ordered = nsort( $redis->zrangebylex( "LRR_TITLES", "-", "+" ) );
-            if ($sortorder) {
-                @ordered = reverse(@ordered);
-            }
-
-            # Remove the titles from the keys, which are stored as "title\x00id"
-            @ordered = map { substr( $_, index( $_, "\x00" ) + 1 ) } @ordered;
-
-            $logger->trace( "Example element from ordered list: " . $ordered[0] );
-
-            # Just intersect the ordered list with the filtered one to get the final result
-            @filtered = intersect_arrays( \@filtered, \@ordered, 0 );
-        } else {
-
-            # For other sorting, we need to get the metadata for each archive and sort it manually.
+            # lastread order changes without a cache-gen bump (reading doesn't
+            # invalidate caches), so it's sorted per-request, never from cache.
             my $keyed_count;
             ( $keyed_count, @filtered ) = sort_results( $sortkey, $sortorder, @filtered );
+            $last_sort_seconds = time() - $sort_start;
 
             $redis->quit();
             $redis_db->quit();
             return ( $keyed_count, @filtered );
         }
+
+        # Every other sortkey (title nsort, tag namespaces like date_added)
+        # depends only on archive metadata, which bumps LRR_SEARCHCACHE_GEN on
+        # change — so the full-library ascending order is computed once per
+        # (gen, sortkey) and shared by every query instead of re-sorted per
+        # cache miss.
+        my ( $order_keyed_count, @ordered ) = get_sort_order( $redis, $redis_db, $sortkey );
+
+        # Walk the full order and keep the IDs that survived filtering.
+        # Survivors inside the keyed prefix of the full order form the keyed
+        # prefix of the result.
+        my %leftover = map { $_ => 1 } @filtered;
+        my @sorted;
+        my $keyed_count = 0;
+        for my $i ( 0 .. $#ordered ) {
+            my $id = $ordered[$i];
+            next unless delete $leftover{$id};
+            push @sorted, $id;
+            $keyed_count++ if $i < $order_keyed_count;
+        }
+
+        # Safety net: IDs not present in the cached order (shouldn't happen
+        # within a generation) go to the back instead of being dropped.
+        if ( scalar @sorted < scalar @filtered ) {
+            push @sorted, grep { $leftover{$_} } @filtered;
+        }
+
+        # Descending order reverses the keyed prefix only; unkeyed entries
+        # stay at the back (same convention as check_cache's inverse path).
+        if ( $sortorder && $keyed_count > 0 ) {
+            if ( $keyed_count < scalar @sorted ) {
+                @sorted = ( reverse( @sorted[ 0 .. $keyed_count - 1 ] ), @sorted[ $keyed_count .. $#sorted ] );
+            } else {
+                @sorted = reverse @sorted;
+            }
+        }
+        $last_sort_seconds = time() - $sort_start;
+
+        $redis->quit();
+        $redis_db->quit();
+        return ( $keyed_count, @sorted );
     }
 
     $redis->quit();
     $redis_db->quit();
 
-    # Title sort and unfiltered results: all archives are keyed
+    # No results
     return ( -1, @filtered );
 }
 
@@ -492,6 +574,53 @@ sub compute_search_filter ($filter) {
     return @tokens;
 }
 
+# Full-corpus ascending sort order, cached per (searchcache gen, sortkey).
+# Stored in the search DB under the same generation prefix as the query cache,
+# so metadata changes (gen bump) and build_stat_hashes' FLUSHDB invalidate both
+# together. Returns (keyed_count, @ordered_ids); IDs missing the sort namespace
+# sit at the back, past the keyed prefix.
+sub get_sort_order ( $redis, $redis_db, $sortkey ) {
+
+    my $logger = get_logger( "Search Sort", "lanraragi" );
+
+    my $gen      = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
+    my $cachekey = "LRR_SORTCACHE:$gen:" . redis_encode($sortkey);
+
+    my $frozendata = eval { $redis->get($cachekey) };
+    if ( defined $frozendata && length $frozendata ) {
+        $logger->debug("Using cached $sortkey sort order.");
+        my @cached      = @{ thaw $frozendata };
+        my $keyed_count = shift @cached;
+        return ( $keyed_count, @cached );
+    }
+
+    my $keyed_count;
+    my @ordered;
+
+    if ( $sortkey eq "title" ) {
+
+        # LRR_TITLES is lex-sorted but not naturally-sorted; the nsort over the
+        # full title list is the expensive part this cache amortizes.
+        @ordered = nsort( $redis->zrangebylex( "LRR_TITLES", "-", "+" ) );
+
+        # Remove the titles from the keys, which are stored as "title\x00id"
+        @ordered     = map { substr( $_, index( $_, "\x00" ) + 1 ) } @ordered;
+        $keyed_count = scalar @ordered;
+    } else {
+
+        # Sort every archive and tank; any query result is a subset of this.
+        my @corpus = LANraragi::Utils::Database::all_archive_ids($redis_db);
+        push @corpus, LANraragi::Utils::Database::all_tank_ids($redis_db);
+        ( $keyed_count, @ordered ) = sort_results( $sortkey, 0, @corpus );
+    }
+
+    # The gen prefix already guarantees freshness; the TTL is just garbage
+    # collection for orders whose generation has been superseded.
+    eval { $redis->set( $cachekey, nfreeze( [ $keyed_count, @ordered ] ), 'EX', 3600 ); };
+
+    return ( $keyed_count, @ordered );
+}
+
 sub sort_results ( $sortkey, $sortorder, @filtered ) {
 
     my $start_time = time();
@@ -531,23 +660,15 @@ sub sort_results ( $sortkey, $sortorder, @filtered ) {
         return cjson.encode(result)
 LUA
 
-        my $sha;
-        eval { $sha = $redis->script_load($script); };
+        my $data = eval { decode_json( _evalsha_cached( $redis, "lastread_sort", $script, @filtered ) ) };
         if ($@) {
-            $logger->debug("Lua script not available for lastread sort, falling back to per-ID queries.");
+            $logger->debug("Lua unavailable or failed for lastread sort, falling back to per-ID queries. ($@)");
             _fallback_lastread( $redis, \%tmpfilter, @filtered );
         } else {
-            my $result = $redis->evalsha( $sha, 0, @filtered );
-            my $data   = eval { decode_json($result) };
-            if ($@) {
-                $logger->error("Failed to decode JSON from Lua script: $@");
-                _fallback_lastread( $redis, \%tmpfilter, @filtered );
-            } else {
 
-                # Convert the results into a hash table
-                foreach my $item (@$data) {
-                    $tmpfilter{ $item->[0] } = $item->[1];
-                }
+            # Convert the results into a hash table
+            foreach my $item (@$data) {
+                $tmpfilter{ $item->[0] } = $item->[1];
             }
         }
 
@@ -592,27 +713,19 @@ LUA
         return cjson.encode(result)
 LUA
 
-        my $re  = qr/$sortkey/;
-        my $sha;
-        eval { $sha = $redis->script_load($script); };
+        my $re   = qr/$sortkey/;
+        my $data = eval { decode_json( _evalsha_cached( $redis, "tag_sort", $script, @filtered ) ) };
         if ($@) {
-            $logger->debug("Lua script not available for tag sort, falling back to per-ID queries.");
+            $logger->debug("Lua unavailable or failed for tag sort, falling back to per-ID queries. ($@)");
             _fallback_tags( $redis, \%tmpfilter, $re, @filtered );
         } else {
-            my $result = $redis->evalsha( $sha, 0, @filtered );
-            my $data   = eval { decode_json($result) };
-            if ($@) {
-                $logger->error("Failed to decode JSON from Lua script: $@");
-                _fallback_tags( $redis, \%tmpfilter, $re, @filtered );
-            } else {
-                foreach my $item (@$data) {
-                    my $id   = $item->[0];
-                    my $tags = $item->[1];
+            foreach my $item (@$data) {
+                my $id   = $item->[0];
+                my $tags = $item->[1];
 
-                    # Find and use the first tag that matches the sortkey/namespace.
-                    # (If no tag, defaults to "zzzz")
-                    $tmpfilter{$id} = ( $tags =~ m/.*${re}:(.*?)(\,.*|$)/ ) ? $1 : "zzzz";
-                }
+                # Find and use the first tag that matches the sortkey/namespace.
+                # (If no tag, defaults to "zzzz")
+                $tmpfilter{$id} = ( $tags =~ m/.*${re}:(.*?)(\,.*|$)/ ) ? $1 : "zzzz";
             }
         }
 

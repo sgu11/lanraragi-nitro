@@ -4,8 +4,10 @@ use Mojo::Base 'Mojolicious::Controller';
 use feature qw(say signatures);
 no warnings 'experimental::signatures';
 
-use List::Util qw(min);
+use List::Util  qw(min);
+use Time::HiRes qw(time);
 
+use LANraragi::Model::Metrics;
 use LANraragi::Model::Search;
 use LANraragi::Utils::Generic   qw(render_api_response);
 use LANraragi::Utils::Database  qw(invalidate_cache get_archive_json_multi);
@@ -185,11 +187,26 @@ sub get_random_archives {
     $self->render( openapi => $response );
 }
 
+# Builds the JSON rows for a page of search results, timing the row-build
+# phase for the search metrics.
+sub _build_rows (@ids) {
+
+    my $rowbuild_start = time();
+    my @data           = get_archive_json_multi(@ids);
+
+    LANraragi::Model::Metrics::record_search_rowbuild_metrics(
+        duration_seconds => time() - $rowbuild_start,
+        rows             => scalar @ids,
+    );
+
+    return @data;
+}
+
 # Creates a Datatables-compatible json from the given data.
 sub get_datatables_object ( $draw, $total, $totalsearched, @ids ) {
 
     # Get archive data
-    my @data = get_archive_json_multi(@ids);
+    my @data = _build_rows(@ids);
 
     # Create json object matching the datatables structure
     return {
@@ -204,7 +221,7 @@ sub get_datatables_object ( $draw, $total, $totalsearched, @ids ) {
 sub get_api_object ( $total, $totalsearched, @ids ) {
 
     # Get archive data
-    my @data = get_archive_json_multi(@ids);
+    my @data = _build_rows(@ids);
 
     # Create json object matching the datatables structure
     return {

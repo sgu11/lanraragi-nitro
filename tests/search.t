@@ -336,4 +336,27 @@ note('testing lastread sort with tanks (grouptanks=1) -- exercises _fallback_las
     $redis->hset( "28697b96f0ac5777be2614ed10ca47742c9522fa", "lastreadtime", 0 );
 }
 
+note('testing gen-keyed sort-order cache (N-11)...');
+
+{
+    # The earlier artist-sorted searches should have populated the full-corpus
+    # order cache under the current generation (no invalidation ran yet → gen 0).
+    my ( $base_total, $base_filtered, @base_ids ) = LANraragi::Model::Search::do_search( "", "", -1, "artist", 0, 0, 0, 0, 0 );
+    ok( defined $redis->get("LRR_SORTCACHE:0:artist"), 'Artist sort order is cached under gen 0' );
+    ok( defined $redis->get("LRR_SORTCACHE:0:title"),  'Title sort order is cached under gen 0' );
+
+    # A different filter with the same sortkey misses the per-query cache but
+    # reuses the cached order: subset comes back in full-corpus order.
+    my ( $total, $filtered, @ids ) = LANraragi::Model::Search::do_search( "Ghost in the Shell", "", -1, "artist", 0, 0, 0, 0, 0 );
+    is( $filtered, 1, 'Filtered artist-sorted search returns the right subset' );
+    is( $ids[0], "4857fd2e7c00db8b0af0337b94055d8445118630", 'Subset preserves full-corpus order (shirow masamune)' );
+
+    # Cache invalidation bumps the generation: order is recomputed and results
+    # stay identical to the pre-invalidation run.
+    LANraragi::Utils::Database::invalidate_cache();
+    my ( $re_total, $re_filtered, @re_ids ) = LANraragi::Model::Search::do_search( "", "", -1, "artist", 0, 0, 0, 0, 0 );
+    is_deeply( \@re_ids, \@base_ids, 'Artist sort results identical after gen bump (recomputed order)' );
+    ok( defined $redis->get("LRR_SORTCACHE:1:artist"), 'Artist sort order re-cached under bumped gen' );
+}
+
 done_testing();

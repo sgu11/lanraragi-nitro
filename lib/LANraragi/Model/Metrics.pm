@@ -27,9 +27,10 @@ sub get_prometheus_metrics {
     my $controller          = shift;
     my @api_metrics         = get_prometheus_api_metrics();
     my @image_metrics       = get_prometheus_image_metrics();
+    my @search_metrics      = get_prometheus_search_metrics();
     my @process_metrics     = get_prometheus_process_metrics();
     my @stats_metrics       = get_prometheus_stats_metrics($controller);
-    my @output              = (@api_metrics, @image_metrics, @process_metrics, @stats_metrics);
+    my @output              = (@api_metrics, @image_metrics, @search_metrics, @process_metrics, @stats_metrics);
     push @output, "# EOF";
     return join("\n", @output) . "\n";
 }
@@ -149,6 +150,129 @@ sub record_image_serving_metrics {
         my $logger = get_logger( "Metrics", "lanraragi" );
         $logger->error("Failed to update image serving metrics: $error");
     }
+}
+
+# Search-engine phase timings, keyed by searchcache status (hit/miss/bypass).
+# Phase sums let the Prometheus side compute where do_search wall time goes:
+# preamble (counts + connections), cacheget (check_cache GET + thaw), filter
+# (token intersection), sort (order build/fetch + apply).
+sub record_search_metrics {
+    my (%args) = @_;
+
+    return unless LANraragi::Model::Config->enable_metrics;
+
+    my $cache_status = _safe_image_metric_label( $args{cache_status} );
+    my $key          = "metrics:search:engine:$cache_status";
+
+    my $redis = LANraragi::Model::Config->get_redis_metrics;
+    return unless $redis;
+
+    my $error;
+    eval {
+        $redis->hincrby( $key, "count", 1 );
+        $redis->hincrbyfloat( $key, "duration_sum", $args{duration_seconds} // 0 );
+        $redis->hincrbyfloat( $key, "preamble_sum", $args{preamble_seconds} // 0 );
+        $redis->hincrbyfloat( $key, "cacheget_sum", $args{cacheget_seconds} // 0 );
+        $redis->hincrbyfloat( $key, "filter_sum",   $args{filter_seconds}   // 0 );
+        $redis->hincrbyfloat( $key, "sort_sum",     $args{sort_seconds}     // 0 );
+    };
+    $error = $@;
+    $redis->quit();
+
+    if ($error) {
+        my $logger = get_logger( "Metrics", "lanraragi" );
+        $logger->error("Failed to update search metrics: $error");
+    }
+}
+
+# Row-build (per-page JSON assembly) timing for search responses.
+sub record_search_rowbuild_metrics {
+    my (%args) = @_;
+
+    return unless LANraragi::Model::Config->enable_metrics;
+
+    my $key = "metrics:search:rowbuild:all";
+
+    my $redis = LANraragi::Model::Config->get_redis_metrics;
+    return unless $redis;
+
+    my $error;
+    eval {
+        $redis->hincrby( $key, "count", 1 );
+        $redis->hincrbyfloat( $key, "duration_sum", $args{duration_seconds} // 0 );
+        $redis->hincrby( $key, "rows_sum", $args{rows} // 0 );
+    };
+    $error = $@;
+    $redis->quit();
+
+    if ($error) {
+        my $logger = get_logger( "Metrics", "lanraragi" );
+        $logger->error("Failed to update search rowbuild metrics: $error");
+    }
+}
+
+sub get_prometheus_search_metrics {
+    my $metrics_redis = LANraragi::Model::Config->get_redis_metrics;
+    return () unless $metrics_redis;
+
+    my @output;
+    my @metric_keys = $metrics_redis->keys("metrics:search:*");
+    my %aggregated;
+    my %rowbuild;
+
+    foreach my $key (@metric_keys) {
+        next unless $key =~ /^metrics:search:([^:]+):([^:]+)$/;
+        my ( $kind, $label ) = ( $1, $2 );
+        my %metric_data = $metrics_redis->hgetall($key);
+        next unless %metric_data;
+
+        if ( $kind eq "rowbuild" ) {
+            $rowbuild{count}        += $metric_data{count}        || 0;
+            $rowbuild{duration_sum} += $metric_data{duration_sum} || 0;
+            $rowbuild{rows_sum}     += $metric_data{rows_sum}     || 0;
+            next;
+        }
+
+        my $labels = sprintf( 'cache="%s"', LANraragi::Utils::Metrics::escape_label_value($label) );
+        $aggregated{"lanraragi_search_requests_total"}{$labels}         += $metric_data{count}        || 0;
+        $aggregated{"lanraragi_search_duration_seconds_total"}{$labels} += $metric_data{duration_sum} || 0;
+        $aggregated{"lanraragi_search_preamble_seconds_total"}{$labels} += $metric_data{preamble_sum} || 0;
+        $aggregated{"lanraragi_search_cacheget_seconds_total"}{$labels} += $metric_data{cacheget_sum} || 0;
+        $aggregated{"lanraragi_search_filter_seconds_total"}{$labels}   += $metric_data{filter_sum}   || 0;
+        $aggregated{"lanraragi_search_sort_seconds_total"}{$labels}     += $metric_data{sort_sum}     || 0;
+    }
+
+    my %help = (
+        lanraragi_search_requests_total         => "Total number of do_search calls",
+        lanraragi_search_duration_seconds_total => "Total do_search wall time",
+        lanraragi_search_preamble_seconds_total => "Total time in do_search preamble (counts + connections)",
+        lanraragi_search_cacheget_seconds_total => "Total time fetching/thawing the search result cache",
+        lanraragi_search_filter_seconds_total   => "Total time filtering archives (token intersection)",
+        lanraragi_search_sort_seconds_total     => "Total time sorting results (order build/fetch + apply)",
+    );
+
+    foreach my $metric ( sort keys %help ) {
+        push @output, "# TYPE $metric counter";
+        push @output, "# HELP $metric $help{$metric}";
+        foreach my $labels ( sort keys %{ $aggregated{$metric} || {} } ) {
+            push @output, "$metric\{$labels} " . $aggregated{$metric}{$labels};
+        }
+    }
+
+    if ( $rowbuild{count} ) {
+        push @output, "# TYPE lanraragi_search_rowbuild_seconds_total counter";
+        push @output, "# HELP lanraragi_search_rowbuild_seconds_total Total time building search result rows";
+        push @output, "lanraragi_search_rowbuild_seconds_total $rowbuild{duration_sum}";
+        push @output, "# TYPE lanraragi_search_rowbuild_rows_total counter";
+        push @output, "# HELP lanraragi_search_rowbuild_rows_total Total search result rows built";
+        push @output, "lanraragi_search_rowbuild_rows_total $rowbuild{rows_sum}";
+        push @output, "# TYPE lanraragi_search_rowbuild_requests_total counter";
+        push @output, "# HELP lanraragi_search_rowbuild_requests_total Total row-build batches";
+        push @output, "lanraragi_search_rowbuild_requests_total $rowbuild{count}";
+    }
+
+    $metrics_redis->quit();
+    return @output;
 }
 
 sub get_prometheus_image_metrics {

@@ -256,14 +256,25 @@ sub setup_redis_mock {
             return 1;
         }
     );
-    $redis->mock( 'hsetnx',  sub { 1 } );
-    $redis->mock( 'hdel',    sub { 1 } );
-    $redis->mock( 'get',     sub { undef } );
-    $redis->mock( 'incr',    sub { 1 } );
-    $redis->mock( 'srem',    sub { 1 } );
-    $redis->mock( 'quit',    sub { 1 } );
-    $redis->mock( 'select',  sub { 1 } );
-    $redis->mock( 'flushdb', sub { 1 } );
+    $redis->mock( 'hsetnx', sub { 1 } );
+    $redis->mock( 'hdel',   sub { 1 } );
+
+    # String key-value store backing get/set/incr (search cache gen + frozen
+    # cache blobs). Kept separate from %datamodel so KEYS-glob consumers (e.g.
+    # the all_archive_ids 40-char-glob backfill) never see cache entries.
+    # EX/TTL args are ignored; the generation prefix is what tests exercise.
+    my %stringstore;
+    $redis->mock( 'get',  sub { return $stringstore{ $_[1] }; } );
+    $redis->mock( 'set',  sub { $stringstore{ $_[1] } = $_[2]; return 1; } );
+    $redis->mock( 'incr', sub { return ++$stringstore{ $_[1] }; } );
+    $redis->mock( 'srem', sub { 1 } );
+    $redis->mock( 'quit', sub { 1 } );
+    $redis->mock( 'select', sub { 1 } );
+
+    # Real FLUSHDB nukes the search DB (caches included); the mock conflates
+    # all DBs, so approximate by clearing only the string store and keeping
+    # the seeded datamodel.
+    $redis->mock( 'flushdb', sub { %stringstore = (); return 1; } );
     $redis->mock( 'zincrby', sub { 1 } );
     $redis->mock(
         'zrem',    # $redis->zrem => remove members from sorted set
@@ -321,7 +332,6 @@ sub setup_redis_mock {
     );
     $redis->mock( 'watch',   sub { 1 } );
     $redis->mock( 'unwatch', sub { 1 } );
-    $redis->mock( 'set',     sub { 1 } );
     $redis->mock( 'hlen',    sub { 1337 } );
     $redis->mock( 'dbsize',  sub { 1337 } );
     $redis->mock( 'script_load', sub { die "Lua unavailable in Redis mock\n"; } );
