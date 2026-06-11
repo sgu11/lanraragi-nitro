@@ -3,6 +3,7 @@
  */
 import * as LRR from "./common.js";
 import * as Index from "./index.js";
+import { DEFAULT_INDEX_SORT_COLUMN, DEFAULT_INDEX_SORT_DIRECTION, getInitialIndexOrder } from "./index-order.js";
 import I18N from "i18n";
 
 export let dataTable = {};
@@ -87,7 +88,7 @@ export function initializeAll() {
         deferRender: true,
         lengthChange: false,
         pageLength: Index.pageSize,
-        order: [[0, "asc"]],
+        order: [[DEFAULT_INDEX_SORT_COLUMN, DEFAULT_INDEX_SORT_DIRECTION]],
         dom: `<"top"ip>rt<"bottom"p><"clear">`,
         language: {
             info: I18N.IndexPageCount,
@@ -373,29 +374,9 @@ export function consumeURLParameters() {
 
     if (params.has("q")) { currentSearch = decodeURIComponent(params.get("q")); }
 
-    // Get order from URL, fallback to localstorage if available
-    const order = [[0, "asc"]];
-
-    // Query params and localStorage values are always strings, parse them so order[0][0] is always
-    // a number. (This lets us correctly compare to 0 using !== above.)
-    if (params.has("sort")) {
-        order[0][0] = parseInt(params.get("sort"), 10);
-    } else if (localStorage.indexSort) {
-        order[0][0] = parseInt(localStorage.indexSort, 10);
-    }
     // get current columns count, except title and tags
     const currentCustomColumnCount = dataTable.columns().count() - 2;
-    // check currentSort, if out of range, back to use title
-    if (localStorage.indexSort > currentCustomColumnCount) {
-        localStorage.indexSort = 0;
-        order[0][0] = parseInt(localStorage.indexSort, 10);
-    }
-
-    if (params.has("sortdir")) {
-        order[0][1] = params.get("sortdir");
-    } else if (localStorage.indexOrder) {
-        order[0][1] = localStorage.indexOrder;
-    }
+    const order = getInitialIndexOrder(params, localStorage, currentCustomColumnCount);
 
     dataTable.order(order);
 
