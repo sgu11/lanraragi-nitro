@@ -1500,13 +1500,15 @@ function updateProgress() {
 
     let page = currentPage + 1; // progress is 1-indexed
 
-    // Send an API request to update progress on the server
-    if (state.authenticateProgress && LRR.isUserLogged()) {
-        Server.updateServerSideProgress(id, page);
-    } else if (state.trackProgressLocally) {
-        localStorage.setItem(`${id}-reader`, page);
-    } else if (!state.authenticateProgress) {
-        Server.updateServerSideProgress(id, page);
+    if (!ignoreProgress) {
+        // Send an API request to update progress on the server
+        if (state.authenticateProgress && LRR.isUserLogged()) {
+            Server.updateServerSideProgress(id, page);
+        } else if (state.trackProgressLocally) {
+            localStorage.setItem(`${id}-reader`, page);
+        } else if (!state.authenticateProgress) {
+            Server.updateServerSideProgress(id, page);
+        }
     }
 
     // Load stamps
