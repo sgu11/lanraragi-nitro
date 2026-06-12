@@ -204,7 +204,10 @@ sub get_archive ($id) {
 # which dragged along heavyweight fields like the Storable-frozen `pagefiles`
 # cache and `thumbhash` on every search-result row. HMGET cuts that to only
 # the fields we serialize.
-my @ARCHIVE_JSON_FIELDS = qw(name title tags summary file isnew progress pagecount lastreadtime arcsize toc spreadstart);
+my @ARCHIVE_JSON_FIELDS = qw(
+  name title tags summary file isnew progress pagecount lastreadtime arcsize toc spreadstart
+  firstpageside firstpageside_confidence firstpageside_reason firstpageside_v
+);
 
 # Builds a JSON object for an archive registered in the database and returns it.
 # If you need to get many JSONs at once, use the multi variant.
@@ -294,8 +297,15 @@ sub get_tags ($id) {
 sub build_json ( $id, %hash ) {
 
     # Grab all metadata from the hash
-    my ( $name, $title, $tags, $summary, $file, $isnew, $progress, $pagecount, $lastreadtime, $arcsize, $toc, $spreadstart ) =
-      @hash{qw(name title tags summary file isnew progress pagecount lastreadtime arcsize toc spreadstart)};
+    my (
+        $name, $title, $tags, $summary, $file, $isnew, $progress, $pagecount, $lastreadtime, $arcsize, $toc,
+        $spreadstart, $firstpageside, $firstpageside_confidence, $firstpageside_reason, $firstpageside_v
+    ) = @hash{
+        qw(
+          name title tags summary file isnew progress pagecount lastreadtime arcsize toc
+          spreadstart firstpageside firstpageside_confidence firstpageside_reason firstpageside_v
+        )
+    };
 
     $file = create_path($file);
 
@@ -343,8 +353,12 @@ sub build_json ( $id, %hash ) {
         pagecount    => $pagecount    ? int($pagecount)    : 0,
         lastreadtime => $lastreadtime ? int($lastreadtime) : 0,
         size         => $arcsize      ? int($arcsize)      : 0,
-        toc          => \@chapters,
-        spreadstart  => $spreadstart  ? $spreadstart     : "auto"
+        toc                      => \@chapters,
+        spreadstart              => $spreadstart ? $spreadstart : "auto",
+        firstpageside            => $firstpageside,
+        firstpageside_confidence => $firstpageside_confidence,
+        firstpageside_reason     => $firstpageside_reason,
+        firstpageside_v          => $firstpageside_v
     };
 
     return $arcdata;

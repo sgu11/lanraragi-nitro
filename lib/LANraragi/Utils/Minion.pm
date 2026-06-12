@@ -26,6 +26,7 @@ use LANraragi::Model::Config;
 use LANraragi::Model::Stats;
 use LANraragi::Model::Backup;
 use LANraragi::Utils::Minion::Dedup;
+use LANraragi::Utils::Minion::PageSide;
 use LANraragi::Utils::Minion::Tachiyomi;
 
 use constant IS_UNIX => ( $Config{osname} ne 'MSWin32' );
@@ -299,6 +300,7 @@ sub add_tasks {
 
     # Fork: dedup task suite lives in its own module to keep upstream merges small.
     LANraragi::Utils::Minion::Dedup::add_tasks($minion);
+    LANraragi::Utils::Minion::PageSide::add_tasks($minion);
     LANraragi::Utils::Minion::Tachiyomi::add_tasks($minion);
 
     $minion->add_task(

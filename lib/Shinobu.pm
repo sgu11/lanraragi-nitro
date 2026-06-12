@@ -34,6 +34,7 @@ use LANraragi::Utils::Logging    qw(get_logger);
 use LANraragi::Utils::Generic    qw(is_archive exec_with_lock_pure);
 use LANraragi::Utils::Redis      qw(redis_encode);
 use LANraragi::Utils::Path       qw(create_path open_path find_path get_archive_path);
+use LANraragi::Utils::PageSide   qw(enqueue_first_page_side_detection);
 
 use LANraragi::Model::Config;
 use LANraragi::Model::Plugins;
@@ -502,6 +503,11 @@ sub add_new_file ( $id, $file ) {
         };
         if ($@) {
             $logger->warn("Failed to enqueue dedup hashes for $id: $@");
+        }
+
+        eval { enqueue_first_page_side_detection($id); };
+        if ($@) {
+            $logger->warn("Failed to enqueue first-page-side detection for $id: $@");
         }
 
         # AutoTagging using enabled plugins goes here!

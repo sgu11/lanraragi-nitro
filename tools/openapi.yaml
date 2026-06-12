@@ -2938,6 +2938,8 @@ paths:
               - compute_dedup_signals
               - backfill_dedup_signals
               - find_relation_duplicates
+              - detect_first_page_side
+              - detect_recent_first_page_sides
               - build_stat_hashes
               - handle_upload
               - download_url
@@ -4498,6 +4500,23 @@ components:
             - "auto"
             - "none"
             - "always"
+        firstpageside:
+          type: [string, "null"]
+          description: Detected side of the first page for adaptive double-page spread starts
+          enum:
+            - "LEFT"
+            - "RIGHT"
+            - "UNKNOWN"
+            - null
+        firstpageside_confidence:
+          type: [string, "null"]
+          description: Confidence score for firstpageside
+        firstpageside_reason:
+          type: [string, "null"]
+          description: Detector reason for firstpageside
+        firstpageside_v:
+          type: [string, "null"]
+          description: Detector algorithm version for firstpageside
       example:
         arcid: 28697b96f0ac5858be2614ed10ca47742c9522fd
         isnew: false
@@ -4518,6 +4537,10 @@ components:
           - name: Chapter 3
             page: 25
         spreadstart: "auto"
+        firstpageside: "RIGHT"
+        firstpageside_confidence: "0.72"
+        firstpageside_reason: "sample_vote"
+        firstpageside_v: "1"
     CategoryMetadataJson:
       type: object
       description: >-

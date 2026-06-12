@@ -16,6 +16,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - **Image quality** options exposed in settings, with a working mobile toggle.
 - **Fit-height fix in fullscreen** — recomputes correct height on enter/exit instead of leaving stale layout.
 - **Double-page rendering** no longer flickers between page transitions.
+- **Adaptive double-page spread start** stores server-detected first-page side
+  per archive and uses it in `auto` mode, with detection limited to newly
+  ingested archives plus a recent-50 backfill job while the heuristic is tuned.
 - **Middle-click toggles fullscreen** anywhere in the reader (same as pressing `F`).
 - **Reading-progress migration** no longer keeps resurfacing stale migration toasts for deleted archives/tankoubons, and respects local/authenticated progress settings before attempting a server migration.
 - **Progression Tracking disabled** now suppresses local/server progress writes during page turns instead of only ignoring saved progress on reader open.

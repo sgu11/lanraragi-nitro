@@ -20,6 +20,7 @@ use LANraragi::Utils::Redis    qw(redis_encode);
 use LANraragi::Utils::Generic  qw(is_archive get_bytelength);
 use LANraragi::Utils::String   qw(trim trim_CRLF trim_url);
 use LANraragi::Utils::Path     qw(create_path get_archive_path rename_path move_path unlink_path);
+use LANraragi::Utils::PageSide qw(enqueue_first_page_side_detection);
 
 use LANraragi::Model::Config;
 use LANraragi::Model::Plugins;
@@ -152,6 +153,11 @@ sub handle_incoming_file ( $tempfile, $catid, $tags, $title, $summary ) {
     # Generate thumbnail
     my $thumbdir = LANraragi::Model::Config->get_thumbdir;
     extract_thumbnail( $thumbdir, $id, 1, 1, 1 );
+
+    eval { enqueue_first_page_side_detection($id); };
+    if ($@) {
+        $logger->warn("Failed to enqueue first-page-side detection for $id: $@");
+    }
 
     $logger->debug("Running autoplugin on newly uploaded file $id...");
 
