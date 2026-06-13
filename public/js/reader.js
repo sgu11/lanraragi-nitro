@@ -7,6 +7,11 @@ import * as LRR from "./mod/common.js";
 import I18N from "i18n";
 import fscreen from "fscreen";
 import {
+    getFitHeightViewportPercent,
+    isReaderMinimalChrome,
+    shouldWheelNavigatePages,
+} from "./mod/reader-chrome.js";
+import {
     getDisplayWindow,
     getPageNavigationDestination,
     isWidePage,
@@ -700,7 +705,7 @@ export function initializeSettings() {
 
 function applyReaderChromeLayout() {
     $("body").toggleClass("infinite-scroll", infiniteScroll);
-    $("body").toggleClass("reader-minimal-chrome", infiniteScroll || localStorage.hideHeader === "true");
+    $("body").toggleClass("reader-minimal-chrome", isReaderMinimalChrome(infiniteScroll, localStorage.hideHeader === "true"));
 }
 
 // fork: apply image-rendering via an <html data-img-quality> attribute so it
@@ -1038,12 +1043,12 @@ function spaceScrollProcessInput(e) {
 
 let wheelDebounce = false;
 
-function shouldWheelNavigatePages() {
-    return !infiniteScroll && (fscreen.inFullscreen() || localStorage.hideHeader === "true");
-}
-
 function handleWheel(e) {
-    if (shouldWheelNavigatePages() && !wheelDebounce) {
+    if (shouldWheelNavigatePages({
+        infiniteScroll,
+        fullscreen: fscreen.inFullscreen(),
+        headerHidden: localStorage.hideHeader === "true",
+    }) && !wheelDebounce) {
         e.preventDefault();
         const deltaY = e.originalEvent ? e.originalEvent.deltaY : e.deltaY;
         const direction = deltaY > 0 ? -1 : 1;
@@ -1690,9 +1695,7 @@ function applyContainerWidth() {
     if (fitMode === "fit-height") {
         // Fit to height forces the image to 90% of visible screen height.
         // Hidden-header paginated mode uses the full viewport because bottom chrome is hidden.
-        const height = localStorage.hideHeader === "true" && !infiniteScroll
-            ? 100
-            : infiniteScroll ? 98 : 90;
+        const height = getFitHeightViewportPercent(infiniteScroll, localStorage.hideHeader === "true");
         $(".reader-image").attr("style", `max-height: ${height}vh;`);
         $(".sni").attr("style", "width: fit-content; width: -moz-fit-content");
     } else if (fitMode === "fit-width") {

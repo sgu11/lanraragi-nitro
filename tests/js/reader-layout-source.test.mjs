@@ -6,11 +6,14 @@ const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), "ut
 
 test("paginated reader can use minimal chrome without enabling infinite scroll", async () => {
     const js = await source("public/js/reader.js");
-    const css = await source("public/css/lrr.css");
+    const css = await source("public/css/reader-chrome.css");
+    const baseCss = await source("public/css/lrr.css");
+    const template = await source("templates/reader.html.tt2");
 
+    assert.match(js, /from "\.\/mod\/reader-chrome\.js";/);
     assert.match(js, /function applyReaderChromeLayout\(\) \{/);
     assert.match(js, /toggleClass\("infinite-scroll", infiniteScroll\)/);
-    assert.match(js, /toggleClass\("reader-minimal-chrome", infiniteScroll \|\| localStorage\.hideHeader === "true"\)/);
+    assert.match(js, /toggleClass\("reader-minimal-chrome", isReaderMinimalChrome\(infiniteScroll, localStorage\.hideHeader === "true"\)\)/);
 
     const toggleHeaderStart = js.indexOf("function toggleHeader()");
     const toggleHeaderEnd = js.indexOf("function toggleProgressTracking()", toggleHeaderStart);
@@ -33,27 +36,22 @@ test("paginated reader can use minimal chrome without enabling infinite scroll",
     assert.match(css, /body\.reader-minimal-chrome:not\(\.infinite-scroll\) #i3\s*\{[\s\S]*min-height: 100vh;[\s\S]*display: flex;[\s\S]*align-items: center;[\s\S]*justify-content: center;[\s\S]*\}/);
     assert.match(css, /body\.reader-minimal-chrome:not\(\.infinite-scroll\) #display\s*\{[\s\S]*height: 100vh;[\s\S]*align-items: center;[\s\S]*\}/);
     assert.match(css, /body\.reader-minimal-chrome:not\(\.infinite-scroll\) \.reader-image\s*\{[\s\S]*max-height: 100vh;[\s\S]*\}/);
-    assert.match(css, /body\.infinite-scroll #toggle-manga-mode,/);
-    assert.match(css, /body\.infinite-scroll #toggle-header,/);
-    assert.match(js, /localStorage\.hideHeader === "true" && !infiniteScroll\s*\? 100\s*:\s*infiniteScroll \? 98 : 90/);
+    assert.doesNotMatch(baseCss, /reader-minimal-chrome/);
+    assert.match(baseCss, /body\.infinite-scroll #toggle-manga-mode,/);
+    assert.match(baseCss, /body\.infinite-scroll #toggle-header,/);
+    assert.match(template, /\/css\/reader-chrome\.css\?\$version/);
+    assert.match(js, /getFitHeightViewportPercent\(infiniteScroll, localStorage\.hideHeader === "true"\)/);
 });
 
 test("hidden-header paginated reader uses fullscreen wheel page navigation", async () => {
     const js = await source("public/js/reader.js");
-    const helperStart = js.indexOf("function shouldWheelNavigatePages()");
-    const helperEnd = js.indexOf("function handleWheel(e)", helperStart);
-    const helper = js.slice(helperStart, helperEnd);
     const wheelStart = js.indexOf("function handleWheel(e)");
     const wheelEnd = js.indexOf("function checkFiletypeSupport", wheelStart);
     const wheel = js.slice(wheelStart, wheelEnd);
 
-    assert.notEqual(helperStart, -1);
-    assert.notEqual(helperEnd, -1);
-    assert.match(helper, /return !infiniteScroll && \(fscreen\.inFullscreen\(\) \|\| localStorage\.hideHeader === "true"\);/);
-
     assert.notEqual(wheelStart, -1);
     assert.notEqual(wheelEnd, -1);
-    assert.match(wheel, /if \(shouldWheelNavigatePages\(\) && !wheelDebounce\) \{/);
+    assert.match(wheel, /if \(shouldWheelNavigatePages\(\{[\s\S]*infiniteScroll,[\s\S]*fullscreen: fscreen\.inFullscreen\(\),[\s\S]*headerHidden: localStorage\.hideHeader === "true",[\s\S]*\}\) && !wheelDebounce\) \{/);
     assert.match(wheel, /e\.preventDefault\(\);/);
     assert.match(wheel, /changePage\(direction, true\);/);
 });
