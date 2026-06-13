@@ -36,3 +36,23 @@ test("paginated reader can use minimal chrome without enabling infinite scroll",
     assert.match(css, /body\.infinite-scroll #toggle-header,/);
     assert.match(js, /localStorage\.hideHeader === "true" && !infiniteScroll\s*\? 100\s*:\s*infiniteScroll \? 98 : 90/);
 });
+
+test("hidden-header paginated reader uses fullscreen wheel page navigation", async () => {
+    const js = await source("public/js/reader.js");
+    const helperStart = js.indexOf("function shouldWheelNavigatePages()");
+    const helperEnd = js.indexOf("function handleWheel(e)", helperStart);
+    const helper = js.slice(helperStart, helperEnd);
+    const wheelStart = js.indexOf("function handleWheel(e)");
+    const wheelEnd = js.indexOf("function checkFiletypeSupport", wheelStart);
+    const wheel = js.slice(wheelStart, wheelEnd);
+
+    assert.notEqual(helperStart, -1);
+    assert.notEqual(helperEnd, -1);
+    assert.match(helper, /return !infiniteScroll && \(fscreen\.inFullscreen\(\) \|\| localStorage\.hideHeader === "true"\);/);
+
+    assert.notEqual(wheelStart, -1);
+    assert.notEqual(wheelEnd, -1);
+    assert.match(wheel, /if \(shouldWheelNavigatePages\(\) && !wheelDebounce\) \{/);
+    assert.match(wheel, /e\.preventDefault\(\);/);
+    assert.match(wheel, /changePage\(direction, true\);/);
+});

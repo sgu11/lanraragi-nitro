@@ -1038,8 +1038,12 @@ function spaceScrollProcessInput(e) {
 
 let wheelDebounce = false;
 
+function shouldWheelNavigatePages() {
+    return !infiniteScroll && (fscreen.inFullscreen() || localStorage.hideHeader === "true");
+}
+
 function handleWheel(e) {
-    if (fscreen.inFullscreen() && !infiniteScroll && !wheelDebounce) {
+    if (shouldWheelNavigatePages() && !wheelDebounce) {
         e.preventDefault();
         const deltaY = e.originalEvent ? e.originalEvent.deltaY : e.deltaY;
         const direction = deltaY > 0 ? -1 : 1;
