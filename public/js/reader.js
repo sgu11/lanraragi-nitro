@@ -68,6 +68,34 @@ let markers = [];
 let overlayFiltered = false;
 let pageNaviState = true;
 
+function returnToLibrary() {
+    document.location.href = "./";
+}
+
+function deleteCurrentArchive() {
+    if (id.startsWith("TANK_")) Server.deleteTankoubon(id, returnToLibrary);
+    else Server.deleteArchive(id, returnToLibrary);
+}
+
+function confirmDeleteArchive() {
+    const isTank = id.startsWith("TANK_");
+    LRR.closeOverlay();
+    LRR.showPopUp({
+        text: isTank ? I18N.ConfirmTankoubonDeletion : I18N.ConfirmArchiveDeletion,
+        icon: "warning",
+        showCancelButton: true,
+        focusConfirm: true,
+        allowEnterKey: true,
+        confirmButtonText: I18N.ConfirmYes,
+        reverseButtons: true,
+        confirmButtonColor: "#d33",
+    }).then((result) => {
+        if (result.isConfirmed) {
+            deleteCurrentArchive();
+        }
+    });
+}
+
 export function initializeAll(trackProgressLocally, authenticateProgress) {
     state.trackProgressLocally = trackProgressLocally;
     state.authenticateProgress = authenticateProgress;
@@ -118,24 +146,7 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
         window.location.href = new LRR.ApiURL(`/reader?id=${id}&force_reload`);
     });
     $(document).on("click.edit-metadata", "#edit-archive", () => LRR.openInNewTab(new LRR.ApiURL(`/edit?id=${id}`)));
-    $(document).on("click.delete-archive", "#delete-archive", () => {
-        const isTank = id.startsWith("TANK_");
-        LRR.closeOverlay();
-        LRR.showPopUp({
-            text: isTank ? I18N.ConfirmTankoubonDeletion : I18N.ConfirmArchiveDeletion,
-            icon: "warning",
-            showCancelButton: true,
-            focusConfirm: false,
-            confirmButtonText: I18N.ConfirmYes,
-            reverseButtons: true,
-            confirmButtonColor: "#d33",
-        }).then((result) => {
-            if (result.isConfirmed) {
-                if (isTank) Server.deleteTankoubon(id, () => { document.location.href = "./"; });
-                else Server.deleteArchive(id, () => { document.location.href = "./"; });
-            }
-        });
-    });
+    $(document).on("click.delete-archive", "#delete-archive", confirmDeleteArchive);
     $(document).on("click.add-category", "#add-category", () => {
         if ($("#category").val() === "" || $(`#archive-categories a[data-id="${$("#category").val()}"]`).length !== 0) { return; }
         Server.addArchiveToCategory(id, $("#category").val());
@@ -857,6 +868,9 @@ function handleShortcuts(e) {
             break;
         case 27: // escape
             LRR.closeOverlay();
+            break;
+        case 46: // delete
+            confirmDeleteArchive();
             break;
         case 32: // spacebar
             spaceScrollProcessInput(e);
