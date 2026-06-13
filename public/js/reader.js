@@ -1685,9 +1685,10 @@ function applyContainerWidth() {
 
     if (fitMode === "fit-height") {
         // Fit to height forces the image to 90% of visible screen height.
-        // If the header is hidden, or if we're in infinite scrolling, then the image
-        // can take up to 98% of visible screen height because there's more free space
-        const height = localStorage.hideHeader === "true" || infiniteScroll ? 98 : 90;
+        // Hidden-header paginated mode uses the full viewport because bottom chrome is hidden.
+        const height = localStorage.hideHeader === "true" && !infiniteScroll
+            ? 100
+            : infiniteScroll ? 98 : 90;
         $(".reader-image").attr("style", `max-height: ${height}vh;`);
         $(".sni").attr("style", "width: fit-content; width: -moz-fit-content");
     } else if (fitMode === "fit-width") {

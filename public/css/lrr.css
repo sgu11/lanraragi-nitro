@@ -859,6 +859,41 @@ body.reader-minimal-chrome #i2 {
   display: none;
 }
 
+body.reader-minimal-chrome #i5,
+body.reader-minimal-chrome #i7 {
+  display: none;
+}
+
+body.reader-minimal-chrome:not(.infinite-scroll) {
+  overflow: hidden;
+}
+
+body.reader-minimal-chrome:not(.infinite-scroll) #i1 {
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+body.reader-minimal-chrome:not(.infinite-scroll) #i3 {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body.reader-minimal-chrome:not(.infinite-scroll) #display {
+  height: 100vh;
+  height: 100dvh;
+  align-items: center;
+}
+
+body.reader-minimal-chrome:not(.infinite-scroll) .reader-image {
+  max-height: 100vh;
+  max-height: 100dvh;
+}
+
 body.infinite-scroll #display {
   display: flex;
   flex-direction: column;
