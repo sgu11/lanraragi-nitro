@@ -642,7 +642,6 @@ export function initializeSettings() {
     // Initialize settings and button toggles
     if (localStorage.hideHeader === "true" || false) {
         $("#hide-header").addClass("toggled");
-        $("#i2").hide();
     } else {
         $("#show-header").addClass("toggled");
     }
@@ -663,6 +662,7 @@ export function initializeSettings() {
 
     infiniteScroll = localStorage.infiniteScroll === "true" || false;
     $(infiniteScroll ? "#infinite-scroll-on" : "#infinite-scroll-off").addClass("toggled");
+    applyReaderChromeLayout();
 
     showOverlayByDefault = localStorage.showOverlayByDefault === "true" || false;
     $(showOverlayByDefault ? "#show-overlay" : "#hide-overlay").addClass("toggled");
@@ -696,6 +696,11 @@ export function initializeSettings() {
     // fork: auto-fullscreen-on-first-click
     mobileFullscreen = localStorage.mobileFullscreen !== "false"; // default true
     $(mobileFullscreen ? "#mobile-fullscreen-on" : "#mobile-fullscreen-off").addClass("toggled");
+}
+
+function applyReaderChromeLayout() {
+    $("body").toggleClass("infinite-scroll", infiniteScroll);
+    $("body").toggleClass("reader-minimal-chrome", infiniteScroll || localStorage.hideHeader === "true");
 }
 
 // fork: apply image-rendering via an <html data-img-quality> attribute so it
@@ -793,7 +798,6 @@ function initFullscreen() {
 }
 
 function initInfiniteScrollView() {
-    $("body").addClass("infinite-scroll");
     $("#Map").remove();
     $("#img_doublepage").remove();
     $(".reader-image").first().attr("src", pages[0]);
@@ -1733,9 +1737,10 @@ function toggleMangaMode() {
 
 function toggleHeader() {
     if (infiniteScroll) { return false; }
-    localStorage.hideHeader = $("#i2").is(":visible");
-    $("#toggle-header input").toggleClass("toggled");
-    $("#i2").toggle();
+    localStorage.hideHeader = localStorage.hideHeader !== "true";
+    $("#toggle-header input").removeClass("toggled");
+    $(localStorage.hideHeader === "true" ? "#hide-header" : "#show-header").addClass("toggled");
+    applyReaderChromeLayout();
     applyContainerWidth();
     return false;
 }

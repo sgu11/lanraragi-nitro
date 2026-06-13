@@ -837,9 +837,12 @@ body.swal2-shown>[aria-hidden="true"] {
 
 /* Infinite Scrolling Reader */
 
-body.infinite-scroll .sn,
-body.infinite-scroll .file-info,
-body.infinite-scroll .reading-direction,
+body.reader-minimal-chrome .sn,
+body.reader-minimal-chrome .file-info,
+body.reader-minimal-chrome .reading-direction {
+  display: none;
+}
+
 body.infinite-scroll #toggle-manga-mode,
 body.infinite-scroll #preload-images,
 body.infinite-scroll #toggle-header,
@@ -847,12 +850,12 @@ body.infinite-scroll #toggle-double-mode {
   display: none;
 }
 
-body.infinite-scroll #i4 .absolute-options {
+body.reader-minimal-chrome #i4 .absolute-options {
   position: fixed;
   top: 20px;
 }
 
-body.infinite-scroll #i2 {
+body.reader-minimal-chrome #i2 {
   display: none;
 }
 
@@ -866,7 +869,7 @@ body.infinite-scroll #display img {
   cursor: pointer;
 }
 
-body.infinite-scroll .sb {
+body.reader-minimal-chrome .sb {
   margin-top: 10px;
 }
 

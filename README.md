@@ -21,6 +21,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   setting.
 - **Delete key in reader** opens the standard archive/tankoubon deletion
   confirmation modal and returns to the library after confirmed deletion.
+- **Header hidden reader layout** now uses the same minimal chrome as infinite
+  scroll while preserving normal paginated rendering, double-page mode, stamps,
+  and tap/keyboard navigation.
 - **Middle-click toggles fullscreen** anywhere in the reader (same as pressing `F`).
 - **Reading-progress migration** no longer keeps resurfacing stale migration toasts for deleted archives/tankoubons, and respects local/authenticated progress settings before attempting a server migration.
 - **Progression Tracking disabled** now suppresses local/server progress writes during page turns instead of only ignoring saved progress on reader open.
