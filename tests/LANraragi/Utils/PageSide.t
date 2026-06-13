@@ -133,7 +133,7 @@ subtest "clears spread-start and legacy page-side detection fields" => sub {
     ok( $deleted{firstpageside_v},       "legacy firstpageside_v is cleared" );
 };
 
-subtest "recent archive selection sorts by file mtime and caps at 50" => sub {
+subtest "recent archive selection sorts by file mtime and returns all archives by default" => sub {
     my $tmp = tempdir( CLEANUP => 1 );
     my %files;
     my @ids;
@@ -153,11 +153,38 @@ subtest "recent archive selection sorts by file mtime and caps at 50" => sub {
     $redis->mock( smembers => sub { return @ids; } );
     $redis->mock( hget     => sub { my ( $self, $id, $field ) = @_; return $field eq "file" ? $files{$id} : undef; } );
 
-    my @recent = recent_archive_ids( $redis, 9000 );
+    my @recent = recent_archive_ids($redis);
 
-    is( scalar @recent, 50, "recent archive selection is capped at 50" );
+    is( scalar @recent, 60, "recent archive selection is uncapped by default" );
     is( $recent[0], sprintf( "%040d", 60 ), "newest archive is first" );
-    is( $recent[-1], sprintf( "%040d", 11 ), "cap keeps only the newest 50 archives" );
+    is( $recent[-1], sprintf( "%040d", 1 ), "oldest archive is retained when no limit is provided" );
+};
+
+subtest "recent archive selection honors an explicit positive limit" => sub {
+    my $tmp = tempdir( CLEANUP => 1 );
+    my %files;
+    my @ids;
+
+    for my $i ( 1 .. 60 ) {
+        my $id = sprintf( "%040d", $i );
+        my $file = "$tmp/$i.cbz";
+        open my $fh, ">", $file or die "Could not write $file: $!";
+        print $fh $i;
+        close $fh;
+        utime( 1000 + $i, 1000 + $i, $file );
+        push @ids, $id;
+        $files{$id} = $file;
+    }
+
+    my $redis = Test::MockObject->new;
+    $redis->mock( smembers => sub { return @ids; } );
+    $redis->mock( hget     => sub { my ( $self, $id, $field ) = @_; return $field eq "file" ? $files{$id} : undef; } );
+
+    my @recent = recent_archive_ids( $redis, 12 );
+
+    is( scalar @recent, 12, "explicit limit keeps a bounded newest subset" );
+    is( $recent[0], sprintf( "%040d", 60 ), "newest archive is first" );
+    is( $recent[-1], sprintf( "%040d", 49 ), "explicit limit determines the last retained archive" );
 };
 
 done_testing();

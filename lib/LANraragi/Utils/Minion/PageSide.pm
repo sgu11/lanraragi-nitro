@@ -4,13 +4,11 @@ use strict;
 use warnings;
 use utf8;
 
-use LANraragi::Utils::PageSide qw(RECENT_DETECTION_LIMIT);
-
-sub _clamped_limit {
+sub _optional_positive_limit {
     my ($requested) = @_;
-    my $limit = defined $requested ? int($requested) : RECENT_DETECTION_LIMIT;
-    $limit = RECENT_DETECTION_LIMIT if $limit <= 0;
-    return $limit > RECENT_DETECTION_LIMIT ? RECENT_DETECTION_LIMIT : $limit;
+    return unless defined $requested;
+    my $limit = int($requested);
+    return $limit > 0 ? $limit : undef;
 }
 
 sub add_tasks {
@@ -31,7 +29,7 @@ sub add_tasks {
 
     my $detect_recent = sub {
         my ( $job, @args ) = @_;
-        my $limit = _clamped_limit( $args[0] );
+        my $limit = _optional_positive_limit( $args[0] );
 
         eval {
             my $result = LANraragi::Utils::PageSide::detect_recent_first_spread_starts( $job, $limit );

@@ -18,7 +18,6 @@ use Exporter 'import';
 our @EXPORT_OK = qw(
   FIRST_PAGE_SIDE_VERSION
   FIRST_SPREAD_START_VERSION
-  RECENT_DETECTION_LIMIT
   choose_first_page_side
   choose_first_spread_start
   clear_first_spread_start_detection
@@ -33,15 +32,14 @@ our @EXPORT_OK = qw(
 
 use constant FIRST_PAGE_SIDE_VERSION   => 1;
 use constant FIRST_SPREAD_START_VERSION => 2;
-use constant RECENT_DETECTION_LIMIT    => 50;
 use constant MIN_SAMPLE_CONFIDENCE     => 0.55;
 use constant MIN_VOTE_GAP              => 0.35;
 use constant MIN_CONFIDENT_SAMPLES     => 2;
 
-sub _clamped_recent_limit ($requested) {
-    my $limit = defined $requested ? int($requested) : RECENT_DETECTION_LIMIT;
-    $limit = RECENT_DETECTION_LIMIT if $limit <= 0;
-    return min( $limit, RECENT_DETECTION_LIMIT );
+sub _optional_positive_limit ($requested) {
+    return unless defined $requested;
+    my $limit = int($requested);
+    return $limit > 0 ? $limit : undef;
 }
 
 sub _normalize_side ($side) {
@@ -170,8 +168,8 @@ sub choose_first_page_side ($samples) {
     };
 }
 
-sub recent_archive_ids ( $redis, $requested_limit = RECENT_DETECTION_LIMIT ) {
-    my $limit = _clamped_recent_limit($requested_limit);
+sub recent_archive_ids ( $redis, $requested_limit = undef ) {
+    my $limit = _optional_positive_limit($requested_limit);
     my @ids   = all_archive_ids($redis);
 
     my %mtime;
@@ -186,6 +184,7 @@ sub recent_archive_ids ( $redis, $requested_limit = RECENT_DETECTION_LIMIT ) {
           || $b cmp $a
     } keys %mtime;
 
+    return @sorted unless defined $limit;
     return @sorted[ 0 .. min( $#sorted, $limit - 1 ) ] if @sorted;
     return;
 }
@@ -201,8 +200,8 @@ sub enqueue_first_page_side_detection ($id) {
     return enqueue_first_spread_start_detection($id);
 }
 
-sub detect_recent_first_spread_starts ( $job, $requested_limit = RECENT_DETECTION_LIMIT ) {
-    my $limit  = _clamped_recent_limit($requested_limit);
+sub detect_recent_first_spread_starts ( $job, $requested_limit = undef ) {
+    my $limit  = _optional_positive_limit($requested_limit);
     my $logger = get_logger( "Minion", "minion" );
     my $redis  = LANraragi::Model::Config->get_redis;
     my @ids    = recent_archive_ids( $redis, $limit );
@@ -210,7 +209,8 @@ sub detect_recent_first_spread_starts ( $job, $requested_limit = RECENT_DETECTIO
 
     my $processed = 0;
     my @errors;
-    $logger->info("detect_recent_first_spread_starts: processing " . scalar(@ids) . " recent archives (limit=$limit)");
+    my $limit_label = defined $limit ? $limit : "all";
+    $logger->info("detect_recent_first_spread_starts: processing " . scalar(@ids) . " archives (limit=$limit_label)");
 
     for my $id (@ids) {
         eval { detect_and_store_first_spread_start($id); };
@@ -229,7 +229,7 @@ sub detect_recent_first_spread_starts ( $job, $requested_limit = RECENT_DETECTIO
     };
 }
 
-sub detect_recent_first_page_sides ( $job, $requested_limit = RECENT_DETECTION_LIMIT ) {
+sub detect_recent_first_page_sides ( $job, $requested_limit = undef ) {
     return detect_recent_first_spread_starts( $job, $requested_limit );
 }
 

@@ -41,8 +41,8 @@ Persistent archive fields:
 Detection lifecycle:
 
 - 새 upload와 Shinobu-discovered archive는 `detect_first_spread_start` job을 enqueue함.
-- `detect_recent_first_spread_starts`는 최근 수정 archive backfill job이며 run당 최대 50개로 제한함.
-- `detect_recent_first_page_sides`는 오래된 queued job 호환을 위한 legacy alias임.
+- `detect_recent_first_spread_starts`는 기본적으로 모든 기존 archive를 archive file mtime 순서로 backfill함. 양수 `args=[N]` 값을 주면 명시적으로 최신 N개 archive만 처리함.
+- `recent` 이름과 `detect_recent_first_page_sides`는 오래된 queued job 호환을 위한 legacy 유지임.
 - 동일 ID archive content가 바뀌면 Shinobu가 기존 `firstspreadstart*`와 legacy `firstpageside*`를 지운 뒤 새 detection을 queue함.
 
 Detection heuristic:

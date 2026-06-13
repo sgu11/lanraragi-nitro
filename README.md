@@ -58,9 +58,10 @@ Detection lifecycle:
 
 - New uploads and Shinobu-discovered archives enqueue
   `detect_first_spread_start`.
-- `detect_recent_first_spread_starts` backfills recently modified archives and
-  is capped at 50 archives per run. `detect_recent_first_page_sides` remains
-  registered only as a legacy task alias.
+- `detect_recent_first_spread_starts` backfills all existing archives by
+  default, sorted by archive file mtime. A positive `args=[N]` value can still
+  intentionally limit a run to the newest N archives. The `recent` name and
+  `detect_recent_first_page_sides` remain only for legacy task compatibility.
 - If the archive file changes under the same ID, Shinobu clears old
   `firstspreadstart*` and legacy `firstpageside*` fields before queueing fresh
   detection.

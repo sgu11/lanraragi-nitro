@@ -30,7 +30,7 @@ $page_side->redefine(
     detect_recent_first_spread_starts => sub {
         my ( $job, $limit ) = @_;
         $received_recent_limit = $limit;
-        return { processed => $limit, limit => $limit };
+        return { processed => 123, limit => $limit };
     }
 );
 
@@ -38,9 +38,13 @@ my $finished;
 my $job = Test::MockObject->new;
 $job->mock( finish => sub { my ( $self, $payload ) = @_; $finished = $payload; } );
 
+$tasks{detect_recent_first_spread_starts}->($job);
+
+is( $received_recent_limit, undef, "recent backfill task defaults to an uncapped sweep" );
+is_deeply( $finished, { processed => 123, limit => undef }, "recent backfill task finishes with detector payload" );
+
 $tasks{detect_recent_first_spread_starts}->( $job, 9000 );
 
-is( $received_recent_limit, 50, "recent backfill task clamps requested limits to 50 archives" );
-is_deeply( $finished, { processed => 50, limit => 50 }, "recent backfill task finishes with detector payload" );
+is( $received_recent_limit, 9000, "recent backfill task preserves explicit positive limits" );
 
 done_testing();
