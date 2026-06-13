@@ -31,7 +31,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   vertically in the minimal layout.
 - **Single-page spread sliding** in double-page fullscreen/hidden-header mode:
   `Up` moves the visible spread back by one page and `Down` moves it forward by
-  one page, without changing normal left/right spread navigation.
+  one page. After a one-page slide, normal prev/next navigation keeps the shifted
+  double-page stride until a direct page jump or display-mode change resets it.
 - **Middle-click toggles fullscreen** anywhere in the reader (same as pressing `F`).
 - **Reading-progress migration** no longer keeps resurfacing stale migration toasts for deleted archives/tankoubons, and respects local/authenticated progress settings before attempting a server migration.
 - **Progression Tracking disabled** now suppresses local/server progress writes during page turns instead of only ignoring saved progress on reader open.

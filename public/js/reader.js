@@ -15,6 +15,7 @@ import {
     getDisplayWindow,
     getPageNavigationDestination,
     getSinglePageSpreadWindow,
+    getSpreadWindowWithPageShift,
     isWidePage,
     normalizeSpreadStartMode,
     spreadStartFlags,
@@ -40,6 +41,7 @@ let spreadStart = "auto";       // fork: adaptive offset mode ("auto" on, "pair2
 let detectedFirstSpreadStart = undefined; // fork: server-detected first interior spread anchor ("2"|"4"|"UNKNOWN"|undefined)
 let firstSpreadStart = 2;       // fork: first spread anchor (2 => pages 2-3, 4 => pages 3-4)
 let activeDisplayWindow = null; // fork: current rendered spread, including one-page vertical slides
+let activeDisplayWindowWasRequested = false;
 let requestedDisplayWindow = null;
 //Spacebar Scroll Config
 let scrollConfig = {
@@ -788,6 +790,19 @@ function slideSpreadBySinglePage(step) {
     return true;
 }
 
+function shiftRequestedSpreadByPageCount(step) {
+    if (!doublePageMode || infiniteScroll || !activeDisplayWindowWasRequested || !activeDisplayWindow
+        || activeDisplayWindow.end <= activeDisplayWindow.start) {
+        return false;
+    }
+
+    requestedDisplayWindow = getSpreadWindowWithPageShift(step > 0 ? 2 : -2, getSpreadState({
+        displayWindow: activeDisplayWindow,
+    }));
+    goToPage(requestedDisplayWindow.start);
+    return true;
+}
+
 function cycleSpreadStart() {
     if (!doublePageMode || infiniteScroll) { return; }
     const modes = ["auto", "pair2"];
@@ -1502,6 +1517,7 @@ async function goToPage(page) {
 
     if (infiniteScroll) {
         activeDisplayWindow = null;
+        activeDisplayWindowWasRequested = false;
         $("#display img").get(currentPage).scrollIntoView({ block: "nearest" });
     } else {
         if (doublePageMode) {
@@ -1511,6 +1527,7 @@ async function goToPage(page) {
 
             const displayWindow = displayWindowOverride || getDisplayWindow(currentPage, getSpreadState());
             activeDisplayWindow = displayWindow;
+            activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
             currentPage = displayWindow.start;
 
             if (displayWindow.end > displayWindow.start) {
@@ -1544,6 +1561,7 @@ async function goToPage(page) {
             }
         } else {
             activeDisplayWindow = null;
+            activeDisplayWindowWasRequested = false;
             const img = await loadImage(currentPage);
             const imgFilename = getFilename(currentPage);
             await decodeImage(img);
@@ -2172,6 +2190,9 @@ function changePage(targetPage, resetAuto = false) {
         destination = mangaMode ? 0 : maxPage;
     } else {
         const step = mangaMode ? -targetPage : targetPage;
+        if (shiftRequestedSpreadByPageCount(step)) {
+            return;
+        }
         destination = getPageNavigationDestination(step, getSpreadState());
     }
     goToPage(destination);

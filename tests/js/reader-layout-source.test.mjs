@@ -70,8 +70,11 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
     assert.notEqual(initStart, -1);
     assert.notEqual(initEnd, -1);
     assert.match(js, /getSinglePageSpreadWindow,/);
+    assert.match(js, /getSpreadWindowWithPageShift,/);
     assert.match(js, /function shouldSlideSpreadWithVerticalKeys\(\) \{/);
     assert.match(js, /function slideSpreadBySinglePage\(step\) \{/);
+    assert.match(js, /function shiftRequestedSpreadByPageCount\(step\) \{/);
+    assert.match(js, /if \(shiftRequestedSpreadByPageCount\(step\)\) \{/);
     assert.match(shortcut, /case 38: \/\/ up arrow[\s\S]*slideSpreadBySinglePage\(-1\)/);
     assert.match(shortcut, /case 40: \/\/ down arrow[\s\S]*slideSpreadBySinglePage\(1\)/);
     assert.match(init, /if \(\[32, 38, 40\]\.includes\(e\.which\)\) handleShortcuts\(e\);/);

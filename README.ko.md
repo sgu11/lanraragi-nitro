@@ -21,7 +21,7 @@ English version: [`README.md`](README.md).
 - **Adaptive offset**: cover와 wide page는 항상 single 표시, archive별 server-detected `Pair 2-3` / `Pair 3-4` hint 저장, reader option은 on/off 단순화함.
 - **Reader Delete key**: `Delete` 키가 표준 archive/tankoubon deletion confirmation modal을 열고, confirm 후 library로 복귀함.
 - **Header hidden reader layout**: hidden-header mode에서 infinite-scroll과 동일한 minimal chrome 사용. 일반 paginated rendering, double-page mode, stamps, tap/keyboard navigation은 유지함. Bottom utility link를 숨기고 image viewport를 full-height no-scroll로 사용함. Mouse wheel up/down은 fullscreen과 동일하게 page navigation으로 동작함. Side utility icon은 vertical stack임.
-- **Single-page spread sliding**: double-page fullscreen/hidden-header mode에서 `Up`은 visible spread를 한 page 이전으로, `Down`은 한 page 다음으로 이동함. 일반 left/right spread navigation은 그대로 유지함.
+- **Single-page spread sliding**: double-page fullscreen/hidden-header mode에서 `Up`은 visible spread를 한 page 이전으로, `Down`은 한 page 다음으로 이동함. One-page slide 이후 일반 prev/next navigation은 direct page jump 또는 display-mode 변경 전까지 shifted double-page stride 유지함.
 - **Middle-click fullscreen**: reader 어디서든 middle-click으로 fullscreen toggle 가능함. `F` key와 동일한 의미임.
 - **Reading-progress migration**: 삭제된 archive/tankoubon의 stale migration toast 반복 표시 방지, local/authenticated progress 설정 확인 후 server migration 시도함.
 - **Progression Tracking disabled**: reader open 시 saved progress 무시뿐 아니라 page turn 중 local/server progress write도 억제함.

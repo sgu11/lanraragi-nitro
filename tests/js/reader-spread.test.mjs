@@ -6,6 +6,7 @@ import {
     getDisplayWindow,
     getPageNavigationDestination,
     getSinglePageSpreadWindow,
+    getSpreadWindowWithPageShift,
     normalizeSpreadStartMode,
     spreadStartFlags,
     shouldPairPageTwoWithThree,
@@ -138,4 +139,30 @@ test("single-page spread sliding keeps cover and wide pages single", () => {
         ...state,
         displayWindow: { start: 5, end: 5 },
     }), { start: 6, end: 6 });
+});
+
+test("shifted spread navigation keeps a double-page stride from an overlapping spread", () => {
+    const state = {
+        maxPage: 10,
+        doublePageMode: true,
+        firstSpreadStart: 2,
+        widePages: new Set(),
+        displayWindow: { start: 4, end: 5 },
+    };
+
+    assert.deepEqual(getSpreadWindowWithPageShift(2, state), { start: 6, end: 7 });
+    assert.deepEqual(getSpreadWindowWithPageShift(-2, state), { start: 2, end: 3 });
+});
+
+test("shifted spread navigation keeps wide pages single", () => {
+    const state = {
+        maxPage: 10,
+        doublePageMode: true,
+        firstSpreadStart: 2,
+        widePages: new Set([6, 9]),
+        displayWindow: { start: 4, end: 5 },
+    };
+
+    assert.deepEqual(getSpreadWindowWithPageShift(2, state), { start: 6, end: 6 });
+    assert.deepEqual(getSpreadWindowWithPageShift(4, state), { start: 8, end: 8 });
 });
