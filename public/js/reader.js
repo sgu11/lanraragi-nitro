@@ -14,6 +14,7 @@ import {
 import {
     getDisplayWindow,
     getPageNavigationDestination,
+    getSinglePageSpreadWindow,
     isWidePage,
     normalizeSpreadStartMode,
     spreadStartFlags,
@@ -38,6 +39,8 @@ let mobileFullscreen = true;    // fork: auto-enter fullscreen on first reading 
 let spreadStart = "auto";       // fork: adaptive offset mode ("auto" on, "pair2" off)
 let detectedFirstSpreadStart = undefined; // fork: server-detected first interior spread anchor ("2"|"4"|"UNKNOWN"|undefined)
 let firstSpreadStart = 2;       // fork: first spread anchor (2 => pages 2-3, 4 => pages 3-4)
+let activeDisplayWindow = null; // fork: current rendered spread, including one-page vertical slides
+let requestedDisplayWindow = null;
 //Spacebar Scroll Config
 let scrollConfig = {
     scrollDist: 75,      // Viewport % distance to scroll
@@ -114,8 +117,8 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
 
     // Bind events to DOM
     $(document).on("keyup", (e) => handleShortcuts(e));
-    // Restrict keydown to only function for spacebar
-    $(document).on("keydown", (e) => { if (e.which === 32) handleShortcuts(e); });
+    // Restrict keydown to keys that need browser-default suppression.
+    $(document).on("keydown", (e) => { if ([32, 38, 40].includes(e.which)) handleShortcuts(e); });
     $(document).on("wheel", handleWheel);
 
     $(document).on("click.toggle-fit-mode", "#fit-mode input", toggleFitMode);
@@ -759,7 +762,30 @@ function getSpreadState(overrides = {}) {
 }
 
 function getCurrentDisplayWindow() {
+    if (activeDisplayWindow && doublePageMode && !infiniteScroll) {
+        return activeDisplayWindow;
+    }
     return getDisplayWindow(currentPage, getSpreadState());
+}
+
+function shouldSlideSpreadWithVerticalKeys() {
+    return doublePageMode && shouldWheelNavigatePages({
+        infiniteScroll,
+        fullscreen: fscreen.inFullscreen(),
+        headerHidden: localStorage.hideHeader === "true",
+    });
+}
+
+function slideSpreadBySinglePage(step) {
+    if (!shouldSlideSpreadWithVerticalKeys()) {
+        return false;
+    }
+
+    requestedDisplayWindow = getSinglePageSpreadWindow(step, getSpreadState({
+        displayWindow: getCurrentDisplayWindow(),
+    }));
+    goToPage(requestedDisplayWindow.start);
+    return true;
 }
 
 function cycleSpreadStart() {
@@ -883,6 +909,14 @@ function handleShortcuts(e) {
             break;
         case 32: // spacebar
             spaceScrollProcessInput(e);
+            break;
+        case 38: // up arrow
+            if (shouldSlideSpreadWithVerticalKeys()) { e.preventDefault(); }
+            if (e.type !== "keydown" && slideSpreadBySinglePage(-1)) { e.preventDefault(); }
+            break;
+        case 40: // down arrow
+            if (shouldSlideSpreadWithVerticalKeys()) { e.preventDefault(); }
+            if (e.type !== "keydown" && slideSpreadBySinglePage(1)) { e.preventDefault(); }
             break;
         case 37: // left arrow
             changePage(-1, true);
@@ -1460,11 +1494,14 @@ function updateMetadata() {
 }
 
 async function goToPage(page) {
+    const displayWindowOverride = requestedDisplayWindow;
+    requestedDisplayWindow = null;
     previousPage = currentPage;
     currentPage = Math.min(maxPage, Math.max(0, +page));
     showingSinglePage = false;
 
     if (infiniteScroll) {
+        activeDisplayWindow = null;
         $("#display img").get(currentPage).scrollIntoView({ block: "nearest" });
     } else {
         if (doublePageMode) {
@@ -1472,7 +1509,8 @@ async function goToPage(page) {
             if (currentPage > 0) { await loadImage(currentPage - 1); }
             if (currentPage < maxPage) { await loadImage(currentPage + 1); }
 
-            const displayWindow = getDisplayWindow(currentPage, getSpreadState());
+            const displayWindow = displayWindowOverride || getDisplayWindow(currentPage, getSpreadState());
+            activeDisplayWindow = displayWindow;
             currentPage = displayWindow.start;
 
             if (displayWindow.end > displayWindow.start) {
@@ -1505,6 +1543,7 @@ async function goToPage(page) {
                 showingSinglePage = true;
             }
         } else {
+            activeDisplayWindow = null;
             const img = await loadImage(currentPage);
             const imgFilename = getFilename(currentPage);
             await decodeImage(img);

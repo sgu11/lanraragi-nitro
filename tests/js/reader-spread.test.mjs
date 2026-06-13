@@ -5,6 +5,7 @@ import {
     buildSpreadWindows,
     getDisplayWindow,
     getPageNavigationDestination,
+    getSinglePageSpreadWindow,
     normalizeSpreadStartMode,
     spreadStartFlags,
     shouldPairPageTwoWithThree,
@@ -97,4 +98,44 @@ test("navigation follows display windows instead of fixed offsets", () => {
     assert.equal(getPageNavigationDestination(1, { ...state, currentPage: 1 }), 3);
     assert.equal(getPageNavigationDestination(1, { ...state, currentPage: 3 }), 4);
     assert.equal(getPageNavigationDestination(-1, { ...state, currentPage: 4 }), 3);
+});
+
+test("single-page spread sliding allows overlapping double-page windows", () => {
+    const state = {
+        maxPage: 8,
+        doublePageMode: true,
+        firstSpreadStart: 2,
+        widePages: new Set(),
+    };
+
+    assert.deepEqual(getSinglePageSpreadWindow(-1, {
+        ...state,
+        displayWindow: { start: 3, end: 4 },
+    }), { start: 2, end: 3 });
+    assert.deepEqual(getSinglePageSpreadWindow(1, {
+        ...state,
+        displayWindow: { start: 4, end: 5 },
+    }), { start: 5, end: 6 });
+});
+
+test("single-page spread sliding keeps cover and wide pages single", () => {
+    const state = {
+        maxPage: 8,
+        doublePageMode: true,
+        firstSpreadStart: 2,
+        widePages: new Set([5, 7]),
+    };
+
+    assert.deepEqual(getSinglePageSpreadWindow(-1, {
+        ...state,
+        displayWindow: { start: 1, end: 2 },
+    }), { start: 0, end: 0 });
+    assert.deepEqual(getSinglePageSpreadWindow(1, {
+        ...state,
+        displayWindow: { start: 4, end: 4 },
+    }), { start: 5, end: 5 });
+    assert.deepEqual(getSinglePageSpreadWindow(1, {
+        ...state,
+        displayWindow: { start: 5, end: 5 },
+    }), { start: 6, end: 6 });
 });

@@ -55,3 +55,24 @@ test("hidden-header paginated reader uses fullscreen wheel page navigation", asy
     assert.match(wheel, /e\.preventDefault\(\);/);
     assert.match(wheel, /changePage\(direction, true\);/);
 });
+
+test("minimal double-spread reader uses vertical keys for single-page spread sliding", async () => {
+    const js = await source("public/js/reader.js");
+    const shortcutStart = js.indexOf("function handleShortcuts(e)");
+    const shortcutEnd = js.indexOf("function handleWheel(e)", shortcutStart);
+    const shortcut = js.slice(shortcutStart, shortcutEnd);
+    const initStart = js.indexOf("export function initializeAll");
+    const initEnd = js.indexOf("export function loadContentData", initStart);
+    const init = js.slice(initStart, initEnd);
+
+    assert.notEqual(shortcutStart, -1);
+    assert.notEqual(shortcutEnd, -1);
+    assert.notEqual(initStart, -1);
+    assert.notEqual(initEnd, -1);
+    assert.match(js, /getSinglePageSpreadWindow,/);
+    assert.match(js, /function shouldSlideSpreadWithVerticalKeys\(\) \{/);
+    assert.match(js, /function slideSpreadBySinglePage\(step\) \{/);
+    assert.match(shortcut, /case 38: \/\/ up arrow[\s\S]*slideSpreadBySinglePage\(-1\)/);
+    assert.match(shortcut, /case 40: \/\/ down arrow[\s\S]*slideSpreadBySinglePage\(1\)/);
+    assert.match(init, /if \(\[32, 38, 40\]\.includes\(e\.which\)\) handleShortcuts\(e\);/);
+});

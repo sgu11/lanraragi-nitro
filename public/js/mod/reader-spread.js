@@ -115,6 +115,25 @@ export function getPageNavigationDestination(targetPage, state) {
     return windows[nextIndex].start;
 }
 
+export function getSinglePageSpreadWindow(targetPage, state) {
+    const step = Number(targetPage) || 0;
+    const lastPage = Math.max(0, Number(state.maxPage) || 0);
+    const displayWindow = state.displayWindow || getDisplayWindow(state.currentPage, state);
+    const currentStart = Math.max(0, Math.min(lastPage, Number(displayWindow.start) || 0));
+    const nextStart = Math.max(0, Math.min(lastPage, currentStart + (step > 0 ? 1 : -1)));
+    const widePages = state.widePages || new Set();
+
+    if (!state.doublePageMode || nextStart === 0 || nextStart >= lastPage || widePages.has(nextStart)) {
+        return { start: nextStart, end: nextStart };
+    }
+
+    if (widePages.has(nextStart + 1)) {
+        return { start: nextStart, end: nextStart };
+    }
+
+    return { start: nextStart, end: nextStart + 1 };
+}
+
 // Legacy names retained so mixed cached assets do not fail while clients update.
 export function normalizeFirstPageSide(firstPageSide) {
     if (typeof firstPageSide !== "string") {
