@@ -1082,6 +1082,18 @@ msgstr "단일"
 msgid "Double"
 msgstr "이중"
 
+msgid "Adaptive Offset"
+msgstr "적응형 오프셋"
+
+msgid "Cover and wide pages stay single. Press J to toggle."
+msgstr "표지와 가로 페이지는 단일 페이지로 표시됩니다. J 키로 전환합니다."
+
+msgid "On"
+msgstr "켜기"
+
+msgid "Off"
+msgstr "끄기"
+
 msgid "Reading Direction"
 msgstr ""
 

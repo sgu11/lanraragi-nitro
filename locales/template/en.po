@@ -1163,6 +1163,18 @@ msgstr "Single"
 msgid "Double"
 msgstr "Double"
 
+msgid "Adaptive Offset"
+msgstr "Adaptive Offset"
+
+msgid "Cover and wide pages stay single. Press J to toggle."
+msgstr "Cover and wide pages stay single. Press J to toggle."
+
+msgid "On"
+msgstr "On"
+
+msgid "Off"
+msgstr "Off"
+
 msgid "Spread Start"
 msgstr "Spread Start"
 
