@@ -1779,16 +1779,14 @@ paths:
           in: query
           required: true
           description: >-
-            Spread start mode for this archive.
-            "auto" — auto-detect the first interior spread.
-            "pair2" — cover alone, then pair pages 2-3.
-            "pair3" — cover and page 2 alone, then pair pages 3-4.
+            Adaptive offset mode for this archive.
+            "auto" — enable adaptive offset.
+            "pair2" — disable adaptive offset and pair pages 2-3.
           schema:
             type: string
             enum:
               - "auto"
               - "pair2"
-              - "pair3"
       responses:
         '200':
           description: Success response
@@ -1813,7 +1811,6 @@ paths:
                     enum:
                       - "auto"
                       - "pair2"
-                      - "pair3"
                   success:
                     type: integer
                     enum:
@@ -4497,17 +4494,16 @@ components:
           description: Table of contents for the archive
         spreadstart:
           type: string
-          description: First interior spread mode ("auto", "pair2", or "pair3")
+          description: Adaptive offset mode ("auto" or "pair2")
           enum:
             - "auto"
             - "pair2"
-            - "pair3"
         firstspreadstart:
           type: [string, "null"]
-          description: Detected first interior spread start for adaptive double-page spread starts
+          description: Detected first spread anchor for adaptive double-page spread starts
           enum:
             - "2"
-            - "3"
+            - "4"
             - "UNKNOWN"
             - null
         firstspreadstart_confidence:
@@ -4539,7 +4535,7 @@ components:
           - name: Chapter 3
             page: 25
         spreadstart: "auto"
-        firstspreadstart: "3"
+        firstspreadstart: "4"
         firstspreadstart_confidence: "0.72"
         firstspreadstart_reason: "sample_vote"
         firstspreadstart_v: "1"
@@ -4685,12 +4681,12 @@ components:
         spreadstart:
           type: string
           nullable: true
-          description: First interior spread mode
+          description: Adaptive offset mode
           enum:
             - "auto"
             - "pair2"
-            - "pair3"
             # Legacy backup values accepted for older exports.
+            - "pair3"
             - "none"
             - "always"
             - null

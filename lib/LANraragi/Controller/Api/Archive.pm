@@ -517,8 +517,9 @@ sub update_spreadstart {
     my $value = $self->req->param('value') || "";
 
     $value = "pair2" if $value eq "none" || $value eq "always";
+    $value = "auto" if $value eq "pair3";
 
-    unless ( $value eq "auto" || $value eq "pair2" || $value eq "pair3" ) {
+    unless ( $value eq "auto" || $value eq "pair2" ) {
         render_api_response( $self, "update_spreadstart", "Invalid spreadstart value." );
         return;
     }

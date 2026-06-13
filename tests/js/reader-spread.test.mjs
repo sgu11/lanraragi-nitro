@@ -13,24 +13,25 @@ import {
 test("legacy spread-start modes normalize to the new first interior spread model", () => {
     assert.equal(normalizeSpreadStartMode("always"), "pair2");
     assert.equal(normalizeSpreadStartMode("none"), "pair2");
-    assert.equal(normalizeSpreadStartMode("pair3"), "pair3");
+    assert.equal(normalizeSpreadStartMode("pair3"), "auto");
     assert.equal(normalizeSpreadStartMode("bogus"), "auto");
 });
 
 test("spreadStartFlags maps manual and adaptive modes to first interior spread", () => {
-    assert.deepEqual(spreadStartFlags("pair2", "3"), { firstSpreadStart: 2 });
-    assert.deepEqual(spreadStartFlags("pair3", "2"), { firstSpreadStart: 3 });
+    assert.deepEqual(spreadStartFlags("pair2", "4"), { firstSpreadStart: 2 });
+    assert.deepEqual(spreadStartFlags("pair3", "2"), { firstSpreadStart: 2 });
     assert.deepEqual(spreadStartFlags("auto", "2"), { firstSpreadStart: 2 });
-    assert.deepEqual(spreadStartFlags("auto", "3"), { firstSpreadStart: 3 });
+    assert.deepEqual(spreadStartFlags("auto", "4"), { firstSpreadStart: 4 });
+    assert.deepEqual(spreadStartFlags("auto", "3"), { firstSpreadStart: 4 });
     assert.deepEqual(spreadStartFlags("auto", "UNKNOWN"), { firstSpreadStart: 2 });
     assert.deepEqual(spreadStartFlags("auto", undefined), { firstSpreadStart: 2 });
 });
 
 test("manual and adaptive modes decide whether page 2 pairs with page 3", () => {
-    assert.equal(shouldPairPageTwoWithThree("pair2", "3"), true);
-    assert.equal(shouldPairPageTwoWithThree("pair3", "2"), false);
+    assert.equal(shouldPairPageTwoWithThree("pair2", "4"), true);
+    assert.equal(shouldPairPageTwoWithThree("pair3", "2"), true);
     assert.equal(shouldPairPageTwoWithThree("auto", "2"), true);
-    assert.equal(shouldPairPageTwoWithThree("auto", "3"), false);
+    assert.equal(shouldPairPageTwoWithThree("auto", "4"), false);
     assert.equal(shouldPairPageTwoWithThree("auto", undefined), true);
 });
 
@@ -47,10 +48,10 @@ test("cover is always single and pair2 starts interior spreads at page 2", () =>
     ]);
 });
 
-test("pair3 keeps page 2 single before pairing page 3 with page 4", () => {
+test("adaptive offset anchored on page 4 keeps page 2 single before pairing page 3 with page 4", () => {
     assert.deepEqual(buildSpreadWindows(6, {
         doublePageMode: true,
-        firstSpreadStart: 3,
+        firstSpreadStart: 4,
         widePages: new Set(),
     }), [
         { start: 0, end: 0 },

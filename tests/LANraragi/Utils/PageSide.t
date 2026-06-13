@@ -34,7 +34,7 @@ subtest "projects interior samples to first spread starting at page 2" => sub {
     like( $result->{reason}, qr/sample_vote/, "sample-vote reason is recorded" );
 };
 
-subtest "projects interior samples to first spread starting at page 3" => sub {
+subtest "projects interior samples to first spread anchored on page 4" => sub {
     my $result = choose_first_spread_start(
         [
             {
@@ -52,7 +52,29 @@ subtest "projects interior samples to first spread starting at page 3" => sub {
         ]
     );
 
-    is( $result->{first_spread_start}, 3, "page 3 RIGHT / page 4 LEFT implies Pair 3-4" );
+    is( $result->{first_spread_start}, 4, "page 3 RIGHT / page 4 LEFT implies Pair 3-4" );
+};
+
+subtest "detects page side from the lower-complexity blank strip" => sub {
+    eval { require Image::Magick; 1 } or plan skip_all => "Image::Magick not available";
+
+    my $left_page = Image::Magick->new( size => "200x300" );
+    $left_page->ReadImage("xc:white");
+    $left_page->Draw( primitive => "rectangle", points => "0,0 24,299", fill => "black" );
+    $left_page->Set( magick => "PNG" );
+    my $left_blob   = $left_page->ImageToBlob;
+    my $left_sample = LANraragi::Utils::PageSide::detect_page_side( $left_blob, 2 );
+
+    is( $left_sample->{side}, "LEFT", "blanker right strip means an RTL left page" );
+
+    my $right_page = Image::Magick->new( size => "200x300" );
+    $right_page->ReadImage("xc:white");
+    $right_page->Draw( primitive => "rectangle", points => "175,0 199,299", fill => "black" );
+    $right_page->Set( magick => "PNG" );
+    my $right_blob   = $right_page->ImageToBlob;
+    my $right_sample = LANraragi::Utils::PageSide::detect_page_side( $right_blob, 3 );
+
+    is( $right_sample->{side}, "RIGHT", "blanker left strip means an RTL right page" );
 };
 
 subtest "ignores cover and page 2 samples for first interior spread detection" => sub {

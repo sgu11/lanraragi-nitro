@@ -30,9 +30,9 @@ let preloadedDimensions = {};   // fork: page index -> { width, height }, for sp
 let spaceScroll = { timeout: null, animationId: null };
 let imageQuality = "auto";      // fork: reader image-rendering ("auto"|"high-quality"|"smooth-sharp"|"pixelated")
 let mobileFullscreen = true;    // fork: auto-enter fullscreen on first reading click
-let spreadStart = "auto";       // fork: first interior spread mode ("auto"|"pair2"|"pair3")
-let detectedFirstSpreadStart = undefined; // fork: server-detected first interior spread start ("2"|"3"|"UNKNOWN"|undefined)
-let firstSpreadStart = 2;       // fork: first paired interior page (2 => pages 2-3, 3 => pages 3-4)
+let spreadStart = "auto";       // fork: adaptive offset mode ("auto" on, "pair2" off)
+let detectedFirstSpreadStart = undefined; // fork: server-detected first interior spread anchor ("2"|"4"|"UNKNOWN"|undefined)
+let firstSpreadStart = 2;       // fork: first spread anchor (2 => pages 2-3, 4 => pages 3-4)
 //Spacebar Scroll Config
 let scrollConfig = {
     scrollDist: 75,      // Viewport % distance to scroll
@@ -428,7 +428,7 @@ export function loadContentData() {
             content.summary = data.summary;
 
             detectedFirstSpreadStart = data.firstspreadstart; // fork: server-side adaptive spread-start signal
-            setSpreadStart(data.spreadstart || "auto"); // fork: per-archive first interior spread mode
+            setSpreadStart(data.spreadstart || "auto"); // fork: per-archive adaptive offset mode
 
             updateProgress(data, id);
 
@@ -708,7 +708,7 @@ function toggleMobileFullscreen() {
     $("#toggle-mobile-fullscreen input").toggleClass("toggled");
 }
 
-// fork: first interior spread control, persisted per-archive.
+// fork: adaptive offset control, persisted per-archive.
 function setSpreadStart(value) {
     spreadStart = normalizeSpreadStartMode(value);
     ({ firstSpreadStart } = spreadStartFlags(spreadStart, detectedFirstSpreadStart));
@@ -743,7 +743,7 @@ function getCurrentDisplayWindow() {
 
 function cycleSpreadStart() {
     if (!doublePageMode || infiniteScroll) { return; }
-    const modes = ["auto", "pair2", "pair3"];
+    const modes = ["auto", "pair2"];
     const next = modes[(modes.indexOf(spreadStart) + 1) % modes.length];
     setSpreadStart(next);
     // Persist per-archive (backend: PUT /api/archives/{id}/spreadstart)
@@ -892,7 +892,7 @@ function handleShortcuts(e) {
         case 72: // h
             toggleHelp();
             break;
-        case 74: // j - fork: cycle first interior spread (auto / pair2 / pair3)
+        case 74: // j - fork: toggle adaptive offset (auto / pair2)
             cycleSpreadStart();
             break;
         case 77: // m

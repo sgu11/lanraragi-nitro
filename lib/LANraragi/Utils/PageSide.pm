@@ -32,7 +32,7 @@ our @EXPORT_OK = qw(
 );
 
 use constant FIRST_PAGE_SIDE_VERSION   => 1;
-use constant FIRST_SPREAD_START_VERSION => 1;
+use constant FIRST_SPREAD_START_VERSION => 2;
 use constant RECENT_DETECTION_LIMIT    => 50;
 use constant MIN_SAMPLE_CONFIDENCE     => 0.55;
 use constant MIN_VOTE_GAP              => 0.35;
@@ -59,18 +59,18 @@ sub _project_first_page_side ($page_index, $side) {
     return $page_index % 2 == 0 ? $side : _opposite_side($side);
 }
 
-sub _first_spread_start_from_cover_side ($side) {
-    return $side eq "LEFT" ? 2 : 3;
-}
-
 sub _project_first_spread_start ( $page_index, $side ) {
-    return _first_spread_start_from_cover_side( _project_first_page_side( $page_index, $side ) );
+    my $page_number = $page_index + 1;
+    my $is_odd_page = $page_number % 2 == 1;
+    return $is_odd_page
+      ? ( $side eq "LEFT" ? 2 : 4 )
+      : ( $side eq "RIGHT" ? 2 : 4 );
 }
 
 sub choose_first_spread_start ($samples) {
     my @samples = grep { ref $_ eq "HASH" } @{ $samples // [] };
 
-    my %votes = ( 2 => 0, 3 => 0 );
+    my %votes = ( 2 => 0, 4 => 0 );
     my $count = 0;
     for my $sample (@samples) {
         my $page_index = $sample->{page_index} // 0;
@@ -93,7 +93,7 @@ sub choose_first_spread_start ($samples) {
         reason             => "not_enough_confident_samples"
     } if $count < MIN_CONFIDENT_SAMPLES;
 
-    my ( $winner, $runner_up ) = $votes{2} >= $votes{3} ? ( 2, 3 ) : ( 3, 2 );
+    my ( $winner, $runner_up ) = $votes{2} >= $votes{4} ? ( 2, 4 ) : ( 4, 2 );
 
     if ( $votes{$winner} - $votes{$runner_up} < MIN_VOTE_GAP ) {
         return {
@@ -103,7 +103,7 @@ sub choose_first_spread_start ($samples) {
         };
     }
 
-    my $total = $votes{2} + $votes{3};
+    my $total = $votes{2} + $votes{4};
     return {
         first_spread_start => $winner,
         confidence         => $total ? $votes{$winner} / $total : 0,
@@ -289,7 +289,8 @@ sub detect_and_store_first_page_side ($id) {
 
 sub _normalize_first_spread_start ($start) {
     return unless defined $start;
-    return "$start" if $start eq "2" || $start eq "3" || $start eq "UNKNOWN";
+    return "$start" if $start eq "2" || $start eq "4" || $start eq "UNKNOWN";
+    return "4" if $start eq "3";
     return;
 }
 
@@ -377,7 +378,7 @@ sub detect_page_side ( $contents, $page_index ) {
 
     return {
         page_index => $page_index,
-        side       => $delta > 0 ? "LEFT" : "RIGHT",
+        side       => $delta > 0 ? "RIGHT" : "LEFT",
         confidence => min( 0.95, 0.55 + ( $magnitude * 2.5 ) ),
         reason     => "edge_complexity"
     };

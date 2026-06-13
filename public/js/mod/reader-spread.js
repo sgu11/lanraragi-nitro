@@ -6,21 +6,23 @@
  * Spread-start modes:
  *   "auto"  - use server-detected first interior spread start
  *   "pair2" - cover alone, then pair page 2 with page 3
- *   "pair3" - cover and page 2 alone, then pair page 3 with page 4
  */
 
 export function normalizeFirstSpreadStart(firstSpreadStart) {
     if (firstSpreadStart === 2 || firstSpreadStart === "2") {
         return 2;
     }
+    if (firstSpreadStart === 4 || firstSpreadStart === "4") {
+        return 4;
+    }
     if (firstSpreadStart === 3 || firstSpreadStart === "3") {
-        return 3;
+        return 4;
     }
     return undefined;
 }
 
 export function normalizeSpreadStartMode(mode) {
-    if (mode === "auto" || mode === "pair2" || mode === "pair3") {
+    if (mode === "auto" || mode === "pair2") {
         return mode;
     }
     if (mode === "always" || mode === "none") {
@@ -35,10 +37,6 @@ export function isWidePage(dimensions) {
 
 export function resolveFirstSpreadStart(mode, firstSpreadStart) {
     const spreadMode = normalizeSpreadStartMode(mode);
-    if (spreadMode === "pair3") {
-        return 3;
-    }
-
     if (spreadMode === "pair2") {
         return 2;
     }
@@ -69,7 +67,7 @@ export function buildSpreadWindows(maxPage, state) {
         return windows;
     }
 
-    const firstPairPage = Math.max(1, (normalizeFirstSpreadStart(state.firstSpreadStart) || 2) - 1);
+    const firstPairPage = (normalizeFirstSpreadStart(state.firstSpreadStart) || 2) === 4 ? 2 : 1;
 
     for (let page = 0; page <= lastPage;) {
         if (page === 0 || page < firstPairPage || widePages.has(page)) {
