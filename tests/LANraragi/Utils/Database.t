@@ -15,16 +15,16 @@ use LANraragi::Utils::Database qw(get_archive_json);
 my $id = "e4c422fd10943dc169e3489a38cdbf57101a5f7e";
 my $redis = LANraragi::Model::Config->get_redis;
 
-$redis->hset( $id, "firstpageside",            "RIGHT" );
-$redis->hset( $id, "firstpageside_confidence", "0.72" );
-$redis->hset( $id, "firstpageside_reason",     "sample_vote" );
-$redis->hset( $id, "firstpageside_v",          "1" );
+$redis->hset( $id, "firstspreadstart",            "3" );
+$redis->hset( $id, "firstspreadstart_confidence", "0.72" );
+$redis->hset( $id, "firstspreadstart_reason",     "sample_vote" );
+$redis->hset( $id, "firstspreadstart_v",          "1" );
 
 my $json = get_archive_json( $redis, $id );
 
-is( $json->{firstpageside},            "RIGHT",       "archive JSON includes detected first page side" );
-is( $json->{firstpageside_confidence}, "0.72",        "archive JSON includes detection confidence" );
-is( $json->{firstpageside_reason},     "sample_vote", "archive JSON includes detection reason" );
-is( $json->{firstpageside_v},          "1",           "archive JSON includes detection algorithm version" );
+is( $json->{firstspreadstart},            "3",           "archive JSON includes detected first interior spread start" );
+is( $json->{firstspreadstart_confidence}, "0.72",        "archive JSON includes detection confidence" );
+is( $json->{firstspreadstart_reason},     "sample_vote", "archive JSON includes detection reason" );
+is( $json->{firstspreadstart_v},          "1",           "archive JSON includes detection algorithm version" );
 
 done_testing();

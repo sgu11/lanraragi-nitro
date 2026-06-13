@@ -2,50 +2,98 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    buildSpreadWindows,
+    getDisplayWindow,
+    getPageNavigationDestination,
+    normalizeSpreadStartMode,
     spreadStartFlags,
-    shouldCoverPairWithFirstPage,
-    getPageNavigationOffset,
+    shouldPairPageTwoWithThree,
 } from "../../public/js/mod/reader-spread.js";
 
-test("spreadStartFlags maps manual and adaptive modes to cover pairing", () => {
-    assert.deepEqual(spreadStartFlags("always", "LEFT"), { coverPairsWithFirst: true });
-    assert.deepEqual(spreadStartFlags("none", "RIGHT"), { coverPairsWithFirst: false });
-    assert.deepEqual(spreadStartFlags("auto", "LEFT"), { coverPairsWithFirst: false });
-    assert.deepEqual(spreadStartFlags("auto", "RIGHT"), { coverPairsWithFirst: true });
-    assert.deepEqual(spreadStartFlags("auto", "UNKNOWN"), { coverPairsWithFirst: true });
-    assert.deepEqual(spreadStartFlags("auto", undefined), { coverPairsWithFirst: false });
+test("legacy spread-start modes normalize to the new first interior spread model", () => {
+    assert.equal(normalizeSpreadStartMode("always"), "pair2");
+    assert.equal(normalizeSpreadStartMode("none"), "pair2");
+    assert.equal(normalizeSpreadStartMode("pair3"), "pair3");
+    assert.equal(normalizeSpreadStartMode("bogus"), "auto");
 });
 
-test("adaptive pairing treats LEFT or pending detection as cover-alone", () => {
-    assert.equal(shouldCoverPairWithFirstPage("auto", "LEFT"), false);
-    assert.equal(shouldCoverPairWithFirstPage("auto", undefined), false);
-    assert.equal(shouldCoverPairWithFirstPage("auto", null), false);
+test("spreadStartFlags maps manual and adaptive modes to first interior spread", () => {
+    assert.deepEqual(spreadStartFlags("pair2", "3"), { firstSpreadStart: 2 });
+    assert.deepEqual(spreadStartFlags("pair3", "2"), { firstSpreadStart: 3 });
+    assert.deepEqual(spreadStartFlags("auto", "2"), { firstSpreadStart: 2 });
+    assert.deepEqual(spreadStartFlags("auto", "3"), { firstSpreadStart: 3 });
+    assert.deepEqual(spreadStartFlags("auto", "UNKNOWN"), { firstSpreadStart: 2 });
+    assert.deepEqual(spreadStartFlags("auto", undefined), { firstSpreadStart: 2 });
 });
 
-test("adaptive pairing treats RIGHT or UNKNOWN detection as cover+first", () => {
-    assert.equal(shouldCoverPairWithFirstPage("auto", "RIGHT"), true);
-    assert.equal(shouldCoverPairWithFirstPage("auto", "UNKNOWN"), true);
+test("manual and adaptive modes decide whether page 2 pairs with page 3", () => {
+    assert.equal(shouldPairPageTwoWithThree("pair2", "3"), true);
+    assert.equal(shouldPairPageTwoWithThree("pair3", "2"), false);
+    assert.equal(shouldPairPageTwoWithThree("auto", "2"), true);
+    assert.equal(shouldPairPageTwoWithThree("auto", "3"), false);
+    assert.equal(shouldPairPageTwoWithThree("auto", undefined), true);
 });
 
-const navState = (over) => ({
-    doublePageMode: true,
-    showingSinglePage: false,
-    currentPage: 2,
-    coverPairsWithFirst: false,
-    mangaMode: false,
-    ...over,
+test("cover is always single and pair2 starts interior spreads at page 2", () => {
+    assert.deepEqual(buildSpreadWindows(6, {
+        doublePageMode: true,
+        firstSpreadStart: 2,
+        widePages: new Set(),
+    }), [
+        { start: 0, end: 0 },
+        { start: 1, end: 2 },
+        { start: 3, end: 4 },
+        { start: 5, end: 6 },
+    ]);
 });
 
-test("double-page navigation doubles after the cover in spread mode", () => {
-    assert.equal(getPageNavigationOffset(1, navState({})), 2);
-    assert.equal(getPageNavigationOffset(-1, navState({})), -2);
+test("pair3 keeps page 2 single before pairing page 3 with page 4", () => {
+    assert.deepEqual(buildSpreadWindows(6, {
+        doublePageMode: true,
+        firstSpreadStart: 3,
+        widePages: new Set(),
+    }), [
+        { start: 0, end: 0 },
+        { start: 1, end: 1 },
+        { start: 2, end: 3 },
+        { start: 4, end: 5 },
+        { start: 6, end: 6 },
+    ]);
 });
 
-test("single-page view is never doubled", () => {
-    assert.equal(getPageNavigationOffset(1, navState({ showingSinglePage: true })), 1);
+test("wide pages are single and following pages resume pairing", () => {
+    assert.deepEqual(buildSpreadWindows(7, {
+        doublePageMode: true,
+        firstSpreadStart: 2,
+        widePages: new Set([3]),
+    }), [
+        { start: 0, end: 0 },
+        { start: 1, end: 2 },
+        { start: 3, end: 3 },
+        { start: 4, end: 5 },
+        { start: 6, end: 7 },
+    ]);
 });
 
-test("cover view is not doubled unless adaptive pairing pairs it with page 1", () => {
-    assert.equal(getPageNavigationOffset(1, navState({ currentPage: 0 })), 1);
-    assert.equal(getPageNavigationOffset(1, navState({ currentPage: 0, coverPairsWithFirst: true })), 2);
+test("display lookup normalizes a page inside a spread to the spread start", () => {
+    assert.deepEqual(getDisplayWindow(2, {
+        maxPage: 6,
+        doublePageMode: true,
+        firstSpreadStart: 2,
+        widePages: new Set(),
+    }), { start: 1, end: 2 });
+});
+
+test("navigation follows display windows instead of fixed offsets", () => {
+    const state = {
+        maxPage: 7,
+        doublePageMode: true,
+        firstSpreadStart: 2,
+        widePages: new Set([3]),
+    };
+
+    assert.equal(getPageNavigationDestination(1, { ...state, currentPage: 0 }), 1);
+    assert.equal(getPageNavigationDestination(1, { ...state, currentPage: 1 }), 3);
+    assert.equal(getPageNavigationDestination(1, { ...state, currentPage: 3 }), 4);
+    assert.equal(getPageNavigationDestination(-1, { ...state, currentPage: 4 }), 3);
 });

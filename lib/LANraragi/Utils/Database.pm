@@ -128,9 +128,16 @@ sub change_archive_id ( $old_id, $new_id ) {
     $redis->srem( "LRR_ALL_ARCHIVES", $old_id );
     $redis->sadd( "LRR_ALL_ARCHIVES", $new_id );
 
-    # The renamed hash still carries the previous pagefiles cache; drop it so the next
-    # get_filelist call rebuilds from the new on-disk content.
+    # The renamed hash still carries previous content-derived caches; drop them so
+    # the next reader/detector call rebuilds from the new on-disk content.
     $redis->hdel( $new_id, "pagefiles" );
+    $redis->hdel(
+        $new_id,
+        qw(
+          firstspreadstart firstspreadstart_confidence firstspreadstart_reason firstspreadstart_v firstspreadstart_err
+          firstpageside firstpageside_confidence firstpageside_reason firstpageside_v firstpageside_err
+        )
+    );
 
     # Update archive size
     my $file = get_archive_path( $redis, $new_id );
@@ -206,7 +213,7 @@ sub get_archive ($id) {
 # the fields we serialize.
 my @ARCHIVE_JSON_FIELDS = qw(
   name title tags summary file isnew progress pagecount lastreadtime arcsize toc spreadstart
-  firstpageside firstpageside_confidence firstpageside_reason firstpageside_v
+  firstspreadstart firstspreadstart_confidence firstspreadstart_reason firstspreadstart_v
 );
 
 # Builds a JSON object for an archive registered in the database and returns it.
@@ -299,11 +306,11 @@ sub build_json ( $id, %hash ) {
     # Grab all metadata from the hash
     my (
         $name, $title, $tags, $summary, $file, $isnew, $progress, $pagecount, $lastreadtime, $arcsize, $toc,
-        $spreadstart, $firstpageside, $firstpageside_confidence, $firstpageside_reason, $firstpageside_v
+        $spreadstart, $firstspreadstart, $firstspreadstart_confidence, $firstspreadstart_reason, $firstspreadstart_v
     ) = @hash{
         qw(
           name title tags summary file isnew progress pagecount lastreadtime arcsize toc
-          spreadstart firstpageside firstpageside_confidence firstpageside_reason firstpageside_v
+          spreadstart firstspreadstart firstspreadstart_confidence firstspreadstart_reason firstspreadstart_v
         )
     };
 
@@ -355,10 +362,10 @@ sub build_json ( $id, %hash ) {
         size         => $arcsize      ? int($arcsize)      : 0,
         toc                      => \@chapters,
         spreadstart              => $spreadstart ? $spreadstart : "auto",
-        firstpageside            => $firstpageside,
-        firstpageside_confidence => $firstpageside_confidence,
-        firstpageside_reason     => $firstpageside_reason,
-        firstpageside_v          => $firstpageside_v
+        firstspreadstart            => $firstspreadstart,
+        firstspreadstart_confidence => $firstspreadstart_confidence,
+        firstspreadstart_reason     => $firstspreadstart_reason,
+        firstspreadstart_v          => $firstspreadstart_v
     };
 
     return $arcdata;

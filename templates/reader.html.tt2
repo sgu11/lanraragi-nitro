@@ -232,11 +232,11 @@
 </div>
 
 <div id="toggle-spread-start">
-    <h2 class="config-panel"> [% c.lh("Spread Start (double-page)") %] </h2>
-    <span class="config-panel">[% c.lh("Where two-page spreads begin. Press J to cycle.") %]</span>
+    <h2 class="config-panel"> [% c.lh("First Interior Spread") %] </h2>
+    <span class="config-panel">[% c.lh("Cover and wide pages stay single. Press J to cycle.") %]</span>
     <input id="spread-auto" class="favtag-btn config-btn" type="button" value="[% c.lh('Auto') %]">
-    <input id="spread-always" class="favtag-btn config-btn" type="button" value="[% c.lh('Cover + first') %]">
-    <input id="spread-none" class="favtag-btn config-btn" type="button" value="[% c.lh('Cover alone') %]">
+    <input id="spread-pair2" class="favtag-btn config-btn" type="button" value="[% c.lh('Pair 2-3') %]">
+    <input id="spread-pair3" class="favtag-btn config-btn" type="button" value="[% c.lh('Pair 3-4') %]">
 </div>
 
 <div id="toggle-manga-mode">

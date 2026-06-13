@@ -1762,8 +1762,8 @@ paths:
       x-mojo-to: api-archive#update_spreadstart
       summary: Update double page spread start preference
       description: |-
-        Store how double-page spreads should begin for a specific archive.
-        Controls whether the cover page is paired with the first interior page.
+        Store how double-page interior spreads should begin for a specific archive.
+        The cover page always remains single.
       tags:
         - archives
       parameters:
@@ -1780,15 +1780,15 @@ paths:
           required: true
           description: >-
             Spread start mode for this archive.
-            "auto" — auto-detect (if page 1 is portrait, cover stands alone; otherwise paired).
-            "none" — cover always stands alone, spreads start at page 1.
-            "always" — cover always paired with page 1.
+            "auto" — auto-detect the first interior spread.
+            "pair2" — cover alone, then pair pages 2-3.
+            "pair3" — cover and page 2 alone, then pair pages 3-4.
           schema:
             type: string
             enum:
               - "auto"
-              - "none"
-              - "always"
+              - "pair2"
+              - "pair3"
       responses:
         '200':
           description: Success response
@@ -1812,8 +1812,8 @@ paths:
                     description: Updated spread start value
                     enum:
                       - "auto"
-                      - "none"
-                      - "always"
+                      - "pair2"
+                      - "pair3"
                   success:
                     type: integer
                     enum:
@@ -2940,6 +2940,8 @@ paths:
               - find_relation_duplicates
               - detect_first_page_side
               - detect_recent_first_page_sides
+              - detect_first_spread_start
+              - detect_recent_first_spread_starts
               - build_stat_hashes
               - handle_upload
               - download_url
@@ -4495,28 +4497,28 @@ components:
           description: Table of contents for the archive
         spreadstart:
           type: string
-          description: Double-page spread start mode ("auto", "none", or "always")
+          description: First interior spread mode ("auto", "pair2", or "pair3")
           enum:
             - "auto"
-            - "none"
-            - "always"
-        firstpageside:
+            - "pair2"
+            - "pair3"
+        firstspreadstart:
           type: [string, "null"]
-          description: Detected side of the first page for adaptive double-page spread starts
+          description: Detected first interior spread start for adaptive double-page spread starts
           enum:
-            - "LEFT"
-            - "RIGHT"
+            - "2"
+            - "3"
             - "UNKNOWN"
             - null
-        firstpageside_confidence:
+        firstspreadstart_confidence:
           type: [string, "null"]
-          description: Confidence score for firstpageside
-        firstpageside_reason:
+          description: Confidence score for firstspreadstart
+        firstspreadstart_reason:
           type: [string, "null"]
-          description: Detector reason for firstpageside
-        firstpageside_v:
+          description: Detector reason for firstspreadstart
+        firstspreadstart_v:
           type: [string, "null"]
-          description: Detector algorithm version for firstpageside
+          description: Detector algorithm version for firstspreadstart
       example:
         arcid: 28697b96f0ac5858be2614ed10ca47742c9522fd
         isnew: false
@@ -4537,10 +4539,10 @@ components:
           - name: Chapter 3
             page: 25
         spreadstart: "auto"
-        firstpageside: "RIGHT"
-        firstpageside_confidence: "0.72"
-        firstpageside_reason: "sample_vote"
-        firstpageside_v: "1"
+        firstspreadstart: "3"
+        firstspreadstart_confidence: "0.72"
+        firstspreadstart_reason: "sample_vote"
+        firstspreadstart_v: "1"
     CategoryMetadataJson:
       type: object
       description: >-
@@ -4683,9 +4685,12 @@ components:
         spreadstart:
           type: string
           nullable: true
-          description: Double-page spread start mode
+          description: First interior spread mode
           enum:
             - "auto"
+            - "pair2"
+            - "pair3"
+            # Legacy backup values accepted for older exports.
             - "none"
             - "always"
             - null

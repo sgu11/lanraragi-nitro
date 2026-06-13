@@ -34,7 +34,7 @@ use LANraragi::Utils::Logging    qw(get_logger);
 use LANraragi::Utils::Generic    qw(is_archive exec_with_lock_pure);
 use LANraragi::Utils::Redis      qw(redis_encode);
 use LANraragi::Utils::Path       qw(create_path open_path find_path get_archive_path);
-use LANraragi::Utils::PageSide   qw(enqueue_first_page_side_detection);
+use LANraragi::Utils::PageSide   qw(clear_first_spread_start_detection enqueue_first_spread_start_detection);
 
 use LANraragi::Model::Config;
 use LANraragi::Model::Plugins;
@@ -208,9 +208,12 @@ sub update_filemap {
             if ( $actual_size && $current_arcsize != $actual_size ) {
                 $logger->info("arcsize mismatch for $id (cached: " . ($current_arcsize || "none") . ", actual: $actual_size), updating!");
                 $redis_arc->hdel( $id, "pagefiles" );
+                clear_first_spread_start_detection( $redis_arc, $id );
                 add_arcsize( $redis_arc, $id );
                 $logger->debug("Recalculating pagecount for $id");
                 add_pagecount( $redis_arc, $id );
+                eval { enqueue_first_spread_start_detection($id); };
+                $logger->warn("Failed to enqueue first-spread-start detection for $id: $@") if $@;
             }
         }
 
@@ -320,14 +323,16 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
 
         $logger->debug("$file was logged but is already in the filemap!");
 
-        if ( $filemap_id ne $id ) {
-            $logger->debug("$file has a different ID than the one in the filemap! ($filemap_id)");
-            $logger->info("$file has been modified, updating its ID from $filemap_id to $id.");
+            if ( $filemap_id ne $id ) {
+                $logger->debug("$file has a different ID than the one in the filemap! ($filemap_id)");
+                $logger->info("$file has been modified, updating its ID from $filemap_id to $id.");
 
-            change_archive_id( $filemap_id, $id );
+                change_archive_id( $filemap_id, $id );
+                eval { enqueue_first_spread_start_detection($id); };
+                $logger->warn("Failed to enqueue first-spread-start detection for $id: $@") if $@;
 
-            # Don't forget to update the filemap, later operations will behave incorrectly otherwise
-            $redis_cfg->hset( "LRR_FILEMAP", $file, $id );
+                # Don't forget to update the filemap, later operations will behave incorrectly otherwise
+                $redis_cfg->hset( "LRR_FILEMAP", $file, $id );
         } else {
             $logger->debug(
                 "$file has the same ID as the one in the filemap. Duplicate inotify events? Cleaning cache just to make sure");
@@ -342,9 +347,12 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
             if ( !$current_arcsize || $current_arcsize != $actual_size ) {
                 $logger->info("arcsize mismatch for $id (cached: " . ($current_arcsize // "none") . ", actual: $actual_size), updating!");
                 $redis_arc->hdel( $id, "pagefiles" );
+                clear_first_spread_start_detection( $redis_arc, $id );
                 add_arcsize( $redis_arc, $id );
                 $logger->debug("Recalculating pagecount for $id");
                 add_pagecount( $redis_arc, $id );
+                eval { enqueue_first_spread_start_detection($id); };
+                $logger->warn("Failed to enqueue first-spread-start detection for $id: $@") if $@;
             } elsif ( !$redis_arc->hget( $id, "pagecount" ) ) {
                 $logger->debug("Pagecount not calculated for $id, doing it now!");
                 add_pagecount( $redis_arc, $id );
@@ -380,11 +388,15 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
 
         if ( !$current_arcsize || $current_arcsize != $actual_size ) {
             $logger->debug("arcsize mismatch or unset for $id, updating!");
+            $redis_arc->hdel( $id, "pagefiles" );
+            clear_first_spread_start_detection( $redis_arc, $id );
             add_arcsize( $redis_arc, $id );
 
             # File changed on disk, recalculate pagecount too
             $logger->debug("Recalculating pagecount for $id");
             add_pagecount( $redis_arc, $id );
+            eval { enqueue_first_spread_start_detection($id); };
+            $logger->warn("Failed to enqueue first-spread-start detection for $id: $@") if $@;
         } elsif ( !$redis_arc->hget( $id, "pagecount" ) ) {
             $logger->debug("Pagecount not calculated for $id, doing it now!");
             add_pagecount( $redis_arc, $id );
@@ -505,9 +517,9 @@ sub add_new_file ( $id, $file ) {
             $logger->warn("Failed to enqueue dedup hashes for $id: $@");
         }
 
-        eval { enqueue_first_page_side_detection($id); };
+        eval { enqueue_first_spread_start_detection($id); };
         if ($@) {
-            $logger->warn("Failed to enqueue first-page-side detection for $id: $@");
+            $logger->warn("Failed to enqueue first-spread-start detection for $id: $@");
         }
 
         # AutoTagging using enabled plugins goes here!

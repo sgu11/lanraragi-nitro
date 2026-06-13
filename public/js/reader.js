@@ -6,7 +6,13 @@ import * as Server from "./mod/server.js";
 import * as LRR from "./mod/common.js";
 import I18N from "i18n";
 import fscreen from "fscreen";
-import { spreadStartFlags, getPageNavigationOffset as computeNavigationOffset } from "./mod/reader-spread.js";
+import {
+    getDisplayWindow,
+    getPageNavigationDestination,
+    isWidePage,
+    normalizeSpreadStartMode,
+    spreadStartFlags,
+} from "./mod/reader-spread.js";
 
 let id = "";
 let force = false;
@@ -24,9 +30,9 @@ let preloadedDimensions = {};   // fork: page index -> { width, height }, for sp
 let spaceScroll = { timeout: null, animationId: null };
 let imageQuality = "auto";      // fork: reader image-rendering ("auto"|"high-quality"|"smooth-sharp"|"pixelated")
 let mobileFullscreen = true;    // fork: auto-enter fullscreen on first reading click
-let spreadStart = "auto";       // fork: double-page spread-start mode ("auto"|"always"=cover+first|"none"=cover-alone)
-let firstPageSide = undefined;  // fork: server-detected first-page side ("LEFT"|"RIGHT"|"UNKNOWN"|undefined)
-let coverPairsWithFirst = false; // fork: when true, pair the cover (page 0) with page 1
+let spreadStart = "auto";       // fork: first interior spread mode ("auto"|"pair2"|"pair3")
+let detectedFirstSpreadStart = undefined; // fork: server-detected first interior spread start ("2"|"3"|"UNKNOWN"|undefined)
+let firstSpreadStart = 2;       // fork: first paired interior page (2 => pages 2-3, 3 => pages 3-4)
 //Spacebar Scroll Config
 let scrollConfig = {
     scrollDist: 75,      // Viewport % distance to scroll
@@ -214,12 +220,12 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
             left: true,
         };
 
-        let page = currentPage + 1;
+        const displayWindow = getCurrentDisplayWindow();
+        let page = displayWindow.start + 1;
 
-        if (doublePageMode && (currentPage > 0 || coverPairsWithFirst)
-            && currentPage < maxPage) {
+        if (displayWindow.end > displayWindow.start) {
             if (img.id == "img_doublepage") {
-                page += 1;
+                page = displayWindow.end + 1;
                 markerData.left = false;
             }
         }
@@ -421,8 +427,8 @@ export function loadContentData() {
             content.tags = data.tags;
             content.summary = data.summary;
 
-            firstPageSide = data.firstpageside; // fork: server-side adaptive spread-start signal
-            setSpreadStart(data.spreadstart || "auto"); // fork: per-archive double-page spread-start
+            detectedFirstSpreadStart = data.firstspreadstart; // fork: server-side adaptive spread-start signal
+            setSpreadStart(data.spreadstart || "auto"); // fork: per-archive first interior spread mode
 
             updateProgress(data, id);
 
@@ -702,36 +708,47 @@ function toggleMobileFullscreen() {
     $("#toggle-mobile-fullscreen input").toggleClass("toggled");
 }
 
-// fork: double-page spread-start control (auto / cover+first / cover-alone), persisted per-archive.
+// fork: first interior spread control, persisted per-archive.
 function setSpreadStart(value) {
-    spreadStart = value;
-    ({ coverPairsWithFirst } = spreadStartFlags(value, firstPageSide));
+    spreadStart = normalizeSpreadStartMode(value);
+    ({ firstSpreadStart } = spreadStartFlags(spreadStart, detectedFirstSpreadStart));
     $("#toggle-spread-start input").removeClass("toggled");
-    $(`#spread-${value}`).addClass("toggled");
+    $(`#spread-${spreadStart}`).addClass("toggled");
 }
 
-function getPageNavigationOffset(targetPage) {
-    return computeNavigationOffset(targetPage, {
-        doublePageMode,
-        showingSinglePage,
-        currentPage,
-        coverPairsWithFirst,
+function getWidePages() {
+    const widePages = new Set();
+    Object.entries(preloadedDimensions).forEach(([page, dimensions]) => {
+        if (isWidePage(dimensions)) {
+            widePages.add(Number(page));
+        }
     });
+    return widePages;
+}
+
+function getSpreadState(overrides = {}) {
+    return {
+        maxPage,
+        doublePageMode,
+        firstSpreadStart,
+        widePages: getWidePages(),
+        currentPage,
+        ...overrides,
+    };
+}
+
+function getCurrentDisplayWindow() {
+    return getDisplayWindow(currentPage, getSpreadState());
 }
 
 function cycleSpreadStart() {
     if (!doublePageMode || infiniteScroll) { return; }
-    const modes = ["auto", "always", "none"];
+    const modes = ["auto", "pair2", "pair3"];
     const next = modes[(modes.indexOf(spreadStart) + 1) % modes.length];
-    const wasCoverPairsWithFirst = coverPairsWithFirst;
     setSpreadStart(next);
     // Persist per-archive (backend: PUT /api/archives/{id}/spreadstart)
     fetch(new LRR.ApiURL(`/api/archives/${id}/spreadstart?value=${next}`), { method: "PUT" });
-    // Re-pair the current view after changing cover/page-1 pairing.
-    let dest = currentPage;
-    if (coverPairsWithFirst && !wasCoverPairsWithFirst && currentPage > 0) { dest = currentPage - 1; }
-    else if (!coverPairsWithFirst && wasCoverPairsWithFirst && currentPage > 0) { dest = currentPage + 1; }
-    goToPage(Math.max(0, Math.min(dest, maxPage)));
+    goToPage(currentPage);
 }
 
 // fork: arm a one-shot capture-phase listener so the first real reading click
@@ -875,7 +892,7 @@ function handleShortcuts(e) {
         case 72: // h
             toggleHelp();
             break;
-        case 74: // j — fork: cycle double-page spread start (auto / cover+first / cover-alone)
+        case 74: // j - fork: cycle first interior spread (auto / pair2 / pair3)
             cycleSpreadStart();
             break;
         case 77: // m
@@ -1206,10 +1223,10 @@ function loadStamps(currentPage) {
                 markers.push(markerData);
             }
 
-            if (doublePageMode && (currentPage > 0 || coverPairsWithFirst)
-            && currentPage < maxPage) {
+            const displayWindow = getCurrentDisplayWindow();
+            if (displayWindow.end > displayWindow.start) {
 
-                const { arcId: id2, localPage: p2 } = getArchiveForPage(currentPage + 1);
+                const { arcId: id2, localPage: p2 } = getArchiveForPage(displayWindow.end + 1);
                 // Call for the second page (may be in a different archive for tanks)
                 Server.callAPI(`/api/archives/${id2}/stamps/${p2}`, "GET", null, I18N.ServerInfoError,
                     (data) => {
@@ -1423,27 +1440,19 @@ async function goToPage(page) {
     if (infiniteScroll) {
         $("#display img").get(currentPage).scrollIntoView({ block: "nearest" });
     } else {
-        if (doublePageMode && (currentPage > 0 || coverPairsWithFirst)
-            && currentPage < maxPage) {
-            const img1 = await loadImage(currentPage);
-            const img1Filename = getFilename(currentPage);
-            const img2 = await loadImage(currentPage + 1);
-            const img2Filename = getFilename(currentPage + 1);
-            const dims1 = preloadedDimensions[currentPage];
-            const dims2 = preloadedDimensions[currentPage + 1];
-            const img1isWide = dims1 && dims1.width > dims1.height;
-            const img2isWide = dims2 && dims2.width > dims2.height;
-            if (img1isWide || img2isWide) {
-                const wideSrc = previousPage > currentPage ? img2 : img1;
-                const wideFilename = previousPage > currentPage ? img2Filename : img1Filename;
-                await decodeImage(wideSrc);
-                $("#img").attr("src", wideSrc);
-                $("#img").attr("data-filename", wideFilename);
-                $("#img_doublepage").attr("src", "");
-                $("#img_doublepage").attr("data-filename", "");
-                $("#display").removeClass("double-mode");
-                showingSinglePage = true;
-            } else {
+        if (doublePageMode) {
+            await loadImage(currentPage);
+            if (currentPage > 0) { await loadImage(currentPage - 1); }
+            if (currentPage < maxPage) { await loadImage(currentPage + 1); }
+
+            const displayWindow = getDisplayWindow(currentPage, getSpreadState());
+            currentPage = displayWindow.start;
+
+            if (displayWindow.end > displayWindow.start) {
+                const img1 = await loadImage(currentPage);
+                const img1Filename = getFilename(currentPage);
+                const img2 = await loadImage(displayWindow.end);
+                const img2Filename = getFilename(displayWindow.end);
                 await Promise.all([decodeImage(img1), decodeImage(img2)]);
                 if (mangaMode) {
                     $("#img").attr("src", img2);
@@ -1457,6 +1466,16 @@ async function goToPage(page) {
                     $("#img_doublepage").attr("data-filename", img2Filename);
                 }
                 $("#display").addClass("double-mode");
+            } else {
+                const img = await loadImage(currentPage);
+                const imgFilename = getFilename(currentPage);
+                await decodeImage(img);
+                $("#img").attr("src", img);
+                $("#img").attr("data-filename", imgFilename);
+                $("#img_doublepage").attr("src", "");
+                $("#img_doublepage").attr("data-filename", "");
+                $("#display").removeClass("double-mode");
+                showingSinglePage = true;
             }
         } else {
             const img = await loadImage(currentPage);
@@ -2086,8 +2105,8 @@ function changePage(targetPage, resetAuto = false) {
     } else if (targetPage === "last") {
         destination = mangaMode ? 0 : maxPage;
     } else {
-        const offset = getPageNavigationOffset(targetPage);
-        destination = currentPage + (mangaMode ? -offset : offset);
+        const step = mangaMode ? -targetPage : targetPage;
+        destination = getPageNavigationDestination(step, getSpreadState());
     }
     goToPage(destination);
 }

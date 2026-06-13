@@ -19,13 +19,15 @@ $minion->mock(
 
 LANraragi::Utils::Minion::PageSide::add_tasks($minion);
 
-ok( $tasks{detect_first_page_side},        "single-archive detection task is registered" );
-ok( $tasks{detect_recent_first_page_sides}, "recent backfill detection task is registered" );
+ok( $tasks{detect_first_spread_start},         "single-archive spread-start detection task is registered" );
+ok( $tasks{detect_recent_first_spread_starts}, "recent spread-start backfill detection task is registered" );
+ok( $tasks{detect_first_page_side},            "legacy single-archive detection task alias is registered" );
+ok( $tasks{detect_recent_first_page_sides},    "legacy recent backfill detection task alias is registered" );
 
 my $page_side = Test::MockModule->new('LANraragi::Utils::PageSide');
 my $received_recent_limit;
 $page_side->redefine(
-    detect_recent_first_page_sides => sub {
+    detect_recent_first_spread_starts => sub {
         my ( $job, $limit ) = @_;
         $received_recent_limit = $limit;
         return { processed => $limit, limit => $limit };
@@ -36,7 +38,7 @@ my $finished;
 my $job = Test::MockObject->new;
 $job->mock( finish => sub { my ( $self, $payload ) = @_; $finished = $payload; } );
 
-$tasks{detect_recent_first_page_sides}->( $job, 9000 );
+$tasks{detect_recent_first_spread_starts}->( $job, 9000 );
 
 is( $received_recent_limit, 50, "recent backfill task clamps requested limits to 50 archives" );
 is_deeply( $finished, { processed => 50, limit => 50 }, "recent backfill task finishes with detector payload" );
