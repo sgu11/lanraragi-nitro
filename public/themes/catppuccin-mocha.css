@@ -91,6 +91,18 @@ div.ido {
   position: relative;
 }
 
+body.index-page p#nb {
+  margin-bottom: 0;
+}
+
+body.index-page div.ido {
+  padding-top: 0;
+}
+
+body.index-page #toppane > div.idi:first-child {
+  padding-top: 0;
+}
+
 /* Tags */
 div.gt {
   background: #313244;

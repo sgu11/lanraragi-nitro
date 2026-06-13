@@ -28,6 +28,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 
 ### Library / Thumbnails
 
+- **Catppuccin library header spacing** collapses the hidden MOTD slot so quick
+  filter buttons sit directly under the top menu.
 - **Thumbnail loading and caching** on the library page reworked for fewer requests and faster scroll.
 - **Image-serving pipeline hardening** — hidden compact-table tooltip thumbnails now fetch only on hover, thumbnail-card images use browser lazy loading, missing single-thumbnail requests coalesce behind Redis-backed Minion job locks, and thumbnail responses are inline cacheable image responses instead of downloads.
 - **Library default sort** opens the index with `sort=1&sortdir=desc` so the configured Date column is newest-first by default; explicit URL sort parameters and saved non-default sort choices still win.
