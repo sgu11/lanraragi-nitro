@@ -11,6 +11,7 @@
     "scripts": {
         "test": "prove -r -l -v tests/",
         "test:js": "node --test tests/js/*.test.mjs",
+        "smoke:reader-chrome": "node tools/browser/reader-chrome-smoke.mjs",
         "lanraragi-installer": "perl ./tools/install.pl",
         "lint": "eslint public/",
         "start": "perl ./script/launcher.pl -f ./script/lanraragi",
@@ -62,6 +63,7 @@
         "@eslint/js": "^10.0.1",
         "@stylistic/eslint-plugin": "^4.0.0",
         "eslint": "^10.1.0",
-        "globals": "16.5.0"
+        "globals": "16.5.0",
+        "playwright-core": "^1.60.0"
     }
 }
