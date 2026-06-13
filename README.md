@@ -2,7 +2,9 @@
 
 A personal fork of [LANraragi](https://github.com/Difegue/LANraragi) with reader, theming, and reliability enhancements focused on a deployed library running on filesystem.
 
-This fork is maintained by AI agents (Claude Code) under human direction. Changes are **not** submitted as pull requests to the upstream project, as the code is AI-generated. This repository periodically merges upstream updates from the official LANraragi.
+This fork is maintained by AI coding agents under human direction. Changes are **not** submitted as pull requests to the upstream project, as the code is AI-generated. This repository periodically merges upstream updates from the official LANraragi.
+
+Korean version: [`README.ko.md`](README.ko.md).
 
 ---
 
@@ -31,6 +33,64 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - **Reading-progress migration** no longer keeps resurfacing stale migration toasts for deleted archives/tankoubons, and respects local/authenticated progress settings before attempting a server migration.
 - **Progression Tracking disabled** now suppresses local/server progress writes during page turns instead of only ignoring saved progress on reader open.
 - Technical baseline: [`docs/local-features/reader.md`](docs/local-features/reader.md).
+
+#### Adaptive Offset Detection Details
+
+Adaptive offset is the fork's double-page rule for standalone manga archives.
+The cover is always shown alone as the title cover. The reader then decides
+whether the first interior spread starts at **Pair 2-3** or **Pair 3-4**, with
+wide/landscape pages kept single and excluded from spread pairing.
+
+Persistent archive fields:
+
+- `spreadstart`: reader preference. `auto` enables adaptive detection; `pair2`
+  disables it and always starts interior pairing at pages 2-3.
+- `firstspreadstart`: detector result, stored as `2`, `4`, or `UNKNOWN`.
+- `firstspreadstart_confidence`, `firstspreadstart_reason`,
+  `firstspreadstart_v`: detector metadata and algorithm version.
+- Legacy `firstpageside*` fields are cleared when archive content changes, but
+  no longer drive the reader.
+
+Detection lifecycle:
+
+- New uploads and Shinobu-discovered archives enqueue
+  `detect_first_spread_start`.
+- `detect_recent_first_spread_starts` backfills recently modified archives and
+  is capped at 50 archives per run. `detect_recent_first_page_sides` remains
+  registered only as a legacy task alias.
+- If the archive file changes under the same ID, Shinobu clears old
+  `firstspreadstart*` and legacy `firstpageside*` fields before queueing fresh
+  detection.
+
+Detection heuristic:
+
+- The detector ignores page 1 (cover) and page 2 as unreliable title/inner-cover
+  evidence.
+- It samples pages 3-10, skips pages that cannot decode, and treats wide pages
+  (`width >= height * 1.20`) as `UNKNOWN`.
+- Each sampled page is downscaled to fit within `320x320`. The detector compares
+  vertical strips on the left and right edges. The strip width is 10% of the
+  sampled width, clamped to at least 4 px and at most half the image width.
+- Edge complexity is based on luminance gradients plus darkness. In RTL manga,
+  the lower-complexity blank/gutter side identifies whether the page is a left
+  or right page.
+- Page 3 `LEFT` plus page 4 `RIGHT` votes for Pair 2-3. Page 3 `RIGHT` plus
+  page 4 `LEFT` votes for Pair 3-4. Later page samples project the same parity
+  rule back to the first interior spread.
+- At least two confident interior samples are required. Weak or ambiguous votes
+  store `UNKNOWN`, and the reader falls back to Pair 2-3.
+
+Reader behavior:
+
+- `public/js/mod/reader-spread.js` builds display windows from
+  `spreadstart`, `firstspreadstart`, current page, and known wide pages.
+- Page navigation follows those windows instead of applying a fixed `+/-2`
+  offset.
+- Pressing `J` toggles adaptive offset between `auto` and `pair2`, persisted via
+  `PUT /api/archives/{id}/spreadstart?value=<auto|pair2>`.
+- Hidden-header/minimal-reader chrome is isolated in
+  `public/js/mod/reader-chrome.js` and `public/css/reader-chrome.css`; verify
+  it with `npm run smoke:reader-chrome` against a deployed reader.
 
 ### Library / Thumbnails
 
