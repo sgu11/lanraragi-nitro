@@ -25,7 +25,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   scroll while preserving normal paginated rendering, double-page mode, stamps,
   and tap/keyboard navigation; it also hides bottom utility links and gives the
   image a full-height no-scroll viewport. Mouse wheel up/down also navigates
-  pages in this mode, matching fullscreen behavior.
+  pages in this mode, matching fullscreen behavior. Side utility icons stack
+  vertically in the minimal layout.
 - **Middle-click toggles fullscreen** anywhere in the reader (same as pressing `F`).
 - **Reading-progress migration** no longer keeps resurfacing stale migration toasts for deleted archives/tankoubons, and respects local/authenticated progress settings before attempting a server migration.
 - **Progression Tracking disabled** now suppresses local/server progress writes during page turns instead of only ignoring saved progress on reader open.

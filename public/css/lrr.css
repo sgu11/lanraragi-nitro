@@ -853,6 +853,18 @@ body.infinite-scroll #toggle-double-mode {
 body.reader-minimal-chrome #i4 .absolute-options {
   position: fixed;
   top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+body.reader-minimal-chrome #i4 .absolute-right {
+  right: 12px;
+}
+
+body.reader-minimal-chrome #i4 .absolute-options a {
+  padding-right: 0;
 }
 
 body.reader-minimal-chrome #i2 {
