@@ -14,7 +14,7 @@ import I18N from "i18n";
 import * as marked from "marked";
 import DOMPurify from "dompurify";
 
-let selectedCategory = "";
+export let selectedCategory = "";
 let awesomplete = {};
 let carouselInitialized = false;
 // Carousel content is stale (searches ran while it was hidden/collapsed).
@@ -1137,7 +1137,7 @@ export function loadCategories() {
                             type='button' id='NEW_ONLY' value='🆕 ${I18N.NewArchives}' 
                             onclick='window.Index.toggleCategory(this)' title='${I18N.NewArchiveDesc}'/>
                         </div><div style='display:inline-block'>
-                            <input class='favtag-btn ${(("UNTAGGED_ONLY" === window.Index.selectedCategory) ? "toggled" : "")}' 
+                            <input class='favtag-btn ${(("UNTAGGED_ONLY" === selectedCategory) ? "toggled" : "")}' 
                             type='button' id='UNTAGGED_ONLY' value='🏷️ ${I18N.UntaggedArchives}' 
                             onclick='window.Index.toggleCategory(this)' title='${I18N.UntaggedArcDesc}'/>
                         </div>`;

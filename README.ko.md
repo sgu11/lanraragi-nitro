@@ -70,6 +70,7 @@ Reader behavior:
 - **Library default sort**: index 기본 URL은 `sort=1&sortdir=desc`로 열려 Date column newest-first 기준임. Explicit URL sort parameter와 저장된 non-default sort 선택은 유지함.
 - **Stale `arcsize` and `pagecount` recovery**: 동일 path 아래 archive가 교체된 경우 Shinobu가 cached value와 실제 file size를 reconcile함.
 - **Bulk archive actions**: 기존 fork hover-checkbox / bulk-selection-banner 설계는 ES-module sync 중 upstream MSM으로 대체됨. Index page의 `Select Archives` button으로 thumbnail carousel selection panel 사용, thumbnail click 또는 right-click `Add to selection`으로 `localStorage` selection 구성, 이후 `Select page`, `Clear`, `Run Batch Operations`, `Merge into Tankoubon` 사용함. 기존 fork spec은 history only 문서임.
+- **Quick filter button 수정**: library page의 category/tag filter button이 동작하지 않던 문제 수정. ES module에서 `selectedCategory` 변수가 export되지 않아 DataTables column filter에 category ID가 전달되지 않았음.
 - **Mobile portrait card sizing fix**: portrait phone/tablet에서 desktop-sized card가 표시되던 문제 수정함. 모든 template에 `initial-scale=1`, `.id3 img` cap 완화, 561-900px portrait breakpoint, <=560px `min-height` override 적용함.
 
 ### Duplicates
