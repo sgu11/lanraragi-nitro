@@ -27,8 +27,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   scroll while preserving normal paginated rendering, double-page mode, stamps,
   and tap/keyboard navigation; it also hides bottom utility links and gives the
   image a full-height no-scroll viewport. Mouse wheel up/down also navigates
-  pages in this mode, matching fullscreen behavior. Side utility icons stack
-  vertically in the minimal layout.
+  pages in this mode, matching fullscreen behavior, with a shorter local-service
+  debounce for more responsive page turns. Side utility icons stack vertically
+  in the minimal layout.
 - **Single-page spread sliding** in double-page fullscreen/hidden-header mode:
   `Up` moves the visible spread back by one page and `Down` moves it forward by
   one page. After a one-page slide, normal prev/next navigation keeps the shifted

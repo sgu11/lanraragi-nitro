@@ -1131,7 +1131,7 @@ function handleWheel(e) {
         const direction = deltaY > 0 ? -1 : 1;
         wheelDebounce = true;
         changePage(direction, true);
-        setTimeout(() => { wheelDebounce = false; }, 200);
+        setTimeout(() => { wheelDebounce = false; }, 100);
     }
 }
 

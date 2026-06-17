@@ -73,3 +73,9 @@ test("reader overlay uses render containment and reader preload has an A/B strat
     assert.match(reader, /preloadImageWithBrowserCache/);
     assert.match(reader, /preloadImageWithBlobUrl/);
 });
+
+test("reader wheel page navigation debounce is tuned for low-latency service", async () => {
+    const reader = await source("public/js/reader.js");
+
+    assert.match(reader, /setTimeout\(\(\) => \{ wheelDebounce = false; \}, 100\)/);
+});
