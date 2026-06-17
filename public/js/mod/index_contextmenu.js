@@ -22,14 +22,29 @@ function handleDelete(id) {
     })
         .then((result) => {
             if (result.isConfirmed) {
-                if (isTank) Server.deleteTankoubon(id, () => {
-                    document.location.reload();
-                });
-                else Server.deleteArchive(id, () => {
-                    document.location.reload();
-                });
+                markDeleting(id);
+                const callback = () => reconcileDeletedArchive(id);
+                const options = { callbackDelayMs: 0, failureCallback: () => restoreDeleting(id) };
+                if (isTank) Server.deleteTankoubon(id, callback, options);
+                else Server.deleteArchive(id, callback, options);
             }
         });
+}
+
+function markDeleting(id) {
+    $(`#${id}.context-menu, #thumbs_container #${id}`)
+        .addClass("lrr-deleting");
+}
+
+function restoreDeleting(id) {
+    $(`#${id}.context-menu, #thumbs_container #${id}`)
+        .removeClass("lrr-deleting");
+}
+
+function reconcileDeletedArchive(id) {
+    Index.removeArchiveFromSelection(id);
+    Index.markCarouselDirty();
+    IndexTable.reloadAfterArchiveMutation();
 }
 
 /**

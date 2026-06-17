@@ -108,6 +108,8 @@ Reader behavior:
 - **Bulk archive actions** — the fork's earlier hover-checkbox / bulk-selection-banner design was **superseded by upstream's multi-select mode (MSM)** during the ES-module sync. On the index page the `Select Archives` button turns the thumbnail carousel into a selection panel; click thumbnails (or the right-click `Add to selection` menu) to build a `localStorage`-backed selection, then `Select page`, `Clear`, `Run Batch Operations`, or `Merge into Tankoubon`. The original fork spec is retained for history only: [`docs/superpowers/specs/2026-04-20-bulk-archive-actions-design.md`](docs/superpowers/specs/2026-04-20-bulk-archive-actions-design.md) (superseded).
 - **Quick filter buttons fix** — category/tag filter buttons on the library page were non-functional because `selectedCategory` was not exported from the ES module, so the DataTables column filter never received the selected category ID.
 - **Mobile portrait card sizing fix** — cards were rendering desktop-sized (228×335, 280px thumb box) on portrait phones/tablets around 1440 CSS-px because no media query fired above 560px and the viewport meta omitted `initial-scale=1`. Added `initial-scale=1` to all 15 templates, relaxed the `.id3 img` cap so the image fills its container, added a 561–900px portrait breakpoint (196×296, 236px thumb), and mirrored the `min-height` override at ≤560px so phones actually get 256px cards instead of 335px cards with a blank strip.
+- **Inline library deletion refresh** — deleting an archive/tankoubon from the library no longer resets search or reloads the whole page. The current DataTables page redraws in place, trims stale multi-select state, marks the carousel dirty only when needed, and highlights shifted-in replacement rows/cards.
+- **Library thumbnail draw batching** — thumbnail-mode cards are buffered during DataTables row creation and swapped into `#thumbs_container` once per draw, reducing repeated live DOM mutation.
 
 ### Duplicates
 
@@ -143,6 +145,10 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 - **Inline first-page `src=` (A.6)** — template sets the reader's `<img src>` to the first page URL when pagefiles cache is warm, so the browser starts the page fetch during HTML parse instead of waiting for the `/files` API.
 - **Generation-keyed TTL search cache (B.6)** — `LRR_SEARCHCACHE:$gen:$key` with `EX 300`; `invalidate_cache` bumps `LRR_SEARCHCACHE_GEN` instead of mass-DEL. Old entries expire on their own — no blocking mass delete.
 - **Tachiyomi-compatible API hot path** — Tachiyomi/Mihon-style clients get archive-only search results by default, short-lived repeated `/api/search` and one-item random-search caches, a duplicate metadata-call cache, opportunistic `pagefiles` warm jobs, and cacheable inline placeholder thumbnails without requiring an APK rebuild.
+- **WebUI responsiveness instrumentation** — debug-gated `localStorage.lrrPerf === "1"` marks and long-task observation cover library draws, carousel rebuilds, reader page turns, and overlay rendering without adding normal-user overhead.
+- **Reader infinite-scroll lazy windowing** — infinite scroll now materializes a near-page image window and lazy placeholders instead of creating and waiting for every page image before jumping to the requested page.
+- **Reader preload A/B switch** — `localStorage.readerPreloadStrategy = "browser"` can compare browser-managed image cache/preload behavior against the default bounded Blob URL preload path.
+- **Reader/library render containment** — repeated thumbnail surfaces use `content-visibility: auto` with intrinsic sizing to reduce offscreen render work.
 
 **Tier B-redis** — maintained sets + pipelined rebuild:
 - **`LRR_ALL_ARCHIVES` / `LRR_CATEGORIES` / `LRR_TANKS` (B.3)** — maintained sets replace every `KEYS '?'x40`, `KEYS 'SET_*'`, `KEYS 'TANK_*'` scan. Lazy backfill from `KEYS` on first read covers existing installs.

@@ -5,6 +5,7 @@
 import * as LRR from "./common.js";
 import * as Server from "./server.js";
 import * as IndexTable from "./index_datatables.js";
+import * as Perf from "./perf.js";
 import {
     metadataResponseMeansMissing,
     shouldMigrateProgressValue,
@@ -31,6 +32,8 @@ export let selectedArchives = new Set();
  * Initialize the Archive Index.
  */
 export function initializeAll() {
+    Perf.initializeLongTaskObserver();
+
     // Bind events to DOM
     $(document).on("click", "[id^=edit-header-]", function () {
         const headerIndex = $(this).attr("id").split("-")[2];
@@ -491,7 +494,8 @@ export function updateCarousel(e) {
 
     // Hit a different API endpoint depending on the requested localStorage carousel type
     let endpoint;
-    const filter = IndexTable.currentSearch ? `&filter=${IndexTable.currentSearch}` : "";
+    const currentSearch = IndexTable.getCurrentSearch();
+    const filter = currentSearch ? `&filter=${currentSearch}` : "";
     const category = selectedCategory ? `&category=${selectedCategory}` : "";
 
     switch (localStorage.carouselType) {
@@ -549,11 +553,13 @@ export function updateCarousel(e) {
 
     Server.callAPI(endpoint, "GET", null, I18N.CarouselError,
         (results) => {
-            swiper.virtual.removeAllSlides();
-            const slides = results.data
-                .map((archive) => LRR.buildThumbnailDiv(archive));
-            swiper.virtual.appendSlide(slides);
-            swiper.virtual.update();
+            Perf.measure("index.carousel", () => {
+                swiper.virtual.removeAllSlides();
+                const slides = results.data
+                    .map((archive) => LRR.buildThumbnailDiv(archive));
+                swiper.virtual.appendSlide(slides);
+                swiper.virtual.update();
+            });
 
             if (results.data.length === 0) {
                 $("#carousel-empty").show();
@@ -564,6 +570,10 @@ export function updateCarousel(e) {
             $("#reload-carousel").removeClass("fa-spin");
         },
     );
+}
+
+export function markCarouselDirty() {
+    carouselDirty = true;
 }
 
 // #endregion
@@ -726,12 +736,16 @@ export function addArchiveToSelection(data) {
  * @param {string} id Archive ID to remove
  */
 export function removeArchiveFromSelection(id) {
+    selectedArchives.delete(id);
+
     // Find the slide index in the virtual slides array
-    const { slides } = swiper.virtual;
-    const idx = slides.findIndex((html) => html.includes(`id="${id}"`));
-    if (idx !== -1) {
-        swiper.virtual.removeSlide(idx);
-        swiper.virtual.update();
+    if (swiper.virtual?.slides) {
+        const { slides } = swiper.virtual;
+        const idx = slides.findIndex((html) => html.includes(`id="${id}"`));
+        if (idx !== -1) {
+            swiper.virtual.removeSlide(idx);
+            swiper.virtual.update();
+        }
     }
 
     // Remove highlight classes
@@ -739,6 +753,7 @@ export function removeArchiveFromSelection(id) {
     $(`tr#${id}.context-menu`).removeClass("msm-selected");
 
     $(document).off(`click.msm-carousel-${id}`);
+    updateSelectionCount();
 }
 
 /**

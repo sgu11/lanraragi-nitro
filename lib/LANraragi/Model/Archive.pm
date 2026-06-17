@@ -556,6 +556,7 @@ sub delete_archive ($id) {
     $redis_search->quit();
 
     LANraragi::Utils::Database::update_indexes( $id, $oldtags, "" );
+    invalidate_cache();
 
     if ( -e $filename ) {
         my $status = unlink_path($filename);

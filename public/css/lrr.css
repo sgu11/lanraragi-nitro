@@ -303,6 +303,8 @@ p#nb {
 .quick-thumbnail {
   /** This is only intended as a hint to allow loading="lazy" to do it's thing */
   min-width: 100px;
+  content-visibility: auto;
+  contain-intrinsic-size: 220px 340px;
 }
 
 .quick-thumbnail:hover>.page-number {
@@ -319,6 +321,28 @@ p#nb {
   align-self: center;
   cursor: pointer;
   z-index: 19;
+}
+
+.lrr-deleting {
+  opacity: 0.35;
+  transform: scale(0.985);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.lrr-row-enter {
+  animation: lrr-row-enter 650ms ease-out;
+}
+
+@keyframes lrr-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* fork: Image Quality setting — driven by <html data-img-quality> set in reader.js.

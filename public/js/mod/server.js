@@ -333,8 +333,11 @@ export function removeArchiveFromCategory(arcId, catId) {
  * deleting the Redis key and attempting to delete the archive file.
  * @param {string} arcId Archive ID
  * @param {*} callback Callback to execute once the archive is deleted (usually a redirection)
+ * @param {object} options Delete options
+ * @param {number} options.callbackDelayMs Delay before callback execution
+ * @param {Function} options.failureCallback Called when deletion fails
  */
-export function deleteArchive(arcId, callback) {
+export function deleteArchive(arcId, callback = () => {}, { callbackDelayMs = 1500, failureCallback = () => {} } = {}) {
     let endpoint = new LRR.ApiURL(`/api/archives/${arcId}`);
     return fetch(endpoint, { method: "DELETE" })
         .then((response) => response.json())
@@ -348,6 +351,7 @@ export function deleteArchive(arcId, callback) {
                 });
                 $(".stdbtn").hide();
                 $("#goback").show();
+                failureCallback(data);
             } else {
                 LRR.toast({
                     heading: I18N.ArchiveDeleted,
@@ -355,21 +359,45 @@ export function deleteArchive(arcId, callback) {
                     icon: "success",
                     hideAfter: 7000,
                 });
-                setTimeout(callback, 1500);
+                setTimeout(callback, callbackDelayMs);
             }
         })
-        .catch((error) => LRR.showErrorToast(I18N.ArchiveDeletedError, error));
+        .catch((error) => {
+            LRR.showErrorToast(I18N.ArchiveDeletedError, error);
+            failureCallback(error);
+        });
 }
 
 /**
  * Deletes a Tankoubon by ID. The archives remain in the library.
  * @param {string} id Tankoubon ID
  * @param {Function} callback Called after successful deletion
+ * @param {object} options Delete options
+ * @param {number} options.callbackDelayMs Delay before callback execution
+ * @param {Function} options.failureCallback Called when deletion fails
  */
-export function deleteTankoubon(id, callback) {
-    return callAPI(`/api/tankoubons/${id}`, "DELETE", I18N.TankoubonDeleted, I18N.TankoubonDeleteError,
-        () => { setTimeout(callback, 1500); }
-    );
+export function deleteTankoubon(id, callback = () => {}, { callbackDelayMs = 1500, failureCallback = () => {} } = {}) {
+    const endpoint = new LRR.ApiURL(`/api/tankoubons/${id}`);
+    return fetch(endpoint, { method: "DELETE" })
+        .then((response) => response.json())
+        .then((data) => {
+            if (!data.success) throw new Error(data.error);
+
+            let message = I18N.TankoubonDeleted;
+            if ("successMessage" in data && data.successMessage) {
+                message = data.successMessage;
+            }
+            LRR.toast({
+                heading: message,
+                icon: "success",
+                hideAfter: 7000,
+            });
+            setTimeout(callback, callbackDelayMs);
+        })
+        .catch((error) => {
+            LRR.showErrorToast(I18N.TankoubonDeleteError, error);
+            failureCallback(error);
+        });
 }
 
 /**

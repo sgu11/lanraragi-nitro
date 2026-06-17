@@ -3,6 +3,7 @@
  */
 import * as LRR from "./common.js";
 import * as Index from "./index.js";
+import * as Perf from "./perf.js";
 import { DEFAULT_INDEX_SORT_COLUMN, DEFAULT_INDEX_SORT_DIRECTION, getInitialIndexOrder } from "./index-order.js";
 import I18N from "i18n";
 
@@ -10,11 +11,14 @@ export let dataTable = {};
 let originalTitle = document.title;
 let isComingFromPopstate = false;
 let currentSearch = "";
+let pendingThumbnailCards = [];
 
 /**
  * Initialize DataTables.
  */
 export function initializeAll() {
+    Perf.initializeLongTaskObserver();
+
     // Bind events to DOM
     $(document).on("click.apply-search", "#apply-search", () => { currentSearch = $("#search-input").val(); doSearch(); });
     $(document).on("click.clear-search", "#clear-search", () => { currentSearch = ""; doSearch(); });
@@ -104,6 +108,10 @@ export function initializeAll() {
 
     // If the url has parameters, handle them now by doing the matching search.
     consumeURLParameters();
+}
+
+export function getCurrentSearch() {
+    return currentSearch;
 }
 
 /**
@@ -237,12 +245,14 @@ export function renderTags(data, type) {
  * Inits the div that contains the thumbnails
  */
 export function initializeThumbView() {
+    pendingThumbnailCards = [];
+
     // we only do all this thingamajang if thumbnail view is enabled
     if (localStorage.indexViewMode === "1") {
         // Create a thumbs container if it doesn't exist. put it in the dataTables_scrollbody div
         if ($("#thumbs_container").length < 1) $(".datatables").after("<div id='thumbs_container'></div>");
 
-        // clear out the thumbs container
+        // clear out the thumbs container; cards are swapped in once per draw.
         $("#thumbs_container").html("");
 
         $(".list").hide();
@@ -272,13 +282,7 @@ export function createdRow(row, data, dataIndex, cells) {
     row.classList.add("context-menu");
     // Builds a id1 class div to jam in the thumb container for the given archive data
     if (localStorage.indexViewMode === "1") {
-        // Build a thumb-like div with the data
-        $("#thumbs_container").append(LRR.buildThumbnailDiv(data));
-
-        // Apply selection highlight immediately if the archive is already selected
-        if (Index.isMultiSelectMode && Index.selectedArchives.has(data.arcid || data.id)) {
-            $(`#thumbs_container #${data.arcid || data.id}`).addClass("msm-selected");
-        }
+        pendingThumbnailCards.push(LRR.buildThumbnailDiv(data));
     }
 }
 
@@ -292,59 +296,113 @@ export function createdRow(row, data, dataIndex, cells) {
  */
 export function drawCallback() {
     if (typeof (dataTable) !== "undefined") {
-        const pageInfo = dataTable.page.info();
-        if (pageInfo.pages === 0) {
-            $(".itg").hide();
-        } else {
-            $(".itg").show();
-        }
+        Perf.measure("index.draw", () => {
+            flushThumbnailCards();
 
-        // Update url to contain all search parameters, and push it to the history
-        if (isComingFromPopstate) {
-            // But don't fire this if we're coming from popstate
-            isComingFromPopstate = false;
-        } else {
-            let params = buildURLParameters();
-            // don't push duplicate state entries, because that would wipe out forward history and
-            // require multiple 'back' presses to go back)
-            if (params === "?") {
-                // special case for empty search params: window.location.search is "" if there are
-                // no search params, even if window.location ends with '?'
-                if (window.location.search !== "") {
-                    window.history.pushState(null, null, "/");
-                }
-            } else if (params !== window.location.search) {
-                window.history.pushState(null, null, params);
+            const pageInfo = dataTable.page.info();
+            if (pageInfo.pages === 0) {
+                $(".itg").hide();
+            } else {
+                $(".itg").show();
             }
-        }
 
-        let currentSort = dataTable.order()[0][0];
-        const currentOrder = dataTable.order()[0][1];
+            // Update url to contain all search parameters, and push it to the history
+            if (isComingFromPopstate) {
+                // But don't fire this if we're coming from popstate
+                isComingFromPopstate = false;
+            } else {
+                let params = buildURLParameters();
+                // don't push duplicate state entries, because that would wipe out forward history and
+                // require multiple 'back' presses to go back)
+                if (params === "?") {
+                    // special case for empty search params: window.location.search is "" if there are
+                    // no search params, even if window.location ends with '?'
+                    if (window.location.search !== "") {
+                        window.history.pushState(null, null, "/");
+                    }
+                } else if (params !== window.location.search) {
+                    window.history.pushState(null, null, params);
+                }
+            }
 
-        // Save sort/order/page to localStorage
-        localStorage.indexSort = currentSort;
-        localStorage.indexOrder = currentOrder;
+            let currentSort = dataTable.order()[0][0];
+            const currentOrder = dataTable.order()[0][1];
 
-        // get current columns count, except title and tags
-        const currentCustomColumnCount = dataTable.columns().count() - 2;
-        // check currentSort, if out of range, back to use title
-        if (currentSort > currentCustomColumnCount) {
-            localStorage.indexSort = 0;
-        }
-        if (currentSort >= 1 && currentSort <= Index.getColumnCount()) {
-            currentSort = localStorage.getItem(`customColumn${currentSort}`) || `Header ${currentSort}`;
-        } else {
-            currentSort = "title";
-        }
+            // Save sort/order/page to localStorage
+            localStorage.indexSort = currentSort;
+            localStorage.indexOrder = currentOrder;
 
-        Index.updateTableControls(currentSort, currentOrder, pageInfo.pages, pageInfo.page + 1);
+            // get current columns count, except title and tags
+            const currentCustomColumnCount = dataTable.columns().count() - 2;
+            // check currentSort, if out of range, back to use title
+            if (currentSort > currentCustomColumnCount) {
+                localStorage.indexSort = 0;
+            }
+            if (currentSort >= 1 && currentSort <= Index.getColumnCount()) {
+                currentSort = localStorage.getItem(`customColumn${currentSort}`) || `Header ${currentSort}`;
+            } else {
+                currentSort = "title";
+            }
 
-        // Re-apply selection highlights after each draw
-        Index.applySelectionHighlights();
+            Index.updateTableControls(currentSort, currentOrder, pageInfo.pages, pageInfo.page + 1);
 
-        // Clear potential leftover tooltips
-        tippy.hideAll();
+            // Re-apply selection highlights after each draw
+            Index.applySelectionHighlights();
+
+            // Clear potential leftover tooltips
+            tippy.hideAll();
+        });
     }
+}
+
+function flushThumbnailCards() {
+    if (localStorage.indexViewMode !== "1") return;
+
+    if (pendingThumbnailCards.length === 0) {
+        dataTable.rows({ page: "current" }).data().each((data) => {
+            pendingThumbnailCards.push(LRR.buildThumbnailDiv(data));
+        });
+    }
+
+    $("#thumbs_container").html(pendingThumbnailCards.join(""));
+    pendingThumbnailCards = [];
+}
+
+export function getVisibleArchiveIds() {
+    const ids = [];
+    dataTable.rows({ page: "current" }).data().each((data) => {
+        ids.push(data.arcid || data.id);
+    });
+    return ids;
+}
+
+function markInsertedRows(previousIds) {
+    const previous = new Set(previousIds);
+    getVisibleArchiveIds().forEach((id) => {
+        if (previous.has(id)) return;
+
+        $(`#${id}.context-menu, #thumbs_container #${id}`)
+            .addClass("lrr-row-enter");
+        setTimeout(() => {
+            $(`#${id}.context-menu, #thumbs_container #${id}`)
+                .removeClass("lrr-row-enter");
+        }, 900);
+    });
+}
+
+export function reloadAfterArchiveMutation() {
+    const previousIds = getVisibleArchiveIds();
+
+    return dataTable.ajax.reload(() => {
+        const pageInfo = dataTable.page.info();
+        const currentRows = dataTable.rows({ page: "current" }).count();
+        if (pageInfo.recordsDisplay > 0 && currentRows === 0 && pageInfo.page > 0) {
+            dataTable.page(Math.max(0, pageInfo.page - 1)).draw(false);
+            return;
+        }
+
+        markInsertedRows(previousIds);
+    }, false);
 }
 
 export function buildURLParameters() {

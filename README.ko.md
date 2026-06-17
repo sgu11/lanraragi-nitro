@@ -72,6 +72,8 @@ Reader behavior:
 - **Bulk archive actions**: 기존 fork hover-checkbox / bulk-selection-banner 설계는 ES-module sync 중 upstream MSM으로 대체됨. Index page의 `Select Archives` button으로 thumbnail carousel selection panel 사용, thumbnail click 또는 right-click `Add to selection`으로 `localStorage` selection 구성, 이후 `Select page`, `Clear`, `Run Batch Operations`, `Merge into Tankoubon` 사용함. 기존 fork spec은 history only 문서임.
 - **Quick filter button 수정**: library page의 category/tag filter button이 동작하지 않던 문제 수정. ES module에서 `selectedCategory` 변수가 export되지 않아 DataTables column filter에 category ID가 전달되지 않았음.
 - **Mobile portrait card sizing fix**: portrait phone/tablet에서 desktop-sized card가 표시되던 문제 수정함. 모든 template에 `initial-scale=1`, `.id3 img` cap 완화, 561-900px portrait breakpoint, <=560px `min-height` override 적용함.
+- **Inline library deletion refresh**: library에서 archive/tankoubon 삭제 시 search reset 또는 전체 page reload 없이 현재 DataTables page를 제자리 redraw함. Stale multi-select 상태 정리, 필요한 경우에만 carousel dirty 처리, server redraw 후 shifted-in row/card highlight 포함함.
+- **Library thumbnail draw batching**: thumbnail mode card를 DataTables row 생성 중 buffer에 모은 뒤 draw마다 `#thumbs_container`에 한 번만 swap함. 반복 live DOM mutation 감소 목적임.
 
 ### Duplicates
 
@@ -108,6 +110,10 @@ Request hot path 중심의 지속적 성능 개선임. 상세 추적 문서는 [
 - Warm-cache inline first-page `src=`.
 - Generation-keyed TTL search cache.
 - Tachiyomi/Mihon-compatible API hot path cache와 placeholder thumbnail response.
+- Debug flag `localStorage.lrrPerf === "1"` 기반 WebUI responsiveness instrumentation. Library draw, carousel rebuild, reader page turn, overlay rendering mark와 long-task observation 포함함.
+- Reader infinite-scroll lazy windowing. 모든 page image를 선생성하고 전체 load를 기다리는 대신 near-page image window와 lazy placeholder 사용함.
+- Reader preload A/B switch. `localStorage.readerPreloadStrategy = "browser"`로 browser-managed image cache/preload와 default bounded Blob URL preload path 비교 가능함.
+- Reader/library render containment. 반복 thumbnail surface에 `content-visibility: auto`와 intrinsic size 적용함.
 
 **Tier B-redis**:
 
