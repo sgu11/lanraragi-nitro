@@ -436,8 +436,11 @@ LUA
     # try to acquire all locks, or release all if any lock cannot be acquired.
     my @lock_name_stack = ();
     foreach my $lock_name (@$lock_names) {
-        my $token = sha256_hex( $lock_name . ":" . $$ . ":" . time() . ":" . rand() );
-        my $lock  = eval { $redis->set( $lock_name, $token, 'NX', 'EX', $ttl ) };
+        my $redis_lock_name = $lock_name;
+        utf8::encode($redis_lock_name) if utf8::is_utf8($redis_lock_name);
+
+        my $token = sha256_hex( $redis_lock_name . ":" . $$ . ":" . time() . ":" . rand() );
+        my $lock  = eval { $redis->set( $redis_lock_name, $token, 'NX', 'EX', $ttl ) };
         if ( my $acquire_error = $@ ) {
 
             # If a lock acquisition failure happens, then a problem has occurred with Redis.
@@ -445,18 +448,18 @@ LUA
             last;
         }
         last unless $lock;
-        push( @lock_name_stack, [ $lock_name, $token ] );
+        push( @lock_name_stack, [ $redis_lock_name, $token, $lock_name ] );
     }
 
     # if a single lock fails to acquire, stop trying for the rest, and
     # go release all previously acquired locks in the reverse order.
     unless ( scalar(@lock_name_stack) == scalar(@$lock_names) ) {
         while (@lock_name_stack) {
-            my ( $lock_name, $token ) = @{ pop(@lock_name_stack) };
+            my ( $redis_lock_name, $token, $lock_name ) = @{ pop(@lock_name_stack) };
 
             # This should be best effort release, but if failure happens,
             # then continue releasing remaining locks and let TTL take over.
-            my $release_error = eval { $redis->eval( $release_lua, 1, $lock_name, $token ); 1 } ? undef : $@;
+            my $release_error = eval { $redis->eval( $release_lua, 1, $redis_lock_name, $token ); 1 } ? undef : $@;
             get_logger( "Concurrency", "lanraragi" )->error("Failed to release lock ($lock_name): $release_error")
               if $release_error;
         }
@@ -473,8 +476,8 @@ LUA
 
     # release all previously acquired locks in reverse order.
     while (@lock_name_stack) {
-        my ( $lock_name, $token ) = @{ pop(@lock_name_stack) };
-        my $release_error = eval { $redis->eval( $release_lua, 1, $lock_name, $token ); 1 } ? undef : $@;
+        my ( $redis_lock_name, $token, $lock_name ) = @{ pop(@lock_name_stack) };
+        my $release_error = eval { $redis->eval( $release_lua, 1, $redis_lock_name, $token ); 1 } ? undef : $@;
         get_logger( "Concurrency", "lanraragi" )->error("Failed to release lock after evaluation ($lock_name): $release_error")
           if $release_error;
     }

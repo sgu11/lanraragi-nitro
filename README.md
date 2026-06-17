@@ -156,6 +156,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 - **filesystem-aware Shinobu file watcher** — detects inode-number changes after a `filesystem receive` / dataset-swap and re-creates the watcher instead of silently losing events.
 - **Undef handling** hardened in search and Shinobu paths to avoid log spam on edge-case archives.
 - **Edit route hardening** redirects `/edit` requests without an archive ID before touching Redis, avoiding a protocol-error 500 during smoke checks.
+- **Unicode upload filename lock fix** encodes Redis lock keys before digesting/storing them, so API and Web uploads with non-ASCII filenames no longer fail during lock-token generation.
 
 ### Themes
 
