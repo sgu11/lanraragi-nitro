@@ -18,6 +18,9 @@ use LANraragi::Model::Dedup::CoverFingerprint;
 # LANraragi::Utils::Minion so upstream merges of that file stay small; the only
 # upstream-file footprint is the single add_tasks() call.
 
+use constant COVER_HASH_INFLIGHT_KEY => "LRR_COVER_HASH_INFLIGHT";
+use constant COVER_HASH_INFLIGHT_TTL => 15 * 60;
+
 # Reads dedup tunables from Redis with sane defaults. The hash key lives in DB 2 (config).
 sub _dedup_config_from_redis {
     my ($redis_cfg) = @_;
@@ -46,6 +49,34 @@ sub _dedup_config_from_redis {
     };
 }
 
+sub _coverhash_inflight_fresh {
+    my ($redis_cfg, $id) = @_;
+    my $started = $redis_cfg->hget(COVER_HASH_INFLIGHT_KEY, $id) // '';
+    return 0 unless $started =~ /^\d+$/;
+    return (time() - $started) < COVER_HASH_INFLIGHT_TTL ? 1 : 0;
+}
+
+sub _mark_coverhash_inflight {
+    my ($redis_cfg, $id) = @_;
+    $redis_cfg->hset(COVER_HASH_INFLIGHT_KEY, $id, time());
+}
+
+sub _clear_coverhash_inflight {
+    my ($redis_cfg, $id) = @_;
+    $redis_cfg->hdel(COVER_HASH_INFLIGHT_KEY, $id);
+}
+
+sub _enqueue_coverhash_unless_inflight {
+    my ($redis_cfg, $minion, $id) = @_;
+    return 0 if _coverhash_inflight_fresh($redis_cfg, $id);
+
+    $minion->enqueue(
+        compute_coverhash => [ $id ] => { priority => 0 }
+    );
+    _mark_coverhash_inflight($redis_cfg, $id);
+    return 1;
+}
+
 sub _run_find_cover_duplicates_isolated {
     my ($job, $redis, $redis_cfg, $threshold_arg) = @_;
 
@@ -63,6 +94,7 @@ sub _run_find_cover_duplicates_isolated {
     my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
     my $pending  = 0;
     my $enqueued = 0;
+    my $in_flight = 0;
     my $skipped  = 0;
     for my $id (@ids) {
         my $v   = $redis->hget($id, "coverhash_v")   // '';
@@ -76,10 +108,11 @@ sub _run_find_cover_duplicates_isolated {
             next;
         }
         $pending++;
-        $minion->enqueue(
-            compute_coverhash => [ $id ] => { priority => 0 }
-        );
-        $enqueued++;
+        if (_enqueue_coverhash_unless_inflight($redis_cfg, $minion, $id)) {
+            $enqueued++;
+        } else {
+            $in_flight++;
+        }
     }
 
     if ($pending > 0) {
@@ -90,12 +123,13 @@ sub _run_find_cover_duplicates_isolated {
         $redis_cfg->quit;
         $logger->info(
             "find_cover_duplicates_isolated: $pending archives pending cover hashes " .
-            "(enqueued $enqueued, skipped $skipped). Sweep requeued."
+            "(enqueued $enqueued, in-flight $in_flight, skipped $skipped). Sweep requeued."
         );
         $job->finish({
             stored         => 0,
             pending        => $pending,
             enqueued       => $enqueued,
+            in_flight      => $in_flight,
             skipped        => $skipped,
             sweep_deferred => 1,
             requeued       => 1,
@@ -330,10 +364,15 @@ sub add_tasks {
             my $redis     = LANraragi::Model::Config->get_redis;
             my $redis_cfg = LANraragi::Model::Config->get_redis_config;
             my $cfg       = _dedup_config_from_redis($redis_cfg);
+
+            my ($rc, $err);
+            eval { $rc = LANraragi::Model::Dedup::compute_coverhash_for_archive($redis, $id, $cfg); 1 }
+                or $err = $@ || "compute_coverhash failed";
+            eval { _clear_coverhash_inflight($redis_cfg, $id); };
+            $redis->quit;
             $redis_cfg->quit;
 
-            my $rc = LANraragi::Model::Dedup::compute_coverhash_for_archive($redis, $id, $cfg);
-            $redis->quit;
+            die $err if $err;
 
             if ($rc < 0) {
                 $logger->warn("compute_coverhash failed for $id");
@@ -475,10 +514,11 @@ sub add_tasks {
                     $skipped++;
                     next;
                 }
-                LANraragi::Model::Config->get_minion->enqueue(
-                    compute_coverhash => [ $id ] => { priority => 0 }
-                );
-                $enqueued++;
+                if (_enqueue_coverhash_unless_inflight($redis_cfg, LANraragi::Model::Config->get_minion, $id)) {
+                    $enqueued++;
+                } else {
+                    $skipped++;
+                }
                 $redis_cfg->set("LRR_DEDUP_COVER_BACKFILL_CURSOR", $id);
                 $logger->info("backfill_coverhashes: progress $seen/$total (enqueued=$enqueued skipped=$skipped)")
                     if $seen % 500 == 0;

@@ -108,9 +108,12 @@ if ($VIPS_LOADED) {
     *vips_cast = sub { die "libvips is not loaded. Cannot call vips_cast." };
 }
 
-# Define VipsInterpretation enum values
-use constant VIPS_INTERPRETATION_GREY16 => 12; # VIPS_INTERPRETATION_GREY16
-use constant VIPS_INTERPRETATION_B_W => 17; # VIPS_INTERPRETATION_B_W
+# Define VipsInterpretation enum values.
+# Keep these in sync with vips/image.h; the values are ABI constants.
+use constant VIPS_INTERPRETATION_B_W => 1;  # VIPS_INTERPRETATION_B_W
+use constant VIPS_INTERPRETATION_RGB => 17; # VIPS_INTERPRETATION_RGB
+use constant VIPS_INTERPRETATION_sRGB => 22; # VIPS_INTERPRETATION_sRGB
+use constant VIPS_INTERPRETATION_GREY16 => 26; # VIPS_INTERPRETATION_GREY16
 use constant VIPS_SIZE_FORCE => 3; # VIPS_SIZE_FORCE
 use constant VIPS_FORMAT_UCHAR => 0; # VIPS_FORMAT_UCHAR
 use constant VIPS_ALIGN_CENTRE => 0; # VIPS_ALIGN_CENTRE

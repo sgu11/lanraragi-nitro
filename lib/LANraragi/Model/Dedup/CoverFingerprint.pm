@@ -171,15 +171,24 @@ sub _compute_dhash {
     close $fh;
 
     # 128-bit dHash: resize to 17x16, grayscale, compare adjacent horizontal pixels.
-    # VIPS_INTERPRETATION_GREY16 = 12, VIPS_FORMAT_UCHAR = 0.
     my $resized = LANraragi::Utils::Vips::stretch_resize($buf, 17, 16);
     my $grey16;
-    my $cs_ret = LANraragi::Utils::Vips::vips_colourspace($resized, \$grey16, 12, undef);
+    my $cs_ret = LANraragi::Utils::Vips::vips_colourspace(
+        $resized,
+        \$grey16,
+        LANraragi::Utils::Vips::VIPS_INTERPRETATION_GREY16,
+        undef
+    );
     LANraragi::Utils::Vips::unref_image($resized);
     die "dHash colourspace error" if $cs_ret != 0;
 
     my $gray;
-    my $cast_ret = LANraragi::Utils::Vips::vips_cast($grey16, \$gray, 0, undef);
+    my $cast_ret = LANraragi::Utils::Vips::vips_cast(
+        $grey16,
+        \$gray,
+        LANraragi::Utils::Vips::VIPS_FORMAT_UCHAR,
+        undef
+    );
     LANraragi::Utils::Vips::unref_image($grey16);
     die "dHash cast error" if $cast_ret != 0;
 
@@ -210,19 +219,43 @@ sub _compute_color_histogram {
     my $buf = do { local $/; <$fh> };
     close $fh;
 
-    # Resize small and read raw RGB pixels
+    # Resize small, normalize to sRGB triples, and read raw pixels. Some inputs
+    # resize to one-band grayscale or include alpha, so never assume source bands.
     my $resized = LANraragi::Utils::Vips::stretch_resize($buf, 16, 16);
-    my ($bytes, $size) = LANraragi::Utils::Vips::read_pixels($resized);
+    my $rgb;
+    my $cs_ret = LANraragi::Utils::Vips::vips_colourspace(
+        $resized,
+        \$rgb,
+        LANraragi::Utils::Vips::VIPS_INTERPRETATION_sRGB,
+        undef
+    );
     LANraragi::Utils::Vips::unref_image($resized);
+    die "color histogram colourspace error" if $cs_ret != 0;
+
+    my $uchar;
+    my $cast_ret = LANraragi::Utils::Vips::vips_cast(
+        $rgb,
+        \$uchar,
+        LANraragi::Utils::Vips::VIPS_FORMAT_UCHAR,
+        undef
+    );
+    LANraragi::Utils::Vips::unref_image($rgb);
+    die "color histogram cast error" if $cast_ret != 0;
+
+    my ($bytes, $size) = LANraragi::Utils::Vips::read_pixels($uchar);
+    my $bands = LANraragi::Utils::Vips::bands($uchar);
+    LANraragi::Utils::Vips::unref_image($uchar);
     my @pixels = unpack("C*", $bytes);
+    die "color histogram expected RGB pixels" unless $bands >= 3;
 
     # 6-bin normalized HSV histogram: 2 hue bins × 3 value bins
     my @hist = (0, 0, 0, 0, 0, 0);
-    my $n = length($bytes) / 3;   # RGB triples
+    my $n = int(length($bytes) / $bands);
     for my $i (0 .. $n - 1) {
-        my $r = ($pixels[$i * 3]     // 0) / 255;
-        my $g = ($pixels[$i * 3 + 1] // 0) / 255;
-        my $b = ($pixels[$i * 3 + 2] // 0) / 255;
+        my $base = $i * $bands;
+        my $r = ($pixels[$base]     // 0) / 255;
+        my $g = ($pixels[$base + 1] // 0) / 255;
+        my $b = ($pixels[$base + 2] // 0) / 255;
 
         my $max = $r > $g ? ($r > $b ? $r : $b) : ($g > $b ? $g : $b);
         my $min = $r < $g ? ($r < $b ? $r : $b) : ($g < $b ? $g : $b);

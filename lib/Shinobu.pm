@@ -57,6 +57,20 @@ sub _watcher_args ($userdir) {
     );
 }
 
+sub _invalidate_and_enqueue_cover_dedup_signals ($redis_arc, $id) {
+    my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+    LANraragi::Model::Dedup::CoverIndex::invalidate_cover_dedup_signals($redis_arc, $redis_cfg, $id);
+    $redis_cfg->quit;
+
+    my $minion = LANraragi::Model::Config->get_minion;
+    $minion->enqueue(
+        compute_coverhash => [ $id ] => { priority => 0 }
+    );
+    $minion->enqueue(
+        compute_cover_fingerprint => [ $id ] => { priority => 0 }
+    );
+}
+
 #Subroutine for new and deleted files that takes inotify events
 my $inotifysub = sub {
     my $e    = shift;
@@ -216,12 +230,7 @@ sub update_filemap {
 
                 # Invalidate cover dedup signals; re-enqueue after Shinobu recalc.
                 eval {
-                    my $redis_cfg = LANraragi::Model::Config->get_redis_config;
-                    LANraragi::Model::Dedup::CoverIndex::invalidate_cover_dedup_signals($redis_arc, $redis_cfg, $id);
-                    $redis_cfg->quit;
-                    LANraragi::Model::Config->get_minion->enqueue(
-                        compute_coverhash => [ $id ] => { priority => 0 }
-                    );
+                    _invalidate_and_enqueue_cover_dedup_signals($redis_arc, $id);
                 };
                 $logger->warn("Failed to invalidate/re-enqueue cover dedup signals for $id: $@") if $@;
 
@@ -366,12 +375,7 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
                 add_pagecount( $redis_arc, $id );
 
                 eval {
-                    my $redis_cfg = LANraragi::Model::Config->get_redis_config;
-                    LANraragi::Model::Dedup::CoverIndex::invalidate_cover_dedup_signals($redis_arc, $redis_cfg, $id);
-                    $redis_cfg->quit;
-                    LANraragi::Model::Config->get_minion->enqueue(
-                        compute_coverhash => [ $id ] => { priority => 0 }
-                    );
+                    _invalidate_and_enqueue_cover_dedup_signals($redis_arc, $id);
                 };
                 $logger->warn("Failed to invalidate/re-enqueue cover dedup signals for $id: $@") if $@;
 
@@ -421,12 +425,7 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
             add_pagecount( $redis_arc, $id );
 
             eval {
-                my $redis_cfg = LANraragi::Model::Config->get_redis_config;
-                LANraragi::Model::Dedup::CoverIndex::invalidate_cover_dedup_signals($redis_arc, $redis_cfg, $id);
-                $redis_cfg->quit;
-                LANraragi::Model::Config->get_minion->enqueue(
-                    compute_coverhash => [ $id ] => { priority => 0 }
-                );
+                _invalidate_and_enqueue_cover_dedup_signals($redis_arc, $id);
             };
             $logger->warn("Failed to invalidate/re-enqueue cover dedup signals for $id: $@") if $@;
 

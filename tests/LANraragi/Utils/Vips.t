@@ -48,6 +48,27 @@ note("test extract_grayscale_32x32 returns 1024 bytes");
     is(scalar(@out_of_range), 0, "All pixel values should be uchar 0..255");
 }
 
+note("test GREY16 interpretation constant converts to a single band");
+{
+    my $image_path = "$cwd/tests/samples/reader.jpg";
+    open(my $fh, '<:raw', $image_path) or die "Can't open $image_path: $!";
+    my $buffer = do { local $/; <$fh> };
+    close $fh;
+
+    my $resized = LANraragi::Utils::Vips::stretch_resize($buffer, 16, 16);
+    my $grey;
+    my $ret = LANraragi::Utils::Vips::vips_colourspace(
+        $resized,
+        \$grey,
+        LANraragi::Utils::Vips::VIPS_INTERPRETATION_GREY16,
+        undef
+    );
+    LANraragi::Utils::Vips::unref_image($resized);
+    is($ret, 0, "VIPS colourspace conversion succeeds");
+    is(LANraragi::Utils::Vips::bands($grey), 1, "GREY16 conversion produces one band");
+    LANraragi::Utils::Vips::unref_image($grey);
+}
+
 done_testing();
 
 1;
