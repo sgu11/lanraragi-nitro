@@ -30,3 +30,39 @@ test("custom duplicate finder uses cover-only API endpoints", async () => {
     assert.doesNotMatch(script, /relation=/);
     assert.doesNotMatch(script, /title_score/);
 });
+
+test("custom duplicate finder renders a focused review queue", async () => {
+    const script = await source("public/js/duplicates_custom.js");
+    const template = await source("templates/duplicates_custom.html.tt2");
+    const styles = await source("public/css/duplicates_custom.css");
+
+    assert.match(template, /id="dupes-review-shell"/);
+    assert.match(template, /id="dupes-active-stage"/);
+    assert.match(template, /id="dupes-queue-rail"/);
+    assert.match(template, /id="dupes-queue-list"/);
+
+    assert.match(styles, /#dupes-review-shell/);
+    assert.match(styles, /\.dupe-focus-card/);
+    assert.match(styles, /\.dupe-queue-item/);
+
+    assert.match(script, /Duplicates\.renderActivePair\s*=/);
+    assert.match(script, /Duplicates\.renderQueueRail\s*=/);
+    assert.match(script, /Duplicates\.advanceAfterReviewAction\s*=/);
+    assert.match(script, /Duplicates\.loadMorePairs\s*=/);
+    assert.match(script, /Duplicates\.performReviewAction\s*=/);
+});
+
+test("custom duplicate review actions do not reload the whole deck", async () => {
+    const script = await source("public/js/duplicates_custom.js");
+
+    assert.match(script, /data-action="keep-side"/);
+    assert.match(script, /data-action="mark-status"/);
+    assert.match(script, /data-status="needs_review"/);
+    assert.match(script, /function\s*\(\)\s*\{[\s\S]*\.dupe-action[\s\S]*Duplicates\.performReviewAction/);
+
+    const actionHandlerStart = script.indexOf("$(\"#dupes-active-stage\").on(\"click\", \".dupe-action\"");
+    assert.notEqual(actionHandlerStart, -1);
+    const nextHandlerStart = script.indexOf("$(document).on(\"keydown\"", actionHandlerStart);
+    const actionHandler = script.slice(actionHandlerStart, nextHandlerStart);
+    assert.doesNotMatch(actionHandler, /Duplicates\.loadPairs\(\)/);
+});

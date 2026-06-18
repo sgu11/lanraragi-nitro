@@ -14,7 +14,7 @@
     <link type="image/png" rel="icon" href="favicon.ico" />
     <link rel="manifest" href="app.webappmanifest" />
     <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$version") %]" />
-    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/duplicates_custom.css") %]?[% version %]" />
+    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/duplicates_custom.css") %]?[% version %]-focused-review" />
     <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/fontawesome-all.min.css") %]" />
     <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/sweetalert2.min.css") %]" />
     [% csshead %]
@@ -23,14 +23,17 @@
 
     <script src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/JAVASCRIPT"></script>
 
-    <script src="[% c.url_for("/js/duplicates_custom.js?$version") %]" type="module"></script>
+    <script src="[% c.url_for("/js/duplicates_custom.js") %]?[% version %]-focused-review" type="module"></script>
 
 </head>
 
 <body>
 
-    <div id="dupes-container" class='ido' style='margin: 20px;'>
-        <h2 class='ih' style='text-align:center'>[% c.lh("Duplicates") %]</h2>
+    <div id="dupes-container">
+        <div id="dupes-page-header">
+            <h2>[% c.lh("Duplicates") %]</h2>
+            <div id="dupes-review-count">0 reviewed</div>
+        </div>
 
         <div id="dupes-toolbar">
             <button id="return" class="stdbtn" type="button">
@@ -68,8 +71,19 @@
             </label>
         </div>
 
-        <div id="dupes-list">Loading pairs…</div>
-        <div id="dupes-keyboard-hints">[% c.lh("Keyboard: n=next · d=dismiss · 1=same cover · 2=variant · 3=not duplicate") %]</div>
+        <div id="dupes-review-shell">
+            <main id="dupes-active-stage">
+                <div id="dupes-list">Loading pairs…</div>
+            </main>
+            <aside id="dupes-queue-rail">
+                <div class="dupes-queue-header">
+                    <span>Review queue</span>
+                    <span id="dupes-queue-count">0</span>
+                </div>
+                <div id="dupes-queue-list"></div>
+            </aside>
+        </div>
+        <div id="dupes-keyboard-hints">[% c.lh("Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review") %]</div>
     </div>
 
 </body>
