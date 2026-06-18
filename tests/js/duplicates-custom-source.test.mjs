@@ -67,6 +67,18 @@ test("custom duplicate review actions do not reload the whole deck", async () =>
     assert.doesNotMatch(actionHandler, /Duplicates\.loadPairs\(\)/);
 });
 
+test("custom duplicate delete actions skip the confirmation modal", async () => {
+    const script = await source("public/js/duplicates_custom.js");
+    const actionHandlerStart = script.indexOf("$(\"#dupes-active-stage\").on(\"click\", \".dupe-action\"");
+    assert.notEqual(actionHandlerStart, -1);
+    const nextHandlerStart = script.indexOf("$(\"#dupes-queue-list\").on(\"click\"", actionHandlerStart);
+    const actionHandler = script.slice(actionHandlerStart, nextHandlerStart);
+
+    assert.match(actionHandler, /Duplicates\.performReviewAction\(\{[\s\S]*archiveId[\s\S]*Duplicates\.deleteArchive\(archiveId\)/);
+    assert.doesNotMatch(actionHandler, /confirmDeleteArchive/);
+    assert.doesNotMatch(actionHandler, /confirmTitle/);
+});
+
 test("custom duplicate finder renders pair-relative comparison chips", async () => {
     const script = await source("public/js/duplicates_custom.js");
     const styles = await source("public/css/duplicates_custom.css");
@@ -84,8 +96,8 @@ test("custom duplicate finder renders pair-relative comparison chips", async () 
     assert.match(styles, /\.dupe-resolution-chip/);
     assert.match(styles, /\.dupe-resolution-chip\.is-highlighted/);
 
-    assert.match(template, /duplicates_custom\.css"\) %]\?\[% version %]-comparison-chips/);
-    assert.match(template, /duplicates_custom\.js"\) %]\?\[% version %]-comparison-chips/);
+    assert.match(template, /duplicates_custom\.css"\) %]\?\[% version %]-no-delete-confirm/);
+    assert.match(template, /duplicates_custom\.js"\) %]\?\[% version %]-no-delete-confirm/);
 });
 
 test("custom duplicate fork-only labels do not call Maketext", async () => {

@@ -515,26 +515,6 @@ Duplicates.performReviewAction = function ({ pair, action, archiveId = null, err
         });
 };
 
-Duplicates.confirmDeleteArchive = function ({ pair, archiveId, title, confirmTitle }) {
-    return LRR.showPopUp({
-        title: confirmTitle,
-        text: `This permanently deletes "${title || archiveId}".`,
-        icon: "warning",
-        showCancelButton: true,
-        confirmButtonText: "Delete",
-        confirmButtonColor: "#d33",
-        reverseButtons: true,
-    }).then((res) => {
-        if (!res.isConfirmed) return null;
-        return Duplicates.performReviewAction({
-            pair,
-            archiveId,
-            action: () => Duplicates.deleteArchive(archiveId),
-            errorTitle: "Delete failed",
-        });
-    });
-};
-
 // Keyboard navigation
 Duplicates.focusCard = function (idx) {
     Duplicates.setActiveIndex(idx);
@@ -661,16 +641,11 @@ $(function () {
             LRR.showPopUp({ title: "Archive missing", text: "Refresh the duplicate deck to remove this stale pair.", icon: "error" });
             return;
         }
-        const archive = pair.a?.arcid === archiveId ? pair.a : pair.b;
-        const archiveSide = $button.attr("data-side");
-        const actionLabel = actionType === "keep-side"
-            ? `Keep ${sideLabel(archiveSide)} and delete ${sideLabel(oppositeSide(archiveSide))}?`
-            : `Delete ${sideLabel(archiveSide)} archive?`;
-        Duplicates.confirmDeleteArchive({
+        Duplicates.performReviewAction({
             pair,
             archiveId,
-            title: archiveTitle(archive || {}),
-            confirmTitle: actionLabel,
+            action: () => Duplicates.deleteArchive(archiveId),
+            errorTitle: "Delete failed",
         });
     });
 
