@@ -2,426 +2,266 @@
  * Duplicate Operations
  */
 import * as LRR from "./mod/common.js";
+import * as Server from "./mod/server.js";
+import I18N from "i18n";
 
 const Duplicates = {};
 
-const DUPES_THRESHOLD_LS_KEY = "lrr.duplicates.threshold";
-const DUPES_THRESHOLD_DEFAULT = 22;
-const DUPES_THRESHOLD_MIN = 12;
-const DUPES_THRESHOLD_MAX = 25;
+Duplicates.dt = {};
 
-function loadStoredThreshold() {
-    try {
-        const v = parseInt(window.localStorage.getItem(DUPES_THRESHOLD_LS_KEY), 10);
-        if (Number.isFinite(v) && v >= DUPES_THRESHOLD_MIN && v <= DUPES_THRESHOLD_MAX) {
-            return v;
-        }
-    } catch {
-        // localStorage may be disabled (private mode); fall through to default.
+
+Duplicates.initializeAll = function () {
+    // bind events to DOM
+    $(document).on("click.goback", "#goback", () => { window.location.replace("./"); });
+    $(document).on("mouseenter.thumbnail-wrapper", ".thumbnail-wrapper", (e) => $(e.currentTarget).find(".thumbnail-popover").show());
+    $(document).on("mouseleave.thumbnail-wrapper", ".thumbnail-wrapper", (e) => $(e.currentTarget).find(".thumbnail-popover").hide());
+
+    $(document).on("click.find-duplicates", ".find-duplicates", Duplicates.findDuplicates);
+    $(document).on("click.clear-duplicates", ".clear-duplicates", () => { window.location.href = new LRR.ApiURL("/duplicates?delete=1"); });
+    $(document).on("click.delete-archive", ".delete-archive", Duplicates.deleteArchive);
+    $(document).on("click.delete-selected", ".delete-selected", Duplicates.deleteArchives);
+
+    let dupeMinionJob = localStorage.getItem("dupeMinionJob");
+    if (dupeMinionJob !== null) {
+        // If we are searching for duplicates, show the processing message
+        $(".find-duplicates").hide();
+        $("#processing").show();
+
+        Duplicates.pollMinionJob(dupeMinionJob);
     }
-    return DUPES_THRESHOLD_DEFAULT;
+
+    if (localStorage.getItem("previousDupeJob") !== null) {
+        // Remove the previous job from localStorage
+        localStorage.removeItem("previousDupeJob");
+        // We had a previous job, show the "no duplicates" message if there's no dupe data on the page
+        $("#nodupes").show();
+    }
+
+    $(document).on("change.duplicate-select-condition", ".duplicate-select-condition", Duplicates.conditionChange);
+    Duplicates.initializeDataTable();
 }
 
-function saveStoredThreshold(v) {
-    try {
-        window.localStorage.setItem(DUPES_THRESHOLD_LS_KEY, String(v));
-    } catch {
-        // Ignore — non-fatal.
-    }
-}
+/**
+ * Sends a POST request to queue a find_duplicates job,
+ * detecting archive duplicates based on their thumbnail hashes.
+ */
+Duplicates.findDuplicates = function () {
 
-Duplicates.state = {
-    limit: 100,
-    threshold: loadStoredThreshold(),
-    relation: "",
-    total: 0,
+    let formData = new FormData();
+    formData.append("args", "[5]"); // threshold
+    formData.append("priority", 0);
+
+    $(".find-duplicates").hide();
+    $("#processing").show();
+
+    Server.callAPIBody("/api/minion/find_duplicates/queue", "POST", formData,
+        "Queued up a job to find duplicates! Stay tuned for updates or check the Minion console.",
+        I18N.MinionSendError,
+        (data) => {
+            // Disable the buttons to avoid accidental double-clicks.
+            $(".find-duplicates").prop("disabled", true);
+            localStorage.dupeMinionJob = data.job;
+
+            Duplicates.pollMinionJob(data.job);
+        },
+    );
 };
 
-Duplicates._poller = null;
-Duplicates.lastCursorThreshold = null;
-
-Duplicates.deckIsStale = function () {
-    return Duplicates.lastCursorThreshold !== null
-        && Duplicates.lastCursorThreshold !== Duplicates.state.threshold;
-};
-
-Duplicates.refreshStats = function () {
-    fetch(new LRR.ApiURL("/api/duplicates/stats"))
-        .then((r) => r.json())
-        .then((s) => {
-            const pending = s.archives_pending || 0;
-            const hashed = s.archives_with_hashes || 0;
-            const total = s.archives_total || 0;
-            const deckSize = s.deck_size || 0;
-            const deckTarget = s.deck_target || 100;
-            Duplicates.lastCursorThreshold =
-                (s.cursor_threshold !== null && s.cursor_threshold !== undefined)
-                    ? s.cursor_threshold + 0
-                    : null;
-            const stale = Duplicates.deckIsStale();
-            const sweepDone = s.sweep_done ? " · sweep complete" : "";
-            const deckThr = Duplicates.lastCursorThreshold !== null
-                ? ` (≤${Duplicates.lastCursorThreshold})`
-                : "";
-            const staleLabel = stale ? " · stale, click Find to rebuild" : "";
-            const lastScan = s.last_scan_ts ? new Date(s.last_scan_ts * 1000).toLocaleString() : "never";
-            const coverHashed  = s.archives_with_coverhashes || 0;
-            const coverPending = s.archives_cover_pending    || 0;
-            const leadHashed = s.archives_with_leadhashes || 0;
-            const leadPending = s.archives_lead_pending || 0;
-            const lastRelationScan = s.last_relation_scan_ts ? new Date(s.last_relation_scan_ts * 1000).toLocaleString() : "never";
-            $("#dupes-stats").text(
-                `deck: ${deckSize}/${deckTarget}${deckThr}${sweepDone}${staleLabel} · hashed: ${hashed}/${total} · pending: ${pending} · covers: ${coverHashed}/${total} (pending ${coverPending}) · leads: ${leadHashed}/${total} (pending ${leadPending}) · last relation scan: ${lastRelationScan} · last scan: ${lastScan}`,
-            );
-            // Find stays enabled while the deck threshold is stale: clicking
-            // it triggers a server-side rebuild. Only block when the deck is
-            // full AND already matches the slider's threshold.
-            $("#run-find").prop("disabled", leadPending > 0);
-            // Auto-poll while either backfill is in flight; stop once both reach 0.
-            const anyPending = pending > 0 || coverPending > 0 || leadPending > 0;
-            if (anyPending && Duplicates._poller === null) {
-                Duplicates._poller = setInterval(Duplicates.refreshStats, 10000);
-            } else if (!anyPending && Duplicates._poller !== null) {
-                clearInterval(Duplicates._poller);
-                Duplicates._poller = null;
+Duplicates.pollMinionJob = function (job) {
+    // Check minion job state periodically while we're on this page
+    Server.checkJobStatus(
+        job,
+        true,
+        (d) => {
+            // Refresh the window so that the newly found duplicates are shown.
+            // Make sure the URL doesn't contain delete=1 so we don't instantly delete them.
+            if (window.location.href.includes("delete=1")) {
+                window.location.href = window.location.href.replace(/delete=1/, "");
             }
-        })
-        .catch(() => {
-            $("#dupes-stats").text("stats unavailable");
+            else {
+                // If the job is done, reload the page to show the results.
+                let job = localStorage.getItem("dupeMinionJob");
+                localStorage.setItem("previousDupeJob", job);
+                localStorage.removeItem("dupeMinionJob");
+                window.location.reload();
+            }
+        },
+        (error) => {
+            $(".find-duplicates").prop("disabled", false);
+            LRR.showErrorToast(I18N.MinionCheckError, error);
+        },
+    );
+}
+
+Duplicates.drawCallbackDataTable = function (settings) {
+    var groupColumn = 0;
+    var api = this.api();
+    var rows = api.rows({ page: "current" }).nodes();
+    var lastGroup = null;
+
+    // Iterate over the data once to insert group rows at end of each group
+    api.column(groupColumn, { page: "current" })
+        .data()
+        .each(function (group, i) {
+            if (lastGroup && lastGroup !== group) {
+                $(rows).eq(i).before(
+                    `<tr class="separator"><td colspan="10" style="padding: 0px;"></td></tr>`
+                );
+            }
+            lastGroup = group;
         });
+}
+
+Duplicates.initializeDataTable = function () {
+
+    // Classes for even/odd lines
+    $.fn.dataTableExt.oStdClasses.sStripeOdd = "gtr0";
+    $.fn.dataTableExt.oStdClasses.sStripeEven = "gtr1";
+
+    Duplicates.dt = $("#ds").DataTable({
+        dom: `<"table-control-wrapper" <"search-box" f><"length-box" l>><t><p>`,
+        // avoid sorting columns as it messes with the grouping
+        columns: [
+            { title: "Group-Key", visible: false },
+            { title: "", orderable: false, width: "20px" },
+            { title: "Title", orderable: false },
+            { title: "Pages", orderable: false, width: "52px" },
+            { title: "Filename", orderable: false },
+            { title: "Filesize", orderable: false },
+            { title: "Date", orderable: false },
+            { title: "Tags", orderable: false },
+            { title: "Action", orderable: false }
+        ],
+        order: [[0, "asc"]],
+        autoWidth: false,
+        pageLength: 10,
+        deferRender: true,
+        drawCallback: Duplicates.drawCallbackDataTable
+    });
 };
 
-// Shared helper: trigger a server-side rebuild when the slider/preset has
-// drifted from the deck's current threshold, then refresh stats and pairs
-// once the Minion job has had a moment to land.
-Duplicates.rebuildDeckIfStale = function () {
-    if (!Duplicates.deckIsStale()) return;
-    Duplicates.queueFind()
-        .then(() => {
-            setTimeout(() => {
-                Duplicates.refreshStats();
-                Duplicates.loadPairs();
-            }, 1500);
-        })
-        .catch((err) => {
-            LRR.showPopUp({ title: "Could not rebuild deck", text: String(err), icon: "error" });
-        });
-};
+Duplicates.compareDuplicates = function (rows, field, fieldType, order = "desc") {
+    var values = [];
+    var rowToExclude = null;
 
-Duplicates.loadPairs = function () {
-    const url =
-        new LRR.ApiURL("/api/duplicates/pairs") +
-        `?max_score=${encodeURIComponent(Duplicates.state.threshold)}` +
-        `&limit=${Duplicates.state.limit}` +
-        (Duplicates.state.relation ? `&relation=${encodeURIComponent(Duplicates.state.relation)}` : "");
+    // Determine comparator and starting value based on order
+    var comparator = order === "asc" ? Math.min : Math.max;
+    var targetValue = order === "asc" ? Infinity : -Infinity;
 
-    $("#dupes-list").html("<div class=\"dupes-loading\"><i class=\"fas fa-spinner fa-spin\"></i> Loading pairs…</div>");
-    fetch(url)
-        .then((r) => r.json())
-        .then((data) => {
-            Duplicates.state.total = data.filtered_total !== undefined ? data.filtered_total : (data.total || 0);
-            Duplicates.renderPairs(data.pairs || []);
-        })
-        .catch(() => {
-            $("#dupes-list").text("failed to load pairs");
-        });
-};
+    // Function to parse the value based on the field type
+    function parseValue(value) {
+        if (fieldType === "integer") {
+            return parseInt(value, 10);
+        } else if (fieldType === "float") {
+            return parseFloat(value);
+        } else if (fieldType === "date") {
+            return new Date(value).getTime();
+        }
+        return value;
+    }
+    // Iterate over rows to find the target row based on the comparator
+    rows.each(function () {
+        var row = $(this);
+        var value = parseValue(row.find(`.${field}`).text());
+        values.push(value);
 
-Duplicates.renderPairs = function (pairs) {
-    const $list = $("#dupes-list").empty();
-    if (!pairs.length) {
-        $list.text("No pairs at this threshold.");
+        if (comparator(value, targetValue) === value) {
+            targetValue = value;
+            rowToExclude = row;
+        }
+    });
+
+    // Do not check anything if all values are equal
+    var allEqual = values.every((val) => val === values[0]);
+    if (allEqual) return;
+
+    // Iterate over rows again to check the checkbox for all rows except the target row
+    rows.each(function () {
+        var row = $(this);
+        if (rowToExclude && row[0] !== rowToExclude[0]) {
+            row.find(".form-check-input").prop("checked", true);
+        }
+    });
+}
+
+Duplicates.conditionChange = function (event) {
+    var option = $(event.target).val();
+
+    // Clear current selection
+    $(".form-check-input").prop("checked", false);
+
+    // Early return if none should be selected
+    if (option === "none") {
         return;
     }
-    pairs.forEach((p) => {
-        const $card = $(`<div class="dupe-pair-card"></div>`);
-        const isCover = p.pass === "cover";
-        const hasRelation = !!p.relation;
-        const passBadge = isCover ? `<span class="dupe-pass-badge" title="Found by the cover-only pass">COVER</span> ` : "";
-        const relationBadge = hasRelation
-            ? `<span class="dupe-relation-badge">${LRR.encodeHTML(p.relation.replace(/_/g, " "))}</span> `
-            : "";
-        let scoreLabel = `score ${p.score.toFixed(1)} · pcount Δ ${p.page_count_delta}`;
-        if (hasRelation) {
-            scoreLabel = `${relationBadge}confidence ${Math.round((p.confidence || 0) * 100)}% · lead ${p.lead_hamming} · title ${Math.round((p.title_score || 0) * 100)}%`;
-        } else if (isCover) {
-            scoreLabel = `${passBadge}cover hamming ${p.score.toFixed(0)} · pcount Δ ${p.page_count_delta}`;
-        }
-        $card.append(`<div class="dupe-score">${scoreLabel}</div>`);
-        if ((p.risk_flags || []).length) {
-            const flags = (p.risk_flags || []).map((flag) => LRR.encodeHTML(flag.replace(/_/g, " "))).join(" · ");
-            $card.append(`<div class="dupe-risk">${flags}</div>`);
-        }
 
-        const renderSide = (side, archive) => {
-            const isDelete = archive.arcid === p.suggested_delete;
-            const isKeep = archive.arcid === p.suggested_keep;
-            const roleClass = isDelete ? " dupe-suggest-delete" : isKeep ? " dupe-suggest-keep" : "";
-            const $side = $(`<div class="dupe-side${roleClass}"></div>`);
-            if (isDelete || isKeep) {
-                $side.append(`<div class="dupe-side-role">${isDelete ? "Suggested delete" : "Suggested keep"}</div>`);
-            }
-            $side.append(
-                `<a href="${new LRR.ApiURL("/reader?id=" + encodeURIComponent(archive.arcid))}">` +
-                    `<img class="dupe-thumb" src="${new LRR.ApiURL("/api/archives/" + encodeURIComponent(archive.arcid) + "/thumbnail")}" alt="${LRR.encodeHTML(archive.title || "")}" />` +
-                    `</a>`,
-            );
-            $side.append(`<div class="dupe-title">${$(`<div></div>`).text(archive.title || archive.name).html()}</div>`);
-            const sizeBytes = archive.arcsize || 0;
-            const sizeMB = sizeBytes >= 1073741824
-                ? (sizeBytes / 1073741824).toFixed(2) + " GB"
-                : (sizeBytes / 1048576).toFixed(1) + " MB";
-            const tagsLbl = (archive.tag_count || 0) + " tags";
-            const metaParts = [`${archive.pagecount}p`, sizeMB];
-            if (archive.language) metaParts.push(archive.language);
-            if (archive.date_added) {
-                const ts = parseInt(archive.date_added, 10);
-                metaParts.push(Number.isFinite(ts) && ts > 0
-                    ? new Date(ts * 1000).toISOString().slice(0, 10)
-                    : archive.date_added);
-            }
-            metaParts.push(tagsLbl);
-            const $meta = $(`<div class="dupe-meta"></div>`).text(metaParts.join(" · "));
-            $side.append($meta);
-            $side.append(
-                `<button class="stdbtn dupe-delete" data-arcid="${archive.arcid}" data-side="${side}">Delete this side</button>`,
-            );
-            return $side;
+    $(".duplicate-group").each((_, group) => {
+        // Find all rows of a group
+        var groupRow = $(group);
+        var rowsInGroup = groupRow.add(groupRow.nextUntil(".separator"));
+
+        // Compare rows in group according to selected option
+        switch (option) {
+            case "less-tags":
+                Duplicates.compareDuplicates(rowsInGroup, "tag-count", "integer");
+                break;
+            case "less-size":
+                Duplicates.compareDuplicates(rowsInGroup, "file-size", "float");
+                break;
+            case "less-pages":
+                Duplicates.compareDuplicates(rowsInGroup, "page-count", "integer");
+                break;
+            case "not-old":
+                Duplicates.compareDuplicates(rowsInGroup, "date-added", "date");
+                break;
+            case "not-young":
+                Duplicates.compareDuplicates(rowsInGroup, "date-added", "date", "asc");
+                break;
         };
+    });
+};
 
-        const $row = $(`<div class="dupe-row"></div>`);
-        $row.append(renderSide("a", p.a));
-        const $mid = $(`<div class="dupe-middle"></div>`);
-        if (hasRelation) {
-            $mid.append(`<div class="dupe-perpage">${LRR.encodeHTML(p.suggested_action || "review")}</div>`);
-            $mid.append(`<div class="dupe-perpage">page ratio ${Math.round((p.page_ratio || 0) * 100)}%</div>`);
-        } else {
-            $mid.append(`<div class="dupe-perpage">[${(p.per_page || []).join(", ")}]</div>`);
+Duplicates.deleteArchive = function (event) {
+    LRR.showPopUp({
+        text: I18N.ConfirmArchiveDeletion,
+        icon: "warning",
+        showCancelButton: true,
+        focusConfirm: false,
+        confirmButtonText: I18N.ConfirmYes,
+        reverseButtons: true,
+        confirmButtonColor: "#d33",
+    }).then((result) => {
+        if (result.isConfirmed) {
+            let archiveId = $(event.currentTarget).attr("data-id");
+            Server.deleteArchive(archiveId, () => { Duplicates.dt.row($(event.currentTarget).parents("tr")).remove().draw() });
         }
-        $mid.append(
-            `<button class="stdbtn dupe-dismiss" data-pair="${p.id_a}|${p.id_b}">Not a duplicate</button>`,
-        );
-        $row.append($mid);
-        $row.append(renderSide("b", p.b));
-        $card.append($row);
-        $list.append($card);
     });
 };
 
-// Wrapper that surfaces both network failures and JSON-level error fields.
-// Without this, a 5xx with a JSON {error: "..."} body silently looks identical
-// to success because fetch resolves on any HTTP status.
-Duplicates.fetchJSON = function (url, init) {
-    return fetch(url, init).then((r) => {
-        return r.json().then((json) => {
-            if (!r.ok || json.error) {
-                throw new Error(json.error || `HTTP ${r.status}`);
-            }
-            return json;
-        });
-    });
-};
+Duplicates.deleteArchives = function () {
+    LRR.showPopUp({
+        text: I18N.ConfirmArchivesDeletion,
+        icon: "warning",
+        showCancelButton: true,
+        focusConfirm: false,
+        confirmButtonText: I18N.ConfirmYes,
+        reverseButtons: true,
+        confirmButtonColor: "#d33",
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $("table tbody tr").each(function () {
+                const row = $(this);
+                const isChecked = row.find(".form-check-input").is(":checked");
+                const dataId = row.find(".delete-archive").attr("data-id");
 
-Duplicates.deleteArchive = function (arcid) {
-    return Duplicates.fetchJSON(
-        new LRR.ApiURL("/api/archives/" + encodeURIComponent(arcid)),
-        { method: "DELETE" },
-    );
-};
-
-Duplicates.dismissPair = function (pair) {
-    return Duplicates.fetchJSON(new LRR.ApiURL("/api/duplicates/pairs"), {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pair }),
-    });
-};
-
-Duplicates.queueFind = function () {
-    return Duplicates.fetchJSON(
-        new LRR.ApiURL("/api/minion/find_relation_duplicates/queue?args=[]"),
-        { method: "POST" },
-    );
-};
-
-Duplicates.queueBackfill = function () {
-    return Duplicates.fetchJSON(
-        new LRR.ApiURL("/api/minion/backfill_dedup_signals/queue?args=[]"),
-        { method: "POST" },
-    );
-};
-
-Duplicates.queueCoverBackfill = function () {
-    return Duplicates.fetchJSON(
-        new LRR.ApiURL("/api/minion/backfill_coverhashes/queue?args=[]"),
-        { method: "POST" },
-    );
-};
-
-// Cover pass uses raw Hamming distance (0..64) on a single hash, not the
-// pcount-weighted score. The slider's threshold (12..25) lives in the same
-// numeric range as plausible Hamming caps, so we reuse it as the cover cap.
-// 12 ≈ near-identical covers, 25 ≈ visually similar; higher floods.
-Duplicates.queueFindCover = function () {
-    const args = JSON.stringify([Duplicates.state.threshold]);
-    return Duplicates.fetchJSON(
-        new LRR.ApiURL("/api/minion/find_cover_duplicates/queue?args=" + encodeURIComponent(args)),
-        { method: "POST" },
-    );
-};
-
-Duplicates.refreshDeck = function () {
-    return Duplicates.fetchJSON(
-        new LRR.ApiURL("/api/duplicates/refresh"),
-        { method: "POST" },
-    );
-};
-
-$(function () {
-    // Sync the slider/dropdown/label to the persisted threshold the page
-    // started with — the template's hardcoded `value` would otherwise
-    // override it on every reload.
-    const initial = Duplicates.state.threshold;
-    $("#threshold-slider").val(initial);
-    $("#threshold-value").text(initial);
-    $("#preset-select").val(String(initial));
-
-    Duplicates.refreshStats();
-    Duplicates.loadPairs();
-
-    $("#return").on("click", function () {
-        window.location.href = new LRR.ApiURL("/");
-    });
-
-    $("#threshold-slider").on("input", function () {
-        Duplicates.state.threshold = parseInt(this.value, 10);
-        $("#threshold-value").text(this.value);
-    });
-    $("#threshold-slider").on("change", function () {
-        saveStoredThreshold(Duplicates.state.threshold);
-        $("#preset-select").val(String(Duplicates.state.threshold));
-        Duplicates.loadPairs();
-        Duplicates.refreshStats();
-        Duplicates.rebuildDeckIfStale();
-    });
-
-    $("#preset-select").on("change", function () {
-        const v = parseInt(this.value, 10) || DUPES_THRESHOLD_DEFAULT;
-        Duplicates.state.threshold = v;
-        saveStoredThreshold(v);
-        $("#threshold-slider").val(v);
-        $("#threshold-value").text(v);
-        Duplicates.loadPairs();
-        Duplicates.refreshStats();
-        Duplicates.rebuildDeckIfStale();
-    });
-
-    $("#relation-select").on("change", function () {
-        Duplicates.state.relation = this.value;
-        Duplicates.loadPairs();
-    });
-
-    $("#run-find").on("click", function () {
-        Duplicates.queueFind()
-            .then(() => {
-                setTimeout(() => {
-                    Duplicates.refreshStats();
-                    Duplicates.loadPairs();
-                }, 1500);
-            })
-            .catch((err) => {
-                LRR.showPopUp({ title: "Could not queue match", text: String(err), icon: "error" });
+                if (isChecked && dataId) {
+                    Server.deleteArchive(dataId, () => { Duplicates.dt.row(row).remove().draw() });
+                }
             });
+        }
     });
+};
 
-    // Refresh deck: drop pairs that are already dismissed or that point at
-    // deleted archives, then queue a find to top the deck back up to 100.
-    $("#run-refresh").on("click", function () {
-        const $btn = $(this).prop("disabled", true);
-        Duplicates.refreshDeck()
-            .then((res) => {
-                const cleaned = res.total_removed || 0;
-                return Duplicates.queueFind().then(() => cleaned);
-            })
-            .then(() => {
-                // Stats refresh below makes the cleanup visible (deck size
-                // drops, then climbs back up after the find job lands), so
-                // there's no toast/popup here. The page doesn't load the
-                // react-toastify bundle either.
-                setTimeout(() => {
-                    Duplicates.refreshStats();
-                    Duplicates.loadPairs();
-                    $btn.prop("disabled", false);
-                }, 1500);
-            })
-            .catch((err) => {
-                $btn.prop("disabled", false);
-                LRR.showPopUp({ title: "Refresh failed", text: String(err), icon: "error" });
-            });
-    });
-
-    $("#run-backfill").on("click", function () {
-        Duplicates.queueBackfill()
-            .then(() => {
-                LRR.showPopUp({
-                    title: "Backfill queued",
-                    text: "Lead-page dedup signals will be computed for archives missing them.",
-                    icon: "info",
-                });
-            })
-            .catch((err) => {
-                LRR.showPopUp({ title: "Could not queue backfill", text: String(err), icon: "error" });
-            });
-    });
-
-    // Cover pass: queues backfill (no-op for archives already coverhashed)
-    // and the matcher in one shot. Backfill runs first by enqueue order;
-    // matcher only stores pairs over archives whose coverhash_v matches the
-    // configured cover_algo_version, so it self-skips archives still pending.
-    $("#run-find-cover").on("click", function () {
-        Duplicates.queueCoverBackfill()
-            .then(() => Duplicates.queueFindCover())
-            .then(() => {
-                setTimeout(() => {
-                    Duplicates.refreshStats();
-                    Duplicates.loadPairs();
-                }, 1500);
-            })
-            .catch((err) => {
-                LRR.showPopUp({ title: "Could not queue cover pass", text: String(err), icon: "error" });
-            });
-    });
-
-    $("#dupes-list").on("click", ".dupe-delete", function () {
-        const arcid = $(this).data("arcid");
-        LRR.showPopUp({
-            title: "Delete archive?",
-            text: "This permanently deletes the archive file.",
-            icon: "warning",
-            showCancelButton: true,
-        }).then((res) => {
-            if (!res.isConfirmed) return;
-            Duplicates.deleteArchive(arcid)
-                .then(() => {
-                    Duplicates.loadPairs();
-                    Duplicates.refreshStats();
-                })
-                .catch((err) => {
-                    LRR.showPopUp({ title: "Delete failed", text: String(err), icon: "error" });
-                });
-        });
-    });
-
-    $("#dupes-list").on("click", ".dupe-dismiss", function () {
-        const pair = $(this).data("pair");
-        Duplicates.dismissPair(pair)
-            .then(() => {
-                Duplicates.loadPairs();
-                Duplicates.refreshStats();
-            })
-            .catch((err) => {
-                LRR.showPopUp({ title: "Dismiss failed", text: String(err), icon: "error" });
-            });
-    });
-
+jQuery(() => {
+    Duplicates.initializeAll();
 });

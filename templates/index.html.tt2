@@ -82,7 +82,7 @@
 		<a href="[% c.url_for("/upload") %]">[% c.lh("Add Archives") %]</a>
 		<span style="margin-left:5px"></span>
 		<i class="fa fa-caret-right"></i>
-		<a href="[% c.url_for("/duplicates") %]">[% c.lh("Duplicate Detection") %]</a>
+		<a href="[% c.url_for("/duplicates_custom") %]">[% c.lh("Duplicate Detection") %]</a>
 		<span style="margin-left:5px"></span>
 		<i class="fa fa-caret-right"></i>
 		<a href="[% c.url_for("/config") %]">[% c.lh("Settings") %]</a>

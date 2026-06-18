@@ -115,6 +115,7 @@ Reader behavior:
 ### Duplicates
 
 - **Relation-aware duplicate finder** — duplicate review now uses lead-page pHash plus normalized title/source heuristics to classify duplicate, translation variant, subset, and review-only pairs, including suggested delete/keep sides and risk flags.
+- The fork relation-aware duplicate finder is mounted at `/duplicates_custom`; `/duplicates` is left close to upstream's duplicate-group page to reduce upstream-sync conflicts.
 - Technical baseline: [`docs/local-features/duplicate-detection.md`](docs/local-features/duplicate-detection.md).
 
 ### Performance

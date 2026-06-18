@@ -150,6 +150,7 @@ sub apply_routes {
     $logged_in->get('/logs/redis')->to('logging#print_redis');
 
     $logged_in->get('/duplicates')->to('duplicates#index');
+    $logged_in->get('/duplicates_custom')->to('duplicates_custom#index');
     $logged_in_api->get('/api/duplicates/stats')->to('api-duplicates#stats');
     $logged_in_api->get('/api/duplicates/pairs')->to('api-duplicates#pairs');
     $logged_in_api->delete('/api/duplicates/pairs')->to('api-duplicates#delete_pair');
