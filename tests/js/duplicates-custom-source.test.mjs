@@ -70,6 +70,7 @@ test("custom duplicate review actions do not reload the whole deck", async () =>
 test("custom duplicate finder renders pair-relative comparison chips", async () => {
     const script = await source("public/js/duplicates_custom.js");
     const styles = await source("public/css/duplicates_custom.css");
+    const template = await source("templates/duplicates_custom.html.tt2");
 
     assert.match(script, /compareArchiveSignals/);
     assert.match(script, /renderResolutionChips/);
@@ -82,6 +83,9 @@ test("custom duplicate finder renders pair-relative comparison chips", async () 
     assert.match(styles, /\.dupe-resolution-chips/);
     assert.match(styles, /\.dupe-resolution-chip/);
     assert.match(styles, /\.dupe-resolution-chip\.is-highlighted/);
+
+    assert.match(template, /duplicates_custom\.css"\) %]\?\[% version %]-comparison-chips/);
+    assert.match(template, /duplicates_custom\.js"\) %]\?\[% version %]-comparison-chips/);
 });
 
 test("custom duplicate fork-only labels do not call Maketext", async () => {
