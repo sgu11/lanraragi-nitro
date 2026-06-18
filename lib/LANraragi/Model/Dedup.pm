@@ -9,6 +9,7 @@ our @EXPORT_OK = qw(
     find_cover_duplicate_pairs_in_memory
     find_duplicate_pairs_in_memory
     find_relation_duplicates_in_memory
+    COVER_HASH_ALGO_VERSION
     compute_coverhash_for_archive
     compute_pagehashes_for_archive
     compute_leadhashes_for_archive
@@ -30,6 +31,7 @@ use Mojo::JSON qw(encode_json decode_json);
 # Page-count-delta weight in the score formula. 20 means a 100% page-count
 # mismatch contributes 20 to the score.
 use constant PCOUNT_WEIGHT => 20;
+use constant COVER_HASH_ALGO_VERSION => 2;
 
 my %STABLE_TAG_NS = map { $_ => 1 } qw(artist group parody character series language);
 
@@ -287,7 +289,7 @@ use Mojo::JSON qw(encode_json decode_json);
 #   - on failure: write coverhash_err = "<algo>:<reason>", return -1
 sub compute_coverhash_for_archive {
     my ($redis, $id, $config) = @_;
-    my $algo = $config->{cover_algo_version} // 1;
+    my $algo = $config->{cover_algo_version} // COVER_HASH_ALGO_VERSION;
 
     my $existing_v = $redis->hget($id, "coverhash_v");
     return 0 if defined $existing_v && $existing_v eq $algo;
@@ -699,7 +701,7 @@ sub find_cover_duplicate_pairs_in_memory {
     my ($cover_data, $redis, $config) = @_;
     my $max_hamming  = $config->{cover_max_hamming}     // 12;
     my $cap          = $config->{candidate_pair_cap}    // 10_000_000;
-    my $algo         = $config->{cover_algo_version}    // 1;
+    my $algo         = $config->{cover_algo_version}    // COVER_HASH_ALGO_VERSION;
     my $start_i      = $config->{cur_i}                 // 0;
     my $start_j      = $config->{cur_j}                 // 0;
     my $target_pairs = $config->{target_pairs}          // 0;

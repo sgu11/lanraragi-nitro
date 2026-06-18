@@ -115,8 +115,9 @@ Reader behavior:
 ### Duplicates
 
 - **Cover-focused duplicate finder** — duplicate review now focuses on cover-image pHash similarity and hides relation/title/source comparison factors from the custom UI.
+- **Cover pHash luminance fix** — cover hashes now use 8-bit grayscale luminance instead of clipped GREY16 output, preventing bright but unrelated covers from collapsing to Hamming 0. The cover-hash algorithm version is bumped so `Find cover matches` recomputes stale v1 hashes.
 - **One-click cover rebuild** — `Find cover matches` now queues missing cover hashes and automatically requeues the cover sweep, so a fresh library no longer needs a second manual click after hash jobs finish.
-- **Cover rebuild idempotence** — repeated rebuild passes track in-flight cover hash jobs, avoid duplicate queue spam, and refresh v2 cover fingerprints when same-ID archive replacements invalidate cover evidence.
+- **Cover rebuild idempotence** — repeated rebuild passes track in-flight cover hash jobs, avoid duplicate queue spam, and refresh versioned cover fingerprints when same-ID archive replacements invalidate cover evidence.
 - The fork duplicate finder is mounted at `/duplicates_custom`; `/duplicates` is left close to upstream's duplicate-group page to reduce upstream-sync conflicts.
 - Technical baseline: [`docs/local-features/duplicate-detection.md`](docs/local-features/duplicate-detection.md).
 

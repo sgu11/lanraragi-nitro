@@ -46,8 +46,8 @@ package CoverCtrlRedis {
         if ($k eq 'LRR_COVER_DUPLICATE_PAIR_META') {
             my $member = $fields[0] // '';
             my $json = $member eq 'id_c|id_d'
-                ? encode_json({ pass => 'cover', cover_hamming => 12, status => 'new', cover_algo_version => 1, ts => 1 })
-                : encode_json({ pass => 'cover', cover_hamming => 4, status => 'new', cover_algo_version => 1, ts => 1 });
+                ? encode_json({ pass => 'cover', cover_hamming => 12, status => 'new', cover_algo_version => 2, ts => 1 })
+                : encode_json({ pass => 'cover', cover_hamming => 4, status => 'new', cover_algo_version => 2, ts => 1 });
             $cb->([$json], undef) if $cb;
             return [$json];
         }

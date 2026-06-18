@@ -45,7 +45,7 @@ sub cover_config_from_redis {
     my %h;
     eval { %h = $redis_cfg->hgetall(CONFIG_KEY); };
     return {
-        cover_algo_version => ($h{cover_algo_version} // 1) + 0,
+        cover_algo_version => ($h{cover_algo_version} // LANraragi::Model::Dedup::COVER_HASH_ALGO_VERSION()) + 0,
         cover_max_hamming  => ($h{cover_max_hamming}  // 12) + 0,
         candidate_pair_cap => ($h{candidate_pair_cap} // 10_000_000) + 0,
         cover_cursor_i     => ($h{cover_cursor_i}     // 0) + 0,
@@ -60,6 +60,8 @@ sub cover_config_from_redis {
 sub cover_pairs {
     my ($redis_cfg, $redis, $opts) = @_;
     $opts //= {};
+    my $config = cover_config_from_redis($redis_cfg);
+    my $algo = $config->{cover_algo_version};
     my $max_score = $opts->{max_score} // 64;
     my $offset    = $opts->{offset}    // 0;
     my $limit     = $opts->{limit}     // 100;
@@ -67,7 +69,6 @@ sub cover_pairs {
     $limit = 200 if $limit > 200;
 
     my @raw = $redis_cfg->zrangebyscore(PAIR_KEY, 0, $max_score, "WITHSCORES");
-    my $total = $redis_cfg->zcount(PAIR_KEY, 0, $max_score) + 0;
 
     my @raw_tuples;
     while (@raw) {
@@ -96,10 +97,12 @@ sub cover_pairs {
     my @filtered;
     for my $t (@raw_tuples) {
         my $meta = $meta_cache{$t->[0]} // {};
+        next if (($meta->{cover_algo_version} // 0) + 0) != $algo;
         next if $status ne 'all' && (($meta->{status} // 'new') ne $status);
         push @filtered, $t;
     }
     my $filtered_total = scalar @filtered;
+    my $total = $filtered_total;
     my @pair_tuples = splice @filtered, $offset, $limit;
 
     my %seen_ids;
@@ -300,6 +303,22 @@ sub remove_pairs_for_archive {
     my ($redis_cfg, $id) = @_;
     my @members = $redis_cfg->zrange(PAIR_KEY, 0, -1);
     my @to_remove = grep { my ($a, $b) = split /\|/, $_, 2; $a eq $id || $b eq $id } @members;
+    if (@to_remove) {
+        $redis_cfg->zrem(PAIR_KEY,      @to_remove);
+        $redis_cfg->hdel(PAIR_META_KEY, @to_remove);
+    }
+    return scalar @to_remove;
+}
+
+sub remove_stale_cover_pairs {
+    my ($redis_cfg, $algo) = @_;
+    my @members = $redis_cfg->zrange(PAIR_KEY, 0, -1);
+    my @to_remove;
+    for my $m (@members) {
+        my $meta_json = $redis_cfg->hget(PAIR_META_KEY, $m) // '{}';
+        my $meta = eval { decode_json($meta_json) } // {};
+        push @to_remove, $m if (($meta->{cover_algo_version} // 0) + 0) != $algo;
+    }
     if (@to_remove) {
         $redis_cfg->zrem(PAIR_KEY,      @to_remove);
         $redis_cfg->hdel(PAIR_META_KEY, @to_remove);
@@ -521,6 +540,10 @@ sub run_cover_candidate_sweep_banded {
         $redis_cfg->hset(CONFIG_KEY, "band_cursor", 0);
     }
 
+    my $stale_removed = remove_stale_cover_pairs($redis_cfg, $cfg->{cover_algo_version});
+    $logger->info("cover sweep (banded): removed $stale_removed stale cover pair(s)")
+        if $stale_removed;
+
     my $deck_size = $redis_cfg->zcard(PAIR_KEY) + 0;
     my $room = DECK_TARGET - $deck_size;
     if ($room <= 0) {
@@ -560,7 +583,7 @@ sub run_cover_candidate_sweep_banded {
     $cfg->{pair_meta_key} = PAIR_META_KEY;
     $cfg->{dismissed_key} = DISMISSED_KEY;
 
-    my $algo   = $cfg->{cover_algo_version} // 1;
+    my $algo   = $cfg->{cover_algo_version} // LANraragi::Model::Dedup::COVER_HASH_ALGO_VERSION();
     my $stored = 0;
     my $scored = 0;
 
@@ -644,6 +667,10 @@ sub run_cover_candidate_sweep_legacy {
         $redis_cfg->hset(CONFIG_KEY, "cover_cursor_j", 0);
         $redis_cfg->hset(CONFIG_KEY, "cover_cursor_threshold", $threshold);
     }
+
+    my $stale_removed = remove_stale_cover_pairs($redis_cfg, $cfg->{cover_algo_version});
+    $logger->info("cover sweep: removed $stale_removed stale cover pair(s)")
+        if $stale_removed;
 
     my $deck_size = $redis_cfg->zcard(PAIR_KEY) + 0;
     my $room = DECK_TARGET - $deck_size;

@@ -310,35 +310,53 @@ sub fit_resize_to_exact ($buffer, $target_width, $target_height) {
 # Loads $image_path, force-resizes to 32x32, converts to single-channel uchar grayscale,
 # and returns an arrayref of 1024 pixel values (row-major, 0..255). Used by the pHash pipeline.
 sub extract_grayscale_32x32 ($image_path) {
+    return extract_grayscale_resize($image_path, 32, 32);
+}
+
+# Loads $image_path, force-resizes to $w x $h, converts to single-channel uchar grayscale,
+# and returns an arrayref of $w*$h pixel values (row-major, 0..255).
+# Uses the same pipeline as extract_grayscale_32x32.
+sub extract_grayscale_resize ($image_path, $w, $h) {
     open(my $fh, '<:raw', $image_path) or die "Can't open $image_path: $!\n";
     my $buffer = do { local $/; <$fh> };
     close $fh;
 
-    my $resized = stretch_resize($buffer, 32, 32);
+    my $resized = stretch_resize($buffer, $w, $h);
 
-    my $grey16;
-    my $cs_ret = vips_colourspace($resized, \$grey16, VIPS_INTERPRETATION_GREY16, undef);
+    my $grey;
+    my $cs_ret = vips_colourspace($resized, \$grey, VIPS_INTERPRETATION_B_W, undef);
     unref_image($resized);
     die "Error converting to greyscale: " . fetch_and_clear_error() . "\n" if $cs_ret != 0;
 
     my $gray;
-    my $cast_ret = vips_cast($grey16, \$gray, VIPS_FORMAT_UCHAR, undef);
-    unref_image($grey16);
+    my $cast_ret = vips_cast($grey, \$gray, VIPS_FORMAT_UCHAR, undef);
+    unref_image($grey);
     die "Error casting to uchar: " . fetch_and_clear_error() . "\n" if $cast_ret != 0;
 
     my $size = 0;
     my $ptr  = vips_image_write_to_memory($gray, \$size);
-    unref_image($gray);
     die "Error writing image to memory: " . fetch_and_clear_error() . "\n" unless $ptr;
-    if ($size < 1024) {
+    my $bands = vips_image_get_bands($gray);
+    unref_image($gray);
+    $bands = 3 if $bands < 1;   # guard
+
+    my $expected = $w * $h * $bands;
+    if ($size < $expected) {
         g_free($ptr);
-        die "Unexpected pixel buffer size: $size (expected >= 1024)\n";
+        die "Unexpected pixel buffer size: $size (expected >= $expected)\n";
     }
 
-    my $bytes = buffer_to_scalar($ptr, 1024);
+    my $bytes = buffer_to_scalar($ptr, $expected);
     g_free($ptr);
 
-    return [ unpack("C*", $bytes) ];
+    # vips_colourspace + cast produces 3-band interleaved data on this
+    # libvips version. Deinterleave: extract the first channel.
+    my @raw = unpack("C*", $bytes);
+    my @pixels;
+    for (my $i = 0; $i + $bands - 1 < @raw; $i += $bands) {
+        push @pixels, $raw[$i];
+    }
+    return \@pixels;
 }
 
 1;

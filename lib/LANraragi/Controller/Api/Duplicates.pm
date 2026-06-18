@@ -4,6 +4,7 @@ use Mojo::Base 'Mojolicious::Controller';
 use Mojo::JSON qw(decode_json);
 use LANraragi::Utils::Redis qw(redis_decode);
 use LANraragi::Utils::Database;
+use LANraragi::Model::Dedup ();
 
 # Preset name -> server-side max_score cap.
 my %PRESETS = (
@@ -274,7 +275,7 @@ sub stats {
     my $last_cover_scan_ts = $redis_cfg->get("LRR_DEDUP_LAST_COVER_SCAN");
     my $last_relation_scan_ts = $redis_cfg->get("LRR_DEDUP_LAST_RELATION_SCAN");
     my $algo_version       = ($config{algo_version}       // 1) + 0;
-    my $cover_algo_version = ($config{cover_algo_version} // 1) + 0;
+    my $cover_algo_version = ($config{cover_algo_version} // LANraragi::Model::Dedup::COVER_HASH_ALGO_VERSION()) + 0;
     my $lead_algo_version  = ($config{lead_algo_version}  // 2) + 0;
 
     my @ids = LANraragi::Utils::Database::all_archive_ids($redis);

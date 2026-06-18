@@ -10,8 +10,8 @@ use LANraragi::Utils::Vips;
 use LANraragi::Utils::PHash qw(hamming_hex);
 use LANraragi::Model::Dedup qw(_extract_page _get_filelist compute_coverhash_for_archive);
 
-# Algorithm version for cover fingerprint v2.
-use constant FP_VERSION => 2;
+# Algorithm version for cover fingerprint fields.
+use constant FP_VERSION => 3;
 
 # Cover page selection thresholds.
 use constant MIN_COVER_WIDTH  => 300;
@@ -166,49 +166,25 @@ sub _compute_phash_crop {
 
 sub _compute_dhash {
     my ($image_path) = @_;
-    open(my $fh, '<:raw', $image_path) or die "Can't open $image_path: $!";
-    my $buf = do { local $/; <$fh> };
-    close $fh;
 
-    # 128-bit dHash: resize to 17x16, grayscale, compare adjacent horizontal pixels.
-    my $resized = LANraragi::Utils::Vips::stretch_resize($buf, 17, 16);
-    my $grey16;
-    my $cs_ret = LANraragi::Utils::Vips::vips_colourspace(
-        $resized,
-        \$grey16,
-        LANraragi::Utils::Vips::VIPS_INTERPRETATION_GREY16,
-        undef
-    );
-    LANraragi::Utils::Vips::unref_image($resized);
-    die "dHash colourspace error" if $cs_ret != 0;
-
-    my $gray;
-    my $cast_ret = LANraragi::Utils::Vips::vips_cast(
-        $grey16,
-        \$gray,
-        LANraragi::Utils::Vips::VIPS_FORMAT_UCHAR,
-        undef
-    );
-    LANraragi::Utils::Vips::unref_image($grey16);
-    die "dHash cast error" if $cast_ret != 0;
-
-    my ($bytes, $size) = LANraragi::Utils::Vips::read_pixels($gray);
-    LANraragi::Utils::Vips::unref_image($gray);
-    my @pixels = unpack("C*", $bytes);
+    # 128-bit dHash: resize to 17x8, extract single-channel uchar pixels,
+    # compare adjacent horizontal pixel values. 16 comparisons x 8 rows = 128 bits.
+    my $pixels = LANraragi::Utils::Vips::extract_grayscale_resize($image_path, 17, 8);
+    # $pixels is an arrayref of 17*8 = 136 uchar values
 
     my $bits = '';
-    for my $row (0 .. 15) {
+    for my $row (0 .. 7) {
         for my $col (0 .. 15) {
-            my $left  = $pixels[$row * 17 + $col];
-            my $right = $pixels[$row * 17 + $col + 1];
+            my $left  = $pixels->[$row * 17 + $col];
+            my $right = $pixels->[$row * 17 + $col + 1];
             $bits .= ($left > $right) ? '1' : '0';
         }
     }
 
-    # Pack 128 bits into 32 hex chars.
+    # Pack 128 bits into 32 hex chars (8 bits per byte × 16 bytes)
     my $hex = '';
-    for my $i (0 .. 31) {
-        $hex .= sprintf("%x", oct("0b" . substr($bits, $i * 4, 4)));
+    for my $i (0 .. 15) {
+        $hex .= sprintf("%02x", oct("0b" . substr($bits, $i * 8, 8)));
     }
     return $hex;
 }
@@ -246,7 +222,7 @@ sub _compute_color_histogram {
     my $bands = LANraragi::Utils::Vips::bands($uchar);
     LANraragi::Utils::Vips::unref_image($uchar);
     my @pixels = unpack("C*", $bytes);
-    die "color histogram expected RGB pixels" unless $bands >= 3;
+    die "color histogram expected >=3 bands, got $bands" unless $bands >= 3;
 
     # 6-bin normalized HSV histogram: 2 hue bins × 3 value bins
     my @hist = (0, 0, 0, 0, 0, 0);

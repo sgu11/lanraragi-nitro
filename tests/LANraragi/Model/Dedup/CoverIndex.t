@@ -79,8 +79,11 @@ package CoverTestRedis {
         my ($self, $k, $start, $stop) = @_;
         my %s = %{$CoverTestData::zset{$k} // {}};
         my @sorted = sort { $s{$a} <=> $s{$b} } keys %s;
+        return () unless @sorted;
+        return () if $start > $#sorted;
         my $last = $stop < 0 ? $#sorted : $stop;
-        return @sorted[$start > $#sorted ? $#sorted : $start .. $last];
+        $last = $#sorted if $last > $#sorted;
+        return @sorted[$start .. $last];
     }
     sub zadd {
         my ($self, $k, $score, $m) = @_;
@@ -187,6 +190,13 @@ $dedup_mod->redefine('find_cover_duplicate_pairs_in_memory', sub {
 
 # --- Tests --------------------------------------------------------------
 
+note("=== cover config defaults to current cover hash algorithm ===");
+reset_state();
+{
+    my $cfg = LANraragi::Model::Dedup::CoverIndex::cover_config_from_redis($redis_cfg);
+    is($cfg->{cover_algo_version}, 2, "default cover hash algorithm version invalidates stale v1 hashes");
+}
+
 note("=== cover_stats returns cover-only data ===");
 reset_state();
 {
@@ -205,7 +215,7 @@ reset_state();
     $CoverTestData::zset{'LRR_COVER_DUPLICATE_PAIRS'}{'id1|id2'} = 5;
     $CoverTestData::hash{'LRR_COVER_DUPLICATE_PAIR_META'}{'id1|id2'} = encode_json({
         pass => 'cover', cover_hamming => 5, status => 'new',
-        cover_algo_version => 1, ts => time(),
+        cover_algo_version => 2, ts => time(),
     });
     my $r = LANraragi::Model::Dedup::CoverIndex::cover_pairs($redis_cfg, $redis, { max_score => 10 });
     is(scalar @{$r->{pairs}}, 1, "one cover pair returned");
@@ -214,6 +224,27 @@ reset_state();
     is($r->{pairs}[0]{pass}, 'cover', "pass is cover");
     is($r->{total}, 1, "total correct");
     is($r->{filtered_total}, 1, "filtered_total correct");
+}
+
+note("=== cover_pairs hides stale cover algorithm pairs ===");
+reset_state();
+{
+    @CoverTestData::hgetall_return = (cover_algo_version => 2);
+    $CoverTestData::zset{'LRR_COVER_DUPLICATE_PAIRS'}{'id1|id2'} = 0;
+    $CoverTestData::zset{'LRR_COVER_DUPLICATE_PAIRS'}{'id2|id3'} = 4;
+    $CoverTestData::hash{'LRR_COVER_DUPLICATE_PAIR_META'}{'id1|id2'} = encode_json({
+        pass => 'cover', cover_hamming => 0, status => 'new',
+        cover_algo_version => 1, ts => time(),
+    });
+    $CoverTestData::hash{'LRR_COVER_DUPLICATE_PAIR_META'}{'id2|id3'} = encode_json({
+        pass => 'cover', cover_hamming => 4, status => 'new',
+        cover_algo_version => 2, ts => time(),
+    });
+
+    my $r = LANraragi::Model::Dedup::CoverIndex::cover_pairs($redis_cfg, $redis, { max_score => 10 });
+    is(scalar @{$r->{pairs}}, 1, "only current-version cover pairs are returned");
+    is($r->{pairs}[0]{id_a}, 'id2', "current-version pair remains visible");
+    is($r->{filtered_total}, 1, "filtered_total excludes stale pairs");
 }
 
 note("=== delete_cover_pair adds to dismissed set ===");
@@ -324,12 +355,41 @@ reset_state();
 {
     $find_called = 0;
     for my $i (1..100) {
-        $CoverTestData::zset{'LRR_COVER_DUPLICATE_PAIRS'}{"a$i|b$i"} = $i;
+        my $member = "a$i|b$i";
+        $CoverTestData::zset{'LRR_COVER_DUPLICATE_PAIRS'}{$member} = $i;
+        $CoverTestData::hash{'LRR_COVER_DUPLICATE_PAIR_META'}{$member} = encode_json({
+            pass => 'cover', cover_hamming => $i, cover_algo_version => 2, ts => time(),
+        });
     }
     $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'cover_cursor_threshold'} = '12';
     $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'band_buckets_built'} = '1';
     my $result = LANraragi::Model::Dedup::CoverIndex::run_cover_candidate_sweep($redis, $redis_cfg, 12);
     ok($result->{deck_full}, "deck_full flag set when deck is full");
+}
+
+note("=== run_cover_candidate_sweep removes stale algorithm pairs before deck-full check ===");
+reset_state();
+{
+    $find_called = 0;
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'cover_algo_version'} = '2';
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'cover_cursor_threshold'} = '12';
+    for my $i (1..100) {
+        my $member = "old$i|stale$i";
+        $CoverTestData::zset{'LRR_COVER_DUPLICATE_PAIRS'}{$member} = 0;
+        $CoverTestData::hash{'LRR_COVER_DUPLICATE_PAIR_META'}{$member} = encode_json({
+            pass => 'cover', cover_hamming => 0, cover_algo_version => 1, ts => time(),
+        });
+    }
+    $CoverTestData::hash{'id1'}{'coverhash'}    = 'a1b2c3d4e5f6a1b2';
+    $CoverTestData::hash{'id1'}{'coverhash_v'}  = '2';
+    $CoverTestData::hash{'id2'}{'coverhash'}    = 'a1b2c3d4aaaaaaaa';
+    $CoverTestData::hash{'id2'}{'coverhash_v'}  = '2';
+    $CoverTestData::hash{'id3'}{'coverhash'}    = 'fffeeedddcccbbaa';
+    $CoverTestData::hash{'id3'}{'coverhash_v'}  = '2';
+
+    my $result = LANraragi::Model::Dedup::CoverIndex::run_cover_candidate_sweep($redis, $redis_cfg, 12);
+    ok(!$result->{deck_full}, "stale v1 pairs do not keep the deck full after a version bump");
+    is($find_called, 1, "matcher runs after stale pair cleanup");
 }
 
 done_testing();

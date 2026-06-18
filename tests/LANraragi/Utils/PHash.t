@@ -72,4 +72,13 @@ note("re-encoding the same image yields a small Hamming distance");
     cmp_ok($dist, "<=", 8, "Re-encoded copy should be within 8 bits (got $dist)");
 }
 
+note("visually different bright images do not collapse to identical pHashes");
+{
+    my $a = LANraragi::Utils::PHash::compute_phash_64("$cwd/public/img/wait_warmly.jpg");
+    my $b = LANraragi::Utils::PHash::compute_phash_64("$cwd/public/img/notfound.jpg");
+    my $dist = LANraragi::Utils::PHash::hamming_hex($a, $b);
+
+    cmp_ok($dist, ">", 8, "Different bright images should stay separated (got $dist)");
+}
+
 done_testing();
