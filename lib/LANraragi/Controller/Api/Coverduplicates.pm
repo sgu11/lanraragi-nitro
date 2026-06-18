@@ -1,4 +1,4 @@
-package LANraragi::Controller::Api::CoverDuplicates;
+package LANraragi::Controller::Api::Coverduplicates;
 use Mojo::Base 'Mojolicious::Controller';
 
 use Mojo::JSON qw(decode_json encode_json);
