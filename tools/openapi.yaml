@@ -2932,6 +2932,9 @@ paths:
               - compute_coverhash
               - backfill_coverhashes
               - find_cover_duplicates
+              - find_cover_duplicates_isolated
+              - compute_cover_fingerprint
+              - backfill_cover_fingerprints
               - compute_dedup_signals
               - backfill_dedup_signals
               - find_relation_duplicates
@@ -4063,6 +4066,100 @@ paths:
         '200':
           description: Refresh result with removed counts
       x-mojo-to: 'api-duplicates#refresh'
+  /api/duplicates/cover/stats:
+    get:
+      summary: Cover deduplicator stats and config
+      tags: [Misc]
+      responses:
+        '200':
+          description: Stats payload for the cover-only duplicate pipeline
+      x-mojo-to: 'api-coverduplicates#stats'
+  /api/duplicates/cover/pairs:
+    get:
+      summary: List ranked cover duplicate pairs
+      tags: [Misc]
+      parameters:
+        - in: query
+          name: threshold
+          schema: { type: number }
+          description: Cover Hamming distance ceiling (default 25).
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 100, maximum: 200 }
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [new, all, resolved, same_cover, variant, not_duplicate, needs_review]
+          description: Review status filter (default new).
+      responses:
+        '200':
+          description: List of cover duplicate pairs
+      x-mojo-to: 'api-coverduplicates#pairs'
+    delete:
+      summary: Mark a cover pair as not-a-duplicate
+      tags: [Misc]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pair]
+              properties:
+                pair:
+                  type: string
+                  example: "abc...|def..."
+      responses:
+        '200':
+          description: Pair dismissed
+      x-mojo-to: 'api-coverduplicates#delete_pair'
+  /api/duplicates/cover/refresh:
+    post:
+      summary: Drop dismissed and orphan-archive pairs from the cover deck
+      tags: [Misc]
+      responses:
+        '200':
+          description: Refresh result with removed counts
+      x-mojo-to: 'api-coverduplicates#refresh'
+  /api/duplicates/cover/rebuild:
+    post:
+      summary: Clean up legacy cover pairs and rebuild the cover candidate deck
+      description: >-
+        One-shot composite operation: removes pass=cover entries from the
+        legacy mixed deck, queues missing cover hash jobs when needed, then
+        requeues itself to run the cover candidate sweep and top up the
+        cover-specific deck (LRR_COVER_DUPLICATE_PAIRS).
+      tags: [Misc]
+      responses:
+        '200':
+          description: Rebuild result with stored count and deck state
+      x-mojo-to: 'api-coverduplicates#rebuild'
+  /api/duplicates/cover/status:
+    post:
+      summary: Update review status for a cover pair
+      tags: [Misc]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pair, status]
+              properties:
+                pair:
+                  type: string
+                  example: "abc...|def..."
+                status:
+                  type: string
+                  enum: [same_cover, variant, not_duplicate, needs_review, resolved]
+      responses:
+        '200':
+          description: Status updated
+      x-mojo-to: 'api-coverduplicates#update_status'
   /stamps/{id}:
     get:
       operationId: getStamp

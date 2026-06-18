@@ -10,6 +10,8 @@ use LANraragi::Utils::Logging  ();
 
 use LANraragi::Model::Config;
 use LANraragi::Model::Dedup;
+use LANraragi::Model::Dedup::CoverIndex;
+use LANraragi::Model::Dedup::CoverFingerprint;
 
 # Fork-only Minion tasks for the duplicate-detection suite (pagehash, coverhash,
 # relation/lead-signal matching and their backfills). Kept out of
@@ -42,6 +44,78 @@ sub _dedup_config_from_redis {
         candidate_block_match_count         => ($h{candidate_block_match_count}         // 2)    + 0,
         candidate_bucket_cap                => ($h{candidate_bucket_cap}                // 100)  + 0,
     };
+}
+
+sub _run_find_cover_duplicates_isolated {
+    my ($job, $redis, $redis_cfg, $threshold_arg) = @_;
+
+    my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+    my $cfg    = _dedup_config_from_redis($redis_cfg);
+    my $minion = LANraragi::Model::Config->get_minion;
+
+    # One-time legacy cleanup.
+    my $cleaned = LANraragi::Model::Dedup::CoverIndex::cleanup_legacy_cover_pairs($redis_cfg);
+    $logger->info("find_cover_duplicates_isolated: cleaned $cleaned legacy cover pair(s)");
+
+    # Composite rebuild: queue missing cover hashes before sweeping. If any
+    # hashes were queued, requeue this same task once so a single UI click can
+    # complete the hash-then-sweep flow.
+    my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+    my $pending  = 0;
+    my $enqueued = 0;
+    my $skipped  = 0;
+    for my $id (@ids) {
+        my $v   = $redis->hget($id, "coverhash_v")   // '';
+        my $err = $redis->hget($id, "coverhash_err") // '';
+        if ($v eq $cfg->{cover_algo_version}) {
+            $skipped++;
+            next;
+        }
+        if ($err =~ /^\Q$cfg->{cover_algo_version}\E:/) {
+            $skipped++;
+            next;
+        }
+        $pending++;
+        $minion->enqueue(
+            compute_coverhash => [ $id ] => { priority => 0 }
+        );
+        $enqueued++;
+    }
+
+    if ($pending > 0) {
+        $minion->enqueue(
+            find_cover_duplicates_isolated => [ $threshold_arg ] => { priority => 0, delay => 30 }
+        );
+        $redis->quit;
+        $redis_cfg->quit;
+        $logger->info(
+            "find_cover_duplicates_isolated: $pending archives pending cover hashes " .
+            "(enqueued $enqueued, skipped $skipped). Sweep requeued."
+        );
+        $job->finish({
+            stored         => 0,
+            pending        => $pending,
+            enqueued       => $enqueued,
+            skipped        => $skipped,
+            sweep_deferred => 1,
+            requeued       => 1,
+            legacy_cleaned => $cleaned,
+        });
+        return;
+    }
+
+    # All cover hashes ready -- run the sweep.
+    my $threshold = defined $threshold_arg ? $threshold_arg + 0 : undef;
+    my $result = LANraragi::Model::Dedup::CoverIndex::run_cover_candidate_sweep(
+        $redis, $redis_cfg, $threshold, $logger
+    );
+
+    $redis->quit;
+    $redis_cfg->quit;
+    $result->{legacy_cleaned}  = $cleaned;
+    $result->{pending}         = $pending;
+    $result->{sweep_deferred}  = 0;
+    $job->finish($result);
 }
 
 sub add_tasks {
@@ -269,6 +343,73 @@ sub add_tasks {
                 $logger->debug("compute_coverhash ok $id");
             }
             $job->finish({ rc => $rc });
+        }
+    );
+
+    # Cover fingerprint v2: multi-signal fingerprint (phash_fit, phash_crop,
+    # dHash, color histogram). Runs alongside the legacy compute_coverhash.
+    $minion->add_task(
+        compute_cover_fingerprint => sub {
+            my ($job, $id) = @_;
+            my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $cfg       = _dedup_config_from_redis($redis_cfg);
+            $redis_cfg->quit;
+
+            my $rc = LANraragi::Model::Dedup::CoverFingerprint::compute_cover_fingerprint_for_archive($redis, $id, $cfg);
+            $redis->quit;
+
+            if ($rc < 0) {
+                $logger->warn("compute_cover_fingerprint failed for $id");
+            } elsif ($rc == 0) {
+                $logger->debug("compute_cover_fingerprint skip $id (already at v" . LANraragi::Model::Dedup::CoverFingerprint::FP_VERSION . ")");
+            } else {
+                $logger->debug("compute_cover_fingerprint ok $id");
+            }
+            $job->finish({ rc => $rc });
+        }
+    );
+
+    $minion->add_task(
+        backfill_cover_fingerprints => sub {
+            my ($job) = @_;
+            my $logger    = LANraragi::Utils::Logging::get_logger("Minion", "minion");
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+
+            my $fp_version = LANraragi::Model::Dedup::CoverFingerprint::FP_VERSION;
+            my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+            my $total    = scalar @ids;
+            my $enqueued = 0;
+            my $skipped  = 0;
+            my $seen     = 0;
+            $redis_cfg->del("LRR_COVER_FP_BACKFILL_CURSOR");
+            $logger->info("backfill_cover_fingerprints: scanning $total archives (fp_version=$fp_version)");
+            for my $id (@ids) {
+                $seen++;
+                my $v   = $redis->hget($id, "cover_fp_v")   // '';
+                my $err = $redis->hget($id, "cover_fp_err") // '';
+                if ($v eq $fp_version) {
+                    $skipped++;
+                    next;
+                }
+                if ($err =~ /^\Q$fp_version\E:/) {
+                    $skipped++;
+                    next;
+                }
+                LANraragi::Model::Config->get_minion->enqueue(
+                    compute_cover_fingerprint => [ $id ] => { priority => 0 }
+                );
+                $enqueued++;
+                $redis_cfg->set("LRR_COVER_FP_BACKFILL_CURSOR", $id);
+                $logger->info("backfill_cover_fingerprints: progress $seen/$total (enqueued=$enqueued skipped=$skipped)")
+                    if $seen % 500 == 0;
+            }
+            $redis->quit;
+            $redis_cfg->quit;
+            $logger->info("backfill_cover_fingerprints: done enqueued=$enqueued skipped=$skipped total=$total");
+            $job->finish({ enqueued => $enqueued, skipped => $skipped, total => $total });
         }
     );
 
@@ -605,6 +746,17 @@ sub add_tasks {
                 );
             }
             $job->finish($result);
+        }
+    );
+
+    # Cover-isolated sweep: stores into LRR_COVER_DUPLICATE_PAIRS instead of
+    # the mixed deck. Used by the /duplicates_custom rebuild endpoint.
+    $minion->add_task(
+        find_cover_duplicates_isolated => sub {
+            my ($job, $threshold_arg) = @_;
+            my $redis     = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            _run_find_cover_duplicates_isolated($job, $redis, $redis_cfg, $threshold_arg);
         }
     );
 

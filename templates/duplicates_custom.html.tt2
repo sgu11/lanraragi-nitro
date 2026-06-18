@@ -44,7 +44,7 @@
             </button>
             <span id="dupes-stats" class="dupes-stats">Loading…</span>
             <label class="dupes-threshold-label">
-                [% c.lh("Cover threshold:") %]
+                [% c.lh("Cover Hamming threshold:") %]
                 <input id="threshold-slider" type="range" min="12" max="25" step="1" value="22" />
                 <span id="threshold-value">22</span>
                 <select id="preset-select">
@@ -54,9 +54,22 @@
                     <option value="25">25 (loose)</option>
                 </select>
             </label>
+            <label class="dupes-threshold-label">
+                [% c.lh("Status:") %]
+                <select id="status-select">
+                    <option value="new" selected>New</option>
+                    <option value="all">All</option>
+                    <option value="same_cover">Same Cover</option>
+                    <option value="variant">Variant</option>
+                    <option value="not_duplicate">Not Duplicate</option>
+                    <option value="needs_review">Needs Review</option>
+                    <option value="resolved">Resolved</option>
+                </select>
+            </label>
         </div>
 
         <div id="dupes-list">Loading pairs…</div>
+        <div id="dupes-keyboard-hints">[% c.lh("Keyboard: n=next · d=dismiss · 1=same cover · 2=variant · 3=not duplicate") %]</div>
     </div>
 
 </body>

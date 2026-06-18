@@ -4,9 +4,28 @@ use v5.36;
 use strict;
 use warnings;
 
+use Exporter 'import';
+our @EXPORT_OK = qw(
+    find_cover_duplicate_pairs_in_memory
+    find_duplicate_pairs_in_memory
+    find_relation_duplicates_in_memory
+    compute_coverhash_for_archive
+    compute_pagehashes_for_archive
+    compute_leadhashes_for_archive
+    normalize_title_for_dedup
+    work_key_for_dedup
+    dedup_source_key_from_tags
+    dedup_language_from_tags
+    dedup_stable_tags
+    quality_proxy
+    classify_dedup_pair
+    _extract_page _get_filelist _get_archive_path _valid_hash
+);
+
 use LANraragi::Utils::PHash qw(hamming_hex);
 use LANraragi::Utils::String qw(clean_title trim);
 use String::Similarity;
+use Mojo::JSON qw(encode_json decode_json);
 
 # Page-count-delta weight in the score formula. 20 means a 100% page-count
 # mismatch contributes 20 to the score.
@@ -684,6 +703,9 @@ sub find_cover_duplicate_pairs_in_memory {
     my $start_i      = $config->{cur_i}                 // 0;
     my $start_j      = $config->{cur_j}                 // 0;
     my $target_pairs = $config->{target_pairs}          // 0;
+    my $pair_key     = $config->{pair_key}              // "LRR_DUPLICATE_PAIRS";
+    my $pair_meta    = $config->{pair_meta_key}         // "LRR_DUPLICATE_PAIR_META";
+    my $dismissed    = $config->{dismissed_key}         // "LRR_DEDUP_DISMISSED";
 
     # Stable id order so cursor resumes mean what they meant last run.
     my @ids = sort keys %$cover_data;
@@ -711,14 +733,14 @@ sub find_cover_duplicate_pairs_in_memory {
 
             my ($a, $b) = sort ($ids[$i], $ids[$j]);
             my $member = "$a|$b";
-            next if $redis->sismember("LRR_DEDUP_DISMISSED", $member);
-            next if defined $redis->zscore("LRR_DUPLICATE_PAIRS", $member);
+            next if $redis->sismember($dismissed, $member);
+            next if defined $redis->zscore($pair_key, $member);
 
             my $d = hamming_hex($hash_i, $cover_data->{$ids[$j]});
             next if $d > $max_hamming;
 
-            $redis->zadd("LRR_DUPLICATE_PAIRS", $d, $member);
-            $redis->hset("LRR_DUPLICATE_PAIR_META", $member,
+            $redis->zadd($pair_key, $d, $member);
+            $redis->hset($pair_meta, $member,
                 encode_json({
                     pass               => 'cover',
                     cover_hamming      => $d,

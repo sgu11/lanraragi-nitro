@@ -33,7 +33,7 @@
 }
 
 #preset-select,
-#relation-select {
+#status-select {
     max-width: 180px;
 }
 
@@ -48,7 +48,7 @@
 #dupes-list {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 8px;
+    gap: 12px;
 }
 @media (min-width: 1280px) {
     #dupes-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -56,12 +56,31 @@
 
 .dupe-pair-card {
     border: 1px solid var(--card-border, #444);
-    border-radius: 6px;
-    padding: 10px;
+    border-radius: 8px;
+    padding: 12px;
     margin: 0;
     background: var(--card-bg, #222);
+    transition: border-color 0.2s;
 }
-.dupe-score { font-weight: 600; margin-bottom: 6px; }
+.dupe-pair-card.focused {
+    border-color: #6a4dd0;
+    box-shadow: 0 0 8px rgba(106, 77, 208, 0.3);
+}
+
+.dupe-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.dupe-score {
+    font-weight: 600;
+    font-size: 0.95em;
+}
+
 .dupe-pass-badge {
     display: inline-block;
     font-size: 0.75em;
@@ -73,41 +92,118 @@
     color: #fff;
     letter-spacing: 0.05em;
 }
-.dupe-relation-badge {
+
+.dupe-status-badge {
     display: inline-block;
     font-size: 0.78em;
     font-weight: 700;
-    padding: 1px 6px;
-    margin-right: 4px;
-    border-radius: 3px;
-    background: #2b7a78;
+    padding: 2px 8px;
+    margin-left: 6px;
+    border-radius: 10px;
     color: #fff;
 }
-.dupe-risk {
+.status-new           { background: #555; }
+.status-same_cover    { background: #2b7a78; }
+.status-variant       { background: #9c6125; }
+.status-not_duplicate { background: #8a4444; }
+.status-needs_review  { background: #6a4dd0; }
+.status-resolved      { background: #4f9d69; }
+
+.dupe-reason-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
     margin-bottom: 6px;
-    color: #ffd27d;
-    font-size: 0.9em;
 }
-.dupe-row { display: flex; align-items: flex-start; gap: 12px; }
+.dupe-reason-chip {
+    font-size: 0.75em;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: rgba(106, 77, 208, 0.2);
+    border: 1px solid rgba(106, 77, 208, 0.3);
+    white-space: nowrap;
+}
+
+.dupe-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
 .dupe-side {
     flex: 1;
     min-width: 0;
     border: 1px solid transparent;
     border-radius: 4px;
     padding: 4px;
+    text-align: center;
 }
-.dupe-suggest-delete { border-color: #c45151; }
-.dupe-suggest-keep { border-color: #4f9d69; }
-.dupe-side-role {
-    font-size: 0.82em;
-    font-weight: 700;
-    margin-bottom: 4px;
+.dupe-side img.dupe-thumb {
+    max-width: 100%;
+    max-height: 360px;
+    object-fit: contain;
+    border-radius: 4px;
 }
-.dupe-middle { width: 220px; text-align: center; }
-.dupe-thumb { max-width: 200px; max-height: 280px; }
-.dupe-title { font-weight: 600; margin-top: 4px; word-break: break-word; }
-.dupe-meta { opacity: 0.75; font-size: 0.9em; }
-.dupe-perpage { font-family: monospace; margin: 8px 0; }
+.dupe-title {
+    font-weight: 600;
+    margin-top: 4px;
+    word-break: break-word;
+    font-size: 0.95em;
+}
+.dupe-meta {
+    opacity: 0.75;
+    font-size: 0.85em;
+}
 
-#dupes-pagination { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
-.dupes-loading { text-align: center; padding: 24px; opacity: 0.7; }
+.dupe-middle {
+    width: 140px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding-top: 60px;
+}
+.dupe-perpage {
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.dupe-status-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+    margin-top: 4px;
+}
+.dupe-status-actions .stdbtn {
+    font-size: 0.78em;
+    padding: 2px 8px;
+}
+
+.dupes-empty-state {
+    text-align: center;
+    padding: 32px;
+    opacity: 0.7;
+    grid-column: 1 / -1;
+}
+
+#dupes-pagination {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+}
+.dupes-loading {
+    text-align: center;
+    padding: 24px;
+    opacity: 0.7;
+}
+
+/* Keyboard hint bar */
+#dupes-keyboard-hints {
+    margin-top: 12px;
+    text-align: center;
+    opacity: 0.5;
+    font-size: 0.8em;
+}

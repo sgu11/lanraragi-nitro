@@ -83,6 +83,8 @@ if ($VIPS_LOADED) {
     $vips_ffi->attach( vips_thumbnail_buffer => ['string', 'size_t', 'VipsImage*', 'int'] => ['string', 'int', 'string', 'int', 'opaque'] => 'int' );
     $vips_ffi->attach( vips_image_write_to_memory => ['VipsImage', 'size_t*'] => 'opaque' );
     $vips_ffi->attach( vips_cast => ['VipsImage', 'VipsImage*', 'int'] => ['opaque'] => 'int' );
+    $vips_ffi->attach( vips_embed => ['VipsImage', 'VipsImage*', 'int', 'int', 'int', 'int'] => ['opaque'] => 'int' );
+    $vips_ffi->attach( vips_extract_area => ['VipsImage', 'VipsImage*', 'int', 'int', 'int', 'int'] => ['opaque'] => 'int' );
 } else {
     # Dummy functions if libvips is not loaded
     *vips_init = sub { die "libvips is not loaded. Cannot call vips_init." };
@@ -260,6 +262,46 @@ sub unref_image ($image) {
 
 sub is_vips_loaded () {
     return $VIPS_LOADED;
+}
+
+# Embed $image in a black canvas of $width x $height at position ($x, $y).
+sub embed ($image, $x, $y, $width, $height) {
+    my $out;
+    my $ret = vips_embed($image, \$out, $x, $y, $width, $height,
+        "background", [0,0,0], "extend", "black", undef);
+    die "Error embedding image: " . fetch_and_clear_error() if $ret != 0;
+    return $out;
+}
+
+# Extract a rectangular area from $image.
+sub extract_area ($image, $left, $top, $width, $height) {
+    my $out;
+    my $ret = vips_extract_area($image, \$out, $left, $top, $width, $height, undef);
+    die "Error extracting area: " . fetch_and_clear_error() if $ret != 0;
+    return $out;
+}
+
+# Read raw pixel bytes from a VipsImage. Returns ($bytes, $len).
+sub read_pixels ($image) {
+    my $size = 0;
+    my $ptr  = vips_image_write_to_memory($image, \$size);
+    die "Error reading pixels: " . fetch_and_clear_error() . "\n" unless $ptr;
+    my $bytes = buffer_to_scalar($ptr, $size);
+    g_free($ptr);
+    return ($bytes, $size);
+}
+
+# Aspect-preserving resize to fit in $target_width x $target_height, then
+# embed in a black canvas of exactly those dimensions. Returns a VipsImage.
+sub fit_resize_to_exact ($buffer, $target_width, $target_height) {
+    my $fitted = fit_resize($buffer, $target_width, $target_height);
+    my $w = width($fitted);
+    my $h = height($fitted);
+    my $x = int(($target_width  - $w) / 2);
+    my $y = int(($target_height - $h) / 2);
+    my $padded = embed($fitted, $x, $y, $target_width, $target_height);
+    unref_image($fitted);
+    return $padded;
 }
 
 # Loads $image_path, force-resizes to 32x32, converts to single-channel uchar grayscale,

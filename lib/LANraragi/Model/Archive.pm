@@ -25,6 +25,7 @@ use LANraragi::Utils::Database   qw(invalidate_cache set_title set_tags set_summ
 use LANraragi::Utils::ImageResponse qw(render_thumbnail_placeholder);
 use LANraragi::Utils::PageCache  qw(fetch put);
 use LANraragi::Utils::Redis      qw(redis_decode redis_encode);
+use LANraragi::Model::Dedup::CoverIndex;
 use LANraragi::Utils::Path       qw(unlink_path get_archive_path);
 use LANraragi::Model::Metrics;
 
@@ -546,6 +547,13 @@ sub delete_archive ($id) {
     }
     $redis->del($id);
     $redis->quit();
+
+    # Clean up cover duplicate pairs for the deleted archive.
+    eval {
+        my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+        LANraragi::Model::Dedup::CoverIndex::remove_pairs_for_archive($redis_cfg, $id);
+        $redis_cfg->quit;
+    };
 
     # Remove matching data from the search indexes
     my $redis_search = LANraragi::Model::Config->get_redis_search;

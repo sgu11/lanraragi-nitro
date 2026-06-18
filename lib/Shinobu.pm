@@ -39,6 +39,7 @@ use LANraragi::Utils::PageSide   qw(clear_first_spread_start_detection enqueue_f
 use LANraragi::Model::Config;
 use LANraragi::Model::Plugins;
 use LANraragi::Model::Metrics;
+use LANraragi::Model::Dedup::CoverIndex;
 use LANraragi::Utils::Plugins;    # Needed here since Shinobu doesn't inherit from the main LRR package
 use LANraragi::Model::Search;     # idem
 
@@ -212,6 +213,18 @@ sub update_filemap {
                 add_arcsize( $redis_arc, $id );
                 $logger->debug("Recalculating pagecount for $id");
                 add_pagecount( $redis_arc, $id );
+
+                # Invalidate cover dedup signals; re-enqueue after Shinobu recalc.
+                eval {
+                    my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+                    LANraragi::Model::Dedup::CoverIndex::invalidate_cover_dedup_signals($redis_arc, $redis_cfg, $id);
+                    $redis_cfg->quit;
+                    LANraragi::Model::Config->get_minion->enqueue(
+                        compute_coverhash => [ $id ] => { priority => 0 }
+                    );
+                };
+                $logger->warn("Failed to invalidate/re-enqueue cover dedup signals for $id: $@") if $@;
+
                 eval { enqueue_first_spread_start_detection($id); };
                 $logger->warn("Failed to enqueue first-spread-start detection for $id: $@") if $@;
             }
@@ -351,6 +364,17 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
                 add_arcsize( $redis_arc, $id );
                 $logger->debug("Recalculating pagecount for $id");
                 add_pagecount( $redis_arc, $id );
+
+                eval {
+                    my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+                    LANraragi::Model::Dedup::CoverIndex::invalidate_cover_dedup_signals($redis_arc, $redis_cfg, $id);
+                    $redis_cfg->quit;
+                    LANraragi::Model::Config->get_minion->enqueue(
+                        compute_coverhash => [ $id ] => { priority => 0 }
+                    );
+                };
+                $logger->warn("Failed to invalidate/re-enqueue cover dedup signals for $id: $@") if $@;
+
                 eval { enqueue_first_spread_start_detection($id); };
                 $logger->warn("Failed to enqueue first-spread-start detection for $id: $@") if $@;
             } elsif ( !$redis_arc->hget( $id, "pagecount" ) ) {
@@ -395,6 +419,17 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
             # File changed on disk, recalculate pagecount too
             $logger->debug("Recalculating pagecount for $id");
             add_pagecount( $redis_arc, $id );
+
+            eval {
+                my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+                LANraragi::Model::Dedup::CoverIndex::invalidate_cover_dedup_signals($redis_arc, $redis_cfg, $id);
+                $redis_cfg->quit;
+                LANraragi::Model::Config->get_minion->enqueue(
+                    compute_coverhash => [ $id ] => { priority => 0 }
+                );
+            };
+            $logger->warn("Failed to invalidate/re-enqueue cover dedup signals for $id: $@") if $@;
+
             eval { enqueue_first_spread_start_detection($id); };
             $logger->warn("Failed to enqueue first-spread-start detection for $id: $@") if $@;
         } elsif ( !$redis_arc->hget( $id, "pagecount" ) ) {
@@ -508,6 +543,9 @@ sub add_new_file ( $id, $file ) {
             );
             LANraragi::Model::Config->get_minion->enqueue(
                 compute_coverhash => [ $id ] => { priority => 0 }
+            );
+            LANraragi::Model::Config->get_minion->enqueue(
+                compute_cover_fingerprint => [ $id ] => { priority => 0 }
             );
             LANraragi::Model::Config->get_minion->enqueue(
                 compute_dedup_signals => [ $id ] => { priority => 0 }

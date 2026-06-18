@@ -156,6 +156,14 @@ sub apply_routes {
     $logged_in_api->delete('/api/duplicates/pairs')->to('api-duplicates#delete_pair');
     $logged_in_api->post('/api/duplicates/refresh')->to('api-duplicates#refresh');
 
+    # Cover-only duplicate finder API (fork /duplicates_custom)
+    $logged_in_api->get('/api/duplicates/cover/stats')->to('api-coverduplicates#stats');
+    $logged_in_api->get('/api/duplicates/cover/pairs')->to('api-coverduplicates#pairs');
+    $logged_in_api->delete('/api/duplicates/cover/pairs')->to('api-coverduplicates#delete_pair');
+    $logged_in_api->post('/api/duplicates/cover/refresh')->to('api-coverduplicates#refresh');
+    $logged_in_api->post('/api/duplicates/cover/rebuild')->to('api-coverduplicates#rebuild');
+    $logged_in_api->post('/api/duplicates/cover/status')->to('api-coverduplicates#update_status');
+
     # Metrics API (not part of OpenAPI spec, serves Prometheus format)
     if ( $self->LRR_CONF->enable_metrics ) {
         $logged_in_api->get('/api/info/metrics')->to('api-metrics#serve_metrics');
