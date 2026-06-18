@@ -17,8 +17,8 @@ use LANraragi::Controller::Api::Duplicates;
 # Fake Redis surface for the controller's test scope.
 package FakeRedis {
     sub new { bless {}, shift }
-    sub zrangebyscore { my ($self, $key, $min, $max, @rest) = @_; ('id_a|id_b', 4.5, 'id_c|id_d', 12.0) }
-    sub zcount { 2 }
+    sub zrangebyscore { my ($self, $key, $min, $max, @rest) = @_; ('id_a|id_b', 4.5, 'id_c|id_d', 12.0, 'id_e|id_f', 8.0) }
+    sub zcount { 3 }
     sub quit { 1 }
     sub wait_all_responses { 1 }
     sub hmget {
@@ -28,9 +28,11 @@ package FakeRedis {
         # For pair meta HMGET, return per_page/pcount_delta JSON.
         if ($k eq 'LRR_DUPLICATE_PAIR_META') {
             my $member = $fields[0] // '';
-            my $json = $member eq 'id_c|id_d'
-                ? '{"relation":"duplicate","confidence":0.82,"suggested_action":"delete_lower_quality","suggested_delete":"id_c","suggested_keep":"id_d","risk_flags":[],"lead_hamming":2,"title_score":0.95,"per_page":[1,2],"pcount_delta":3,"algo_version":2,"ts":1}'
-                : '{"relation":"subset","confidence":0.9,"suggested_action":"delete_subset","suggested_delete":"id_a","suggested_keep":"id_b","risk_flags":["deleting_preferred_language_subset"],"lead_hamming":1,"title_score":1,"per_page":[1,2,3,4,5],"pcount_delta":3,"algo_version":2,"ts":1}';
+            my $json = $member eq 'id_e|id_f'
+                ? '{"pass":"cover","cover_hamming":12,"risk_flags":[],"pcount_delta":3,"algo_version":2,"ts":1}'
+                : $member eq 'id_c|id_d'
+                ? '{"pass":"relation","relation":"duplicate","confidence":0.82,"suggested_action":"delete_lower_quality","suggested_delete":"id_c","suggested_keep":"id_d","risk_flags":[],"lead_hamming":2,"title_score":0.95,"per_page":[1,2],"pcount_delta":3,"algo_version":2,"ts":1}'
+                : '{"pass":"relation","relation":"subset","confidence":0.9,"suggested_action":"delete_subset","suggested_delete":"id_a","suggested_keep":"id_b","risk_flags":["deleting_preferred_language_subset"],"lead_hamming":1,"title_score":1,"per_page":[1,2,3,4,5],"pcount_delta":3,"algo_version":2,"ts":1}';
             $cb->([$json], undef) if $cb;
             return [$json];
         }
@@ -62,12 +64,12 @@ $c->req->url->parse('/api/duplicates/pairs?max_score=20');
 LANraragi::Controller::Api::Duplicates::pairs($c);
 
 my $body = decode_json($c->res->body);
-is(scalar @{$body->{pairs}}, 2, "returns 2 pairs from mocked zrangebyscore");
+is(scalar @{$body->{pairs}}, 3, "returns 3 pairs from mocked zrangebyscore");
 is($body->{pairs}[0]{id_a}, "id_a", "first pair id_a parsed");
 is($body->{pairs}[0]{id_b}, "id_b", "first pair id_b parsed");
 cmp_ok($body->{pairs}[0]{score}, "==", 4.5, "score passed through");
-is($body->{total}, 2, "total reported");
-is($body->{filtered_total}, 2, "filtered_total reported");
+is($body->{total}, 3, "total reported");
+is($body->{filtered_total}, 3, "filtered_total reported");
 is($body->{pairs}[0]{relation}, "subset", "relation metadata passed through");
 is($body->{pairs}[0]{suggested_delete}, "id_a", "suggested delete passed through");
 is_deeply($body->{pairs}[0]{risk_flags}, ["deleting_preferred_language_subset"], "risk flags passed through");
@@ -86,13 +88,28 @@ note("GET /api/duplicates/pairs supports relation filtering");
     is($body->{pairs}[0]{relation}, "duplicate", "duplicate relation returned");
 }
 
+note("GET /api/duplicates/pairs supports pass filtering");
+{
+    my $tx = Mojo::Transaction::HTTP->new;
+    my $c = Mojolicious::Controller->new(app => $t, tx => $tx);
+    $c->req->url->parse('/api/duplicates/pairs?max_score=20&pass=cover');
+
+    LANraragi::Controller::Api::Duplicates::pairs($c);
+
+    my $body = decode_json($c->res->body);
+    is(scalar @{$body->{pairs}}, 1, "pass filter returns one matching pair");
+    is($body->{filtered_total}, 1, "filtered_total counts pass-filtered pairs");
+    is($body->{pairs}[0]{pass}, "cover", "cover pass returned");
+    is($body->{pairs}[0]{cover_hamming}, 12, "cover metadata passed through");
+}
+
 note("GET /api/duplicates/pairs filters by review status (default new)");
 {
     # Mock meta carries no status field -> treated as 'new'.
     for my $case (
-        [ '',                'new pairs returned by default',        2 ],
-        [ '&status=new',     'status=new returns the new pairs',     2 ],
-        [ '&status=all',     'status=all bypasses the filter',       2 ],
+        [ '',                'new pairs returned by default',        3 ],
+        [ '&status=new',     'status=new returns the new pairs',     3 ],
+        [ '&status=all',     'status=all bypasses the filter',       3 ],
         [ '&status=dismissed','status=dismissed excludes new pairs', 0 ],
     ) {
         my ($q, $desc, $want) = @$case;

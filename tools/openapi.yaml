@@ -4007,6 +4007,12 @@ paths:
             enum: [duplicate, translation_variant, subset, related_low_confidence]
           description: Optional relation filter.
         - in: query
+          name: pass
+          schema:
+            type: string
+            enum: [pcount, cover, relation]
+          description: Optional matcher-pass filter.
+        - in: query
           name: min_confidence
           schema: { type: number, minimum: 0, maximum: 1 }
           description: Optional minimum confidence for relation-aware pairs.

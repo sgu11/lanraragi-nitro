@@ -36,31 +36,15 @@
             <button id="return" class="stdbtn" type="button">
                 <i class="fas fa-arrow-left"></i> [% c.lh("Return to Library") %]
             </button>
-            <button id="run-find" class="stdbtn" type="button">
-                <i class="fas fa-search"></i> [% c.lh("Find relation pairs") %]
-            </button>
             <button id="run-refresh" class="stdbtn" type="button">
                 <i class="fas fa-sync"></i> [% c.lh("Refresh deck") %]
             </button>
-            <button id="run-backfill" class="stdbtn" type="button">
-                <i class="fas fa-cogs"></i> [% c.lh("Run signal backfill") %]
-            </button>
             <button id="run-find-cover" class="stdbtn" type="button" title="Cover-only pass: ignores page-count gap, surfaces chapter↔volume style matches.">
-                <i class="fas fa-image"></i> [% c.lh("Find by cover") %]
+                <i class="fas fa-image"></i> [% c.lh("Find cover matches") %]
             </button>
             <span id="dupes-stats" class="dupes-stats">Loading…</span>
             <label class="dupes-threshold-label">
-                [% c.lh("Relation:") %]
-                <select id="relation-select">
-                    <option value="">[% c.lh("All") %]</option>
-                    <option value="duplicate">[% c.lh("Duplicate") %]</option>
-                    <option value="translation_variant">[% c.lh("Translation variant") %]</option>
-                    <option value="subset">[% c.lh("Subset") %]</option>
-                    <option value="related_low_confidence">[% c.lh("Review") %]</option>
-                </select>
-            </label>
-            <label class="dupes-threshold-label">
-                [% c.lh("Threshold:") %]
+                [% c.lh("Cover threshold:") %]
                 <input id="threshold-slider" type="range" min="12" max="25" step="1" value="22" />
                 <span id="threshold-value">22</span>
                 <select id="preset-select">
