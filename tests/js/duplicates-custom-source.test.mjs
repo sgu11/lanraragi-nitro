@@ -66,3 +66,18 @@ test("custom duplicate review actions do not reload the whole deck", async () =>
     const actionHandler = script.slice(actionHandlerStart, nextHandlerStart);
     assert.doesNotMatch(actionHandler, /Duplicates\.loadPairs\(\)/);
 });
+
+test("custom duplicate fork-only labels do not call Maketext", async () => {
+    const template = await source("templates/duplicates_custom.html.tt2");
+    const forkOnlyLabels = [
+        "Refresh deck",
+        "Find cover matches",
+        "Cover Hamming threshold:",
+        "Status:",
+        "Keyboard: n/p=next/previous",
+    ];
+
+    for (const label of forkOnlyLabels) {
+        assert.doesNotMatch(template, new RegExp(`c\\.lh\\(\"${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    }
+});

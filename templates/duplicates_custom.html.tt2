@@ -40,14 +40,14 @@
                 <i class="fas fa-arrow-left"></i> [% c.lh("Return to Library") %]
             </button>
             <button id="run-refresh" class="stdbtn" type="button">
-                <i class="fas fa-sync"></i> [% c.lh("Refresh deck") %]
+                <i class="fas fa-sync"></i> Refresh deck
             </button>
             <button id="run-find-cover" class="stdbtn" type="button" title="Cover-only pass: ignores page-count gap, surfaces chapter↔volume style matches.">
-                <i class="fas fa-image"></i> [% c.lh("Find cover matches") %]
+                <i class="fas fa-image"></i> Find cover matches
             </button>
             <span id="dupes-stats" class="dupes-stats">Loading…</span>
             <label class="dupes-threshold-label">
-                [% c.lh("Cover Hamming threshold:") %]
+                Cover Hamming threshold:
                 <input id="threshold-slider" type="range" min="12" max="25" step="1" value="22" />
                 <span id="threshold-value">22</span>
                 <select id="preset-select">
@@ -58,7 +58,7 @@
                 </select>
             </label>
             <label class="dupes-threshold-label">
-                [% c.lh("Status:") %]
+                Status:
                 <select id="status-select">
                     <option value="new" selected>New</option>
                     <option value="all">All</option>
@@ -83,7 +83,7 @@
                 <div id="dupes-queue-list"></div>
             </aside>
         </div>
-        <div id="dupes-keyboard-hints">[% c.lh("Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review") %]</div>
+        <div id="dupes-keyboard-hints">Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review</div>
     </div>
 
 </body>
