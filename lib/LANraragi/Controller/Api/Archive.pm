@@ -1,7 +1,7 @@
 package LANraragi::Controller::Api::Archive;
 use Mojo::Base 'Mojolicious::Controller';
 
-use Digest::SHA qw(sha1_hex);
+use Digest::SHA;
 use Redis;
 use Config;
 use Encode;
@@ -125,6 +125,25 @@ sub serve_file {
 
 # Create a file archive along with any metadata.
 # adapted from Upload.pm
+sub _upload_sha1_hex {
+    my ($upload) = @_;
+
+    my $asset = $upload->asset;
+    my $sha   = Digest::SHA->new(1);
+    my $offset = 0;
+
+    while (1) {
+        my $chunk = $asset->get_chunk($offset, 131072);
+        die "Could not read uploaded file for checksum validation.\n" unless defined $chunk;
+        last if $chunk eq "";
+
+        $sha->add($chunk);
+        $offset += length($chunk);
+    }
+
+    return $sha->hexdigest;
+}
+
 sub create_archive {
     my $self   = shift->openapi->valid_input or return;
     my $logger = get_logger( "Archive API ", "lanraragi" );
@@ -147,8 +166,7 @@ sub create_archive {
 
     # checksum verification stage.
     if ($expected_checksum) {
-        my $file_content    = $upload->slurp;
-        my $actual_checksum = sha1_hex($file_content);
+        my $actual_checksum = _upload_sha1_hex($upload);
         if ( $expected_checksum ne $actual_checksum ) {
             return $self->render(
                 openapi => {

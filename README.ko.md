@@ -129,6 +129,7 @@ Request hot path 중심의 지속적 성능 개선임. 상세 추적 문서는 [
 - **filesystem-aware Shinobu file watcher**: inode-number 변화 감지 후 watcher 재생성.
 - Search와 Shinobu path의 undef handling 강화.
 - `/edit` missing archive ID request는 Redis 접근 전 redirect 처리.
+- `/archives/upload` optional SHA1 checksum 검증은 upload asset을 chunk 단위로 읽음. 2 GiB 초과 archive도 checksum verification 유지 가능함.
 
 ### Themes
 

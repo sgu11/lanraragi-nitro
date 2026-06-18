@@ -168,6 +168,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 - **Undef handling** hardened in search and Shinobu paths to avoid log spam on edge-case archives.
 - **Edit route hardening** redirects `/edit` requests without an archive ID before touching Redis, avoiding a protocol-error 500 during smoke checks.
 - **Unicode upload filename lock fix** encodes Redis lock keys before digesting/storing them, so API and Web uploads with non-ASCII filenames no longer fail during lock-token generation.
+- **Large API upload checksum streaming** validates optional `/archives/upload` SHA1 checksums from the upload asset in chunks instead of slurping the whole file, allowing archives larger than 2 GiB to keep checksum verification enabled.
 
 ### Themes
 

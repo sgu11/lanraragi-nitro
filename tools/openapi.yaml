@@ -767,7 +767,9 @@ paths:
 
         If a SHA1 checksum of the Archive is included, the server will perform
         an optional in-transit, file integrity validation, and reject the upload
-        if the server-side checksum does not match.
+        if the server-side checksum does not match. The checksum is computed
+        incrementally from the uploaded asset, so large archives do not need to
+        be held in memory for validation.
       tags:
         - archives
       requestBody:
