@@ -247,6 +247,28 @@ reset_state();
     is($r->{filtered_total}, 1, "filtered_total excludes stale pairs");
 }
 
+note("=== cover_pairs includes cover resolution brief data ===");
+reset_state();
+{
+    $CoverTestData::zset{'LRR_COVER_DUPLICATE_PAIRS'}{'id1|id2'} = 2;
+    $CoverTestData::hash{'LRR_COVER_DUPLICATE_PAIR_META'}{'id1|id2'} = encode_json({
+        pass => 'cover', cover_hamming => 2, status => 'new',
+        cover_algo_version => 2, ts => time(),
+    });
+    $CoverTestData::hash{'id1'}{'title'} = 'High resolution archive';
+    $CoverTestData::hash{'id1'}{'cover_fp'} = encode_json({ w => 1440, h => 2160 });
+    $CoverTestData::hash{'id2'}{'title'} = 'Broken fingerprint archive';
+    $CoverTestData::hash{'id2'}{'cover_fp'} = '{not-json';
+
+    my $r = LANraragi::Model::Dedup::CoverIndex::cover_pairs($redis_cfg, $redis, { max_score => 10 });
+    is($r->{pairs}[0]{a}{cover_width}, 1440, "cover width comes from cover_fp");
+    is($r->{pairs}[0]{a}{cover_height}, 2160, "cover height comes from cover_fp");
+    is($r->{pairs}[0]{a}{cover_pixels}, 3_110_400, "cover pixel count is available for UI comparison");
+    is($r->{pairs}[0]{b}{cover_width}, 0, "invalid cover_fp width falls back to zero");
+    is($r->{pairs}[0]{b}{cover_height}, 0, "invalid cover_fp height falls back to zero");
+    is($r->{pairs}[0]{b}{cover_pixels}, 0, "invalid cover_fp pixel count falls back to zero");
+}
+
 note("=== delete_cover_pair adds to dismissed set ===");
 reset_state();
 {

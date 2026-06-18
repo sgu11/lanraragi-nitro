@@ -119,6 +119,7 @@ Reader behavior:
 - **One-click cover rebuild** — `Find cover matches` now queues missing cover hashes and automatically requeues the cover sweep, so a fresh library no longer needs a second manual click after hash jobs finish.
 - **Cover rebuild idempotence** — repeated rebuild passes track in-flight cover hash jobs, avoid duplicate queue spam, and refresh versioned cover fingerprints when same-ID archive replacements invalidate cover evidence.
 - **Focused duplicate review queue** — `/duplicates_custom` now opens one large side-by-side cover comparison at a time, keeps a compact upcoming-pair rail, and advances review actions in place instead of replacing the whole deck after every delete/status decision.
+- **Comparison evidence chips** — each side of the duplicate comparison highlights stronger keep signals for page count, archive size, tag count, Korean language, cover resolution, and newer date; resolution is read from the existing `cover_fp` dimensions.
 - The fork duplicate finder is mounted at `/duplicates_custom`; `/duplicates` is left close to upstream's duplicate-group page to reduce upstream-sync conflicts.
 - Technical baseline: [`docs/local-features/duplicate-detection.md`](docs/local-features/duplicate-detection.md).
 

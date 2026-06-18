@@ -57,25 +57,78 @@ function formatSize(bytes) {
     return `${(sizeBytes / 1048576).toFixed(1)} MB`;
 }
 
-function formatDate(value) {
-    if (!value) return "";
-    const ts = parseInt(value, 10);
-    if (Number.isFinite(ts) && ts > 0) {
-        return new Date(ts * 1000).toISOString().slice(0, 10);
-    }
-    return value;
+function numericValue(value) {
+    const numeric = Number(value || 0);
+    return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function archiveMetaChips(archive) {
-    const chips = [
-        `${archive.pagecount || 0} pages`,
-        formatSize(archive.arcsize),
-        `${archive.tag_count || 0} tags`,
+function timestampValue(value) {
+    if (!value) return 0;
+    const raw = String(value).trim();
+    if (/^\d+$/.test(raw)) {
+        const numeric = Number(raw);
+        if (Number.isFinite(numeric) && numeric > 0) {
+            return numeric > 9999999999 ? Math.floor(numeric / 1000) : numeric;
+        }
+    }
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0;
+}
+
+function formatDate(value) {
+    if (!value) return "";
+    const ts = timestampValue(value);
+    if (ts > 0) {
+        return new Date(ts * 1000).toISOString().slice(0, 10);
+    }
+    return String(value).trim();
+}
+
+function isKoreanLanguage(language) {
+    const normalized = String(language || "").trim().toLowerCase();
+    return ["ko", "kor", "ko-kr", "korean"].includes(normalized);
+}
+
+function resolutionScore(archive) {
+    const pixels = numericValue(archive.cover_pixels);
+    if (pixels > 0) return pixels;
+    return numericValue(archive.cover_width) * numericValue(archive.cover_height);
+}
+
+function formatResolution(archive) {
+    const width = numericValue(archive.cover_width);
+    const height = numericValue(archive.cover_height);
+    if (width > 0 && height > 0) return `${width}x${height}`;
+    return "unknown";
+}
+
+function compareArchiveSignals(archive, otherArchive) {
+    const date = timestampValue(archive.date_added);
+    const otherDate = timestampValue(otherArchive.date_added);
+    const korean = isKoreanLanguage(archive.language);
+    const otherKorean = isKoreanLanguage(otherArchive.language);
+
+    return {
+        pages: numericValue(archive.pagecount) > numericValue(otherArchive.pagecount),
+        size: numericValue(archive.arcsize) > numericValue(otherArchive.arcsize),
+        tags: numericValue(archive.tag_count) > numericValue(otherArchive.tag_count),
+        language: korean && !otherKorean,
+        resolution: resolutionScore(archive) > resolutionScore(otherArchive),
+        recent: date > 0 && otherDate > 0 && date > otherDate,
+    };
+}
+
+function buildResolutionChips(archive, otherArchive) {
+    const signals = compareArchiveSignals(archive, otherArchive);
+    const language = archive.language || "unknown";
+    return [
+        { kind: "pages", label: "Pages", value: String(numericValue(archive.pagecount)), highlighted: signals.pages },
+        { kind: "size", label: "Size", value: formatSize(numericValue(archive.arcsize)), highlighted: signals.size },
+        { kind: "tags", label: "Tags", value: String(numericValue(archive.tag_count)), highlighted: signals.tags },
+        { kind: "language", label: "KR", value: isKoreanLanguage(language) ? "Korean" : language, highlighted: signals.language },
+        { kind: "resolution", label: "Resolution", value: formatResolution(archive), highlighted: signals.resolution },
+        { kind: "recent", label: "Date", value: formatDate(archive.date_added) || "unknown", highlighted: signals.recent },
     ];
-    if (archive.language) chips.push(archive.language);
-    const date = formatDate(archive.date_added);
-    if (date) chips.push(date);
-    return chips;
 }
 
 function thumbnailUrl(arcid) {
@@ -231,9 +284,18 @@ Duplicates.emptyReason = function () {
     return "No cover pairs found at this threshold. Try a higher threshold or click Find Cover.";
 };
 
-Duplicates.renderMetaChips = function (archive) {
-    return archiveMetaChips(archive)
-        .map((chip) => `<span class="dupe-meta-chip">${htmlText(chip)}</span>`)
+Duplicates.renderResolutionChips = function (archive, otherArchive) {
+    return buildResolutionChips(archive, otherArchive)
+        .map((chip) => {
+            const classes = `dupe-resolution-chip chip-${chip.kind}${chip.highlighted ? " is-highlighted" : ""}`;
+            const title = `${chip.label}: ${chip.value}`;
+            return `
+                <span class="${classes}" title="${htmlText(title)}">
+                    <span class="dupe-chip-label">${htmlText(chip.label)}</span>
+                    <span class="dupe-chip-value">${htmlText(chip.value)}</span>
+                </span>
+            `;
+        })
         .join("");
 };
 
@@ -250,7 +312,7 @@ Duplicates.renderSide = function (side, archive, otherArchive) {
                 <img class="dupe-thumb" src="${thumbnailUrl(archiveId)}" alt="${LRR.encodeHTML(title)}" loading="eager" />
             </a>
             <div class="dupe-title">${htmlText(title)}</div>
-            <div class="dupe-meta-grid">${Duplicates.renderMetaChips(archive)}</div>
+            <div class="dupe-resolution-chips">${Duplicates.renderResolutionChips(archive, otherArchive)}</div>
             <div class="dupe-side-actions">
                 <button class="stdbtn dupe-action" type="button" data-action="keep-side" data-side="${side}" data-delete-arcid="${otherArchiveId}">
                     Keep ${sideName}

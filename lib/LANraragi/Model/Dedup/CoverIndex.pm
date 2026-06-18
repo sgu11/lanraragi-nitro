@@ -113,7 +113,7 @@ sub cover_pairs {
 
     # Batched archive brief fetch
     my %brief_cache;
-    my @brief_fields = qw(title name tags pagecount arcsize);
+    my @brief_fields = qw(title name tags pagecount arcsize cover_fp);
     {
         my @brief_results;
         for my $id (keys %seen_ids) {
@@ -159,6 +159,10 @@ sub _archive_brief_from_hash {
     my ($id, $h) = @_;
     return {} unless $h && %$h;
     my $tags = LANraragi::Utils::Redis::redis_decode($h->{tags} // '');
+    my $cover_fp = eval { decode_json($h->{cover_fp} // '{}') } // {};
+    $cover_fp = {} unless ref $cover_fp eq 'HASH';
+    my $cover_width  = _nonnegative_number($cover_fp->{w});
+    my $cover_height = _nonnegative_number($cover_fp->{h});
     my $tag_count = 0;
     my $language  = '';
     my $date_added = '';
@@ -178,10 +182,20 @@ sub _archive_brief_from_hash {
         tags      => $tags,
         pagecount => ($h->{pagecount} || 0) + 0,
         arcsize   => ($h->{arcsize}   || 0) + 0,
+        cover_width  => $cover_width,
+        cover_height => $cover_height,
+        cover_pixels => $cover_width * $cover_height,
         tag_count => $tag_count,
         language  => $language,
         date_added => $date_added,
     };
+}
+
+sub _nonnegative_number {
+    my ($value) = @_;
+    return 0 unless defined $value;
+    return 0 unless "$value" =~ /^\d+(?:\.\d+)?$/;
+    return $value + 0;
 }
 
 # --- Stats --------------------------------------------------------------
