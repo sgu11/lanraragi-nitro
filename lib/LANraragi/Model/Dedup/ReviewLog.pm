@@ -30,9 +30,10 @@ use constant RAW_EVENT_MAX      => 1000;
 
 sub canonical_pair {
     my ($pair) = @_;
-    return undef unless defined $pair && $pair =~ /\A([0-9a-f]{40})\|([0-9a-f]{40})\z/;
-    return undef if $1 eq $2;
-    my ($a, $b) = sort ($1, $2);
+    return undef unless defined $pair && $pair =~ /\A([0-9a-fA-F]{40})\|([0-9a-fA-F]{40})\z/;
+    my ($left, $right) = (lc($1), lc($2));
+    return undef if $left eq $right;
+    my ($a, $b) = sort ($left, $right);
     return "$a|$b";
 }
 

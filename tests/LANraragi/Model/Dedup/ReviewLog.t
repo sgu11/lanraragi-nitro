@@ -89,9 +89,19 @@ note("canonical pair validation");
         "canonical_pair rejects malformed members"
     );
     is(
+        LANraragi::Model::Dedup::ReviewLog::canonical_pair(('B' x 40) . '|' . ('a' x 40)),
+        ('a' x 40) . '|' . ('b' x 40),
+        "canonical_pair accepts uppercase hex and lowercases sorted members"
+    );
+    is(
         LANraragi::Model::Dedup::ReviewLog::canonical_pair(('a' x 40) . '|' . ('a' x 40)),
         undef,
         "canonical_pair rejects self-pairs"
+    );
+    is(
+        LANraragi::Model::Dedup::ReviewLog::canonical_pair(('A' x 40) . '|' . ('a' x 40)),
+        undef,
+        "canonical_pair rejects self-pairs after lowercasing"
     );
 }
 
