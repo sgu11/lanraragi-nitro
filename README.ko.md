@@ -79,6 +79,7 @@ Reader behavior:
 
 - **Relation-aware duplicate finder**: lead-page pHash와 normalized title/source heuristic으로 duplicate, translation variant, subset, review-only pair 분류함. Suggested delete/keep side와 risk flag 포함함.
 - **Cover pHash luminance fix**: cover hash가 clipped GREY16 output 대신 8-bit grayscale luminance를 사용함. 밝은 무관 cover들이 Hamming 0으로 붕괴하던 문제 방지함. Cover-hash algorithm version bump로 `Find cover matches` 실행 시 stale v1 hash 재계산함.
+- **Duplicate review training log**: `/duplicates_custom` status decision이 pair snapshot, derived feature, UI context, label을 sanitize한 review event로 `LRR_COVER_DUPLICATE_REVIEW_EVENTS`에 append됨. `GET /api/duplicates/cover/review-events`로 export 가능함.
 - Technical baseline: [`docs/local-features/duplicate-detection.md`](docs/local-features/duplicate-detection.md).
 
 ### Performance
