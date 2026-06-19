@@ -41,6 +41,21 @@ sub pairs {
     $self->render(json => $result);
 }
 
+sub review_events {
+    my $self = shift;
+    my $req  = $self->req;
+
+    my $opts = {
+        offset => ($req->param('offset') // 0) + 0,
+        limit  => ($req->param('limit')  // 1000) + 0,
+    };
+
+    my $redis_cfg = _get_redis_config();
+    my $result = LANraragi::Model::Dedup::ReviewLog::review_events($redis_cfg, $opts);
+    $redis_cfg->quit;
+    $self->render(json => $result);
+}
+
 sub delete_pair {
     my $self = shift;
     my $body = $self->req->json // {};

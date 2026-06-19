@@ -4119,6 +4119,27 @@ paths:
         '200':
           description: Pair dismissed
       x-mojo-to: 'api-coverduplicates#delete_pair'
+  /api/duplicates/cover/review-events:
+    get:
+      summary: Export cover duplicate review decision events
+      description: >-
+        Returns append-only human review decisions captured from the cover
+        duplicate review workflow. Intended for offline duplicate-finder
+        training dataset extraction and audit.
+      tags: [Misc]
+      parameters:
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0, minimum: 0 }
+          description: Zero-based event offset.
+        - in: query
+          name: limit
+          schema: { type: integer, default: 1000, minimum: 1, maximum: 1000 }
+          description: Maximum number of events to return.
+      responses:
+        '200':
+          description: Page of cover duplicate review events
+      x-mojo-to: 'api-coverduplicates#review_events'
   /api/duplicates/cover/refresh:
     post:
       summary: Drop dismissed and orphan-archive pairs from the cover deck

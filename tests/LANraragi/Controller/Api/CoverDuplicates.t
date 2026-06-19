@@ -366,6 +366,65 @@ note("POST /api/duplicates/cover/status logs a review decision");
     is($CoverStatusState::data_quit, 1, "archive redis quit after log failure");
 }
 
+note("GET /api/duplicates/cover/review-events exports review event pages");
+{
+    package CoverReviewEventsState {
+        our @events;
+        our @lrange_seen;
+        our @llen_seen;
+        our $quit = 0;
+    }
+
+    package CoverReviewEventsRedis {
+        sub new { bless {}, shift }
+        sub lrange {
+            my ($self, $key, $start, $stop) = @_;
+            push @CoverReviewEventsState::lrange_seen, [$key, $start, $stop];
+            return () unless @CoverReviewEventsState::events;
+            $stop = $#CoverReviewEventsState::events if $stop < 0 || $stop > $#CoverReviewEventsState::events;
+            return () if $start > $#CoverReviewEventsState::events;
+            return @CoverReviewEventsState::events[$start .. $stop];
+        }
+        sub llen {
+            my ($self, $key) = @_;
+            push @CoverReviewEventsState::llen_seen, $key;
+            return scalar @CoverReviewEventsState::events;
+        }
+        sub quit { $CoverReviewEventsState::quit++; 1 }
+    }
+
+    package main;
+
+    @CoverReviewEventsState::events = (
+        encode_json({ event_id => 'cover-review-1', pair => ('a' x 40) . '|' . ('b' x 40) }),
+        encode_json({ event_id => 'cover-review-2', pair => ('c' x 40) . '|' . ('d' x 40) }),
+        encode_json({ event_id => 'cover-review-3', pair => ('e' x 40) . '|' . ('f' x 40) }),
+    );
+    @CoverReviewEventsState::lrange_seen = ();
+    @CoverReviewEventsState::llen_seen = ();
+    $CoverReviewEventsState::quit = 0;
+
+    $ctrl_mod->redefine('_get_redis_config', sub { CoverReviewEventsRedis->new });
+
+    my $t = Mojolicious::Lite->new;
+    $t->routes->any('/api/duplicates/cover/review-events')->to('api-coverduplicates#review_events');
+    my $tx = Mojo::Transaction::HTTP->new;
+    my $c = Mojolicious::Controller->new(app => $t, tx => $tx);
+    $c->req->url->parse('/api/duplicates/cover/review-events?offset=1&limit=1');
+
+    LANraragi::Controller::Api::Coverduplicates::review_events($c);
+    my $body = decode_json($c->res->body);
+
+    is($body->{total}, 3, "total review event count returned");
+    is($body->{offset}, 1, "offset returned");
+    is($body->{limit}, 1, "limit returned");
+    is(scalar @{$body->{events}}, 1, "one event page returned");
+    is($body->{events}[0]{event_id}, 'cover-review-2', "requested page event returned");
+    is_deeply($CoverReviewEventsState::lrange_seen[0], ['LRR_COVER_DUPLICATE_REVIEW_EVENTS', 1, 1], "events key used for lrange");
+    is($CoverReviewEventsState::llen_seen[0], 'LRR_COVER_DUPLICATE_REVIEW_EVENTS', "events key used for llen");
+    is($CoverReviewEventsState::quit, 1, "config redis quit after export");
+}
+
 note("Mojolicious route name resolves the cover duplicate controller");
 {
     package CoverCtrlRedisRoute {
