@@ -264,6 +264,38 @@ reset_state();
     ok($event->{features}{has_korean_side}, "ko-* languages count as Korean");
 }
 
+note("preserves JSON boolean context fields");
+reset_state();
+{
+    my $redis = ReviewLogRedis->new;
+    my $redis_cfg = ReviewLogRedis->new;
+    my $id_a = 'e' x 40;
+    my $id_b = 'f' x 40;
+    my $pair = "$id_a|$id_b";
+    my $context = decode_json('{"reader_opened_a": true, "reader_opened_b": false}');
+
+    $ReviewLogTestData::hash{'LRR_COVER_DUPLICATE_PAIR_META'}{$pair} = encode_json({
+        pass => 'cover',
+        cover_hamming => 5,
+        cover_algo_version => 2,
+        status => 'new',
+    });
+
+    my $event = LANraragi::Model::Dedup::ReviewLog::record_cover_decision(
+        $redis_cfg,
+        $redis,
+        {
+            pair => $pair,
+            action_type => 'mark_status',
+            label => 'same_cover',
+            context => $context,
+        }
+    );
+
+    is($event->{context}{reader_opened_a}, 1, "JSON true context is preserved as 1");
+    is($event->{context}{reader_opened_b}, 0, "JSON false context is preserved as 0");
+}
+
 note("exports event pages");
 {
     my $redis_cfg = ReviewLogRedis->new;

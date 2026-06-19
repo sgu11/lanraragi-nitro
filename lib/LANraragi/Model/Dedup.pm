@@ -15,7 +15,6 @@ our @EXPORT_OK = qw(
     compute_leadhashes_for_archive
     normalize_title_for_dedup
     work_key_for_dedup
-    title_similarity_for_dedup
     dedup_source_key_from_tags
     dedup_language_from_tags
     dedup_stable_tags

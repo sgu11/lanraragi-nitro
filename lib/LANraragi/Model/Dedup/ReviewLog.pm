@@ -13,6 +13,7 @@ our @EXPORT_OK = qw(
 
 use Mojo::JSON qw(decode_json encode_json);
 use POSIX qw(strftime);
+use Scalar::Util qw(blessed);
 
 use LANraragi::Model::Dedup ();
 use LANraragi::Utils::PHash qw(hamming_hex);
@@ -75,6 +76,10 @@ sub _bounded_string {
 sub _bool_or_undef {
     my ($value) = @_;
     return undef unless defined $value;
+    if (my $class = blessed($value)) {
+        return $value ? 1 : 0 if $class =~ /\A(?:JSON::PP::Boolean|Cpanel::JSON::XS::Boolean|Types::Serialiser::Boolean)\z/;
+        return undef;
+    }
     return undef if ref($value);
     return $value ? 1 : 0;
 }
