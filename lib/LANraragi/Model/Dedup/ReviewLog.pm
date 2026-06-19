@@ -22,10 +22,15 @@ use constant EVENTS_KEY     => 'LRR_COVER_DUPLICATE_REVIEW_EVENTS';
 use constant SEQ_KEY        => 'LRR_COVER_DUPLICATE_REVIEW_EVENT_SEQ';
 use constant PAIR_META_KEY  => 'LRR_COVER_DUPLICATE_PAIR_META';
 use constant SCHEMA_VERSION => 1;
+use constant CONTEXT_STRING_MAX => 80;
+use constant VISIBLE_STRING_MAX => 256;
+use constant VISIBLE_TAGS_MAX   => 1024;
+use constant RAW_EVENT_MAX      => 1000;
 
 sub canonical_pair {
     my ($pair) = @_;
     return undef unless defined $pair && $pair =~ /\A([0-9a-f]{40})\|([0-9a-f]{40})\z/;
+    return undef if $1 eq $2;
     my ($a, $b) = sort ($1, $2);
     return "$a|$b";
 }
@@ -51,6 +56,27 @@ sub _num_or_zero {
     my ($value) = @_;
     return 0 unless defined $value && "$value" =~ /\A\d+(?:\.\d+)?\z/;
     return $value + 0;
+}
+
+sub _num_or_undef {
+    my ($value) = @_;
+    return undef if !defined($value) || ref($value);
+    return undef unless "$value" =~ /\A-?\d+(?:\.\d+)?\z/;
+    return $value + 0;
+}
+
+sub _bounded_string {
+    my ($value, $max) = @_;
+    return undef if !defined($value) || ref($value);
+    my $string = "$value";
+    return substr($string, 0, $max);
+}
+
+sub _bool_or_undef {
+    my ($value) = @_;
+    return undef unless defined $value;
+    return undef if ref($value);
+    return $value ? 1 : 0;
 }
 
 sub _tag_list {
@@ -124,7 +150,7 @@ sub _snapshot_has_data {
 }
 
 sub _with_visible_fallback {
-    my ($server, $visible) = @_;
+    my ($server, $visible, $id) = @_;
     return $server unless ref $visible eq 'HASH';
     return $server if _snapshot_has_data($server);
 
@@ -132,6 +158,7 @@ sub _with_visible_fallback {
     for my $field (qw(arcid title name pagecount arcsize tag_count language date_added cover_width cover_height cover_pixels)) {
         $merged{$field} = $visible->{$field} if defined $visible->{$field};
     }
+    $merged{arcid} = $id if defined $id;
     $merged{cover_pixels} = ($merged{cover_width} // 0) * ($merged{cover_height} // 0)
         if !defined($visible->{cover_pixels}) && defined($visible->{cover_width}) && defined($visible->{cover_height});
     $merged{_tags} = join(', ', _tag_list($visible->{tags})) if defined $visible->{tags};
@@ -178,6 +205,12 @@ sub _lead_hamming_from_snapshots {
     return $best;
 }
 
+sub _has_korean_language {
+    my ($language) = @_;
+    $language //= '';
+    return $language =~ /\A(?:korean|ko)(?:[_-].*)?\z/i ? 1 : 0;
+}
+
 sub _pair_features {
     my ($a, $b) = @_;
     my $qa = LANraragi::Model::Dedup::quality_proxy($a);
@@ -196,7 +229,7 @@ sub _pair_features {
         quality_proxy_b => $qb,
         quality_ratio => _ratio($qa, $qb),
         same_language => (length($a->{language} // '') && ($a->{language} // '') eq ($b->{language} // '')) ? 1 : 0,
-        has_korean_side => (($a->{language} // '') =~ /\A(?:korean|ko)\z/i || ($b->{language} // '') =~ /\A(?:korean|ko)\z/i) ? 1 : 0,
+        has_korean_side => (_has_korean_language($a->{language}) || _has_korean_language($b->{language})) ? 1 : 0,
         title_score => defined $title_score ? $title_score + 0 : undef,
         work_key_a => $work_a,
         work_key_b => $work_b,
@@ -206,6 +239,71 @@ sub _pair_features {
         stable_tag_jaccard => _stable_tag_jaccard_from_snapshots($a, $b),
         lead_hamming => _lead_hamming_from_snapshots($a, $b),
     };
+}
+
+sub _sanitize_context {
+    my ($context) = @_;
+    return {} unless ref $context eq 'HASH';
+
+    my %out;
+    for my $field (qw(input_method status_filter)) {
+        my $value = _bounded_string($context->{$field}, CONTEXT_STRING_MAX);
+        $out{$field} = $value if defined $value;
+    }
+    for my $field (qw(threshold queue_index queue_length dwell_ms)) {
+        my $value = _num_or_undef($context->{$field});
+        $out{$field} = $value if defined $value;
+    }
+    for my $field (qw(reader_opened_a reader_opened_b)) {
+        my $value = _bool_or_undef($context->{$field});
+        $out{$field} = $value if defined $value;
+    }
+    return \%out;
+}
+
+sub _sanitize_visible_archive {
+    my ($archive, $id) = @_;
+    return undef unless ref $archive eq 'HASH';
+
+    my %out = ( arcid => $id );
+    for my $field (qw(title name)) {
+        my $value = _bounded_string($archive->{$field}, VISIBLE_STRING_MAX);
+        $out{$field} = $value if defined $value;
+    }
+    my $tags = _bounded_string($archive->{tags}, VISIBLE_TAGS_MAX);
+    $out{tags} = $tags if defined $tags;
+    for my $field (qw(language date_added)) {
+        my $value = _bounded_string($archive->{$field}, CONTEXT_STRING_MAX);
+        $out{$field} = $value if defined $value;
+    }
+    for my $field (qw(pagecount arcsize tag_count cover_width cover_height cover_pixels)) {
+        my $value = _num_or_undef($archive->{$field});
+        $out{$field} = $value if defined $value;
+    }
+    return \%out;
+}
+
+sub _sanitize_visible_snapshot {
+    my ($visible, $id_a, $id_b) = @_;
+    return {} unless ref $visible eq 'HASH';
+
+    my %out = (
+        id_a => $id_a,
+        id_b => $id_b,
+    );
+    for my $field (qw(score cover_hamming)) {
+        my $value = _num_or_undef($visible->{$field});
+        $out{$field} = $value if defined $value;
+    }
+    for my $field (qw(pass status)) {
+        my $value = _bounded_string($visible->{$field}, CONTEXT_STRING_MAX);
+        $out{$field} = $value if defined $value;
+    }
+    my $archive_a = _sanitize_visible_archive($visible->{a}, $id_a);
+    my $archive_b = _sanitize_visible_archive($visible->{b}, $id_b);
+    $out{a} = $archive_a if defined $archive_a;
+    $out{b} = $archive_b if defined $archive_b;
+    return \%out;
 }
 
 sub _candidate_meta {
@@ -229,9 +327,9 @@ sub record_cover_decision {
     my ($id_a, $id_b) = _split_pair($pair);
 
     my $seq = $redis_cfg->incr(SEQ_KEY);
-    my $visible = ref $args->{visible_snapshot} eq 'HASH' ? $args->{visible_snapshot} : {};
-    my $snap_a = _with_visible_fallback(_archive_snapshot($redis, $id_a), $visible->{a});
-    my $snap_b = _with_visible_fallback(_archive_snapshot($redis, $id_b), $visible->{b});
+    my $visible = _sanitize_visible_snapshot($args->{visible_snapshot}, $id_a, $id_b);
+    my $snap_a = _with_visible_fallback(_archive_snapshot($redis, $id_a), $visible->{a}, $id_a);
+    my $snap_b = _with_visible_fallback(_archive_snapshot($redis, $id_b), $visible->{b}, $id_b);
     my $event = {
         schema_version => SCHEMA_VERSION,
         event_id => "cover-review-$seq",
@@ -248,7 +346,7 @@ sub record_cover_decision {
         action_error => $args->{action_error},
         kept_archive_id => $args->{kept_archive_id},
         deleted_archive_id => $args->{deleted_archive_id},
-        context => $args->{context} // {},
+        context => _sanitize_context($args->{context}),
         candidate => _candidate_meta($redis_cfg, $pair),
         archives => {
             a => _strip_private_snapshot_fields($snap_a),
@@ -262,6 +360,16 @@ sub record_cover_decision {
     return $event;
 }
 
+sub _event_from_json {
+    my ($json) = @_;
+    my $decoded = eval { decode_json($json // '{}') };
+    return $decoded if !$@ && ref $decoded eq 'HASH';
+    return {
+        decode_error => 1,
+        raw => _bounded_string($json // '', RAW_EVENT_MAX),
+    };
+}
+
 sub review_events {
     my ($redis_cfg, $opts) = @_;
     $opts //= {};
@@ -272,7 +380,7 @@ sub review_events {
     $limit = 1000 if $limit > 1000;
     my $stop = $offset + $limit - 1;
     my @raw = $redis_cfg->lrange(EVENTS_KEY, $offset, $stop);
-    my @events = map { _json_hash($_) } @raw;
+    my @events = map { _event_from_json($_) } @raw;
     return {
         events => \@events,
         offset => $offset,
