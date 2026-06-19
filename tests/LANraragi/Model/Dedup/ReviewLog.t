@@ -298,12 +298,16 @@ reset_state();
             pair => $pair,
             action_type => 'mark_status',
             label => 'same_cover',
+            action_success => 0,
             context => $context,
         }
     );
 
-    is($event->{context}{reader_opened_a}, 1, "JSON true context is preserved as 1");
-    is($event->{context}{reader_opened_b}, 0, "JSON false context is preserved as 0");
+    ok($event->{context}{reader_opened_a}, "JSON true context remains truthy");
+    ok(!$event->{context}{reader_opened_b}, "JSON false context remains falsey");
+    like($ReviewLogTestData::events[-1], qr/"reader_opened_a":true/, "JSON true context serializes as true");
+    like($ReviewLogTestData::events[-1], qr/"reader_opened_b":false/, "JSON false context serializes as false");
+    like($ReviewLogTestData::events[-1], qr/"action_success":false/, "action_success serializes as JSON boolean");
 }
 
 note("exports event pages");

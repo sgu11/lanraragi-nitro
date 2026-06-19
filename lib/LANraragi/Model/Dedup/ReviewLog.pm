@@ -11,7 +11,7 @@ our @EXPORT_OK = qw(
     review_events
 );
 
-use Mojo::JSON qw(decode_json encode_json);
+use Mojo::JSON qw(decode_json encode_json false true);
 use POSIX qw(strftime);
 use Scalar::Util qw(blessed);
 
@@ -78,11 +78,12 @@ sub _bool_or_undef {
     my ($value) = @_;
     return undef unless defined $value;
     if (my $class = blessed($value)) {
-        return $value ? 1 : 0 if $class =~ /\A(?:JSON::PP::Boolean|Cpanel::JSON::XS::Boolean|Types::Serialiser::Boolean)\z/;
+        return $value ? true : false
+            if $class =~ /\A(?:JSON::PP::Boolean|Cpanel::JSON::XS::Boolean|Types::Serialiser::Boolean)\z/;
         return undef;
     }
     return undef if ref($value);
-    return $value ? 1 : 0;
+    return $value ? true : false;
 }
 
 sub _tag_list {
@@ -348,7 +349,7 @@ sub record_cover_decision {
         label => $args->{label} // $args->{new_status} // '',
         previous_status => $args->{previous_status},
         new_status => $args->{new_status},
-        action_success => exists $args->{action_success} ? ($args->{action_success} ? 1 : 0) : 1,
+        action_success => exists $args->{action_success} ? (_bool_or_undef($args->{action_success}) // false) : true,
         action_error => $args->{action_error},
         kept_archive_id => $args->{kept_archive_id},
         deleted_archive_id => $args->{deleted_archive_id},
