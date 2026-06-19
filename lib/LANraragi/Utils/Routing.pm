@@ -40,6 +40,9 @@ sub apply_routes {
         $search_api = $search_api->under('/')->to('login#logged_in_api');
     }
 
+    # Keep this fork-only export route explicit; OpenAPI still documents it.
+    $api->get('/api/duplicates/cover/review-events')->to('api-coverduplicates#review_events');
+
     # All "/api/*" endpoints are passed to OpenAPI.
     $self->plugin(
         "OpenAPI" => {
