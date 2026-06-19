@@ -62,6 +62,12 @@ function numericValue(value) {
     return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function optionalNumber(value) {
+    if (value === undefined || value === null || value === "") return undefined;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : undefined;
+}
+
 function timestampValue(value) {
     if (!value) return 0;
     const raw = String(value).trim();
@@ -160,6 +166,7 @@ Duplicates.state = {
     activeIndex: 0,
     reviewedCount: 0,
     reviewedPairs: new Set(),
+    activePairRenderedAt: 0,
     loadingMore: false,
 };
 
@@ -230,6 +237,7 @@ Duplicates.loadPairs = function () {
             Duplicates.state.pairs = data.pairs || [];
             Duplicates.state.activeIndex = 0;
             Duplicates.state.reviewedPairs = new Set();
+            Duplicates.state.activePairRenderedAt = 0;
             Duplicates.renderActivePair();
             Duplicates.renderQueueRail();
             Duplicates.updateReviewMetrics();
@@ -365,6 +373,7 @@ Duplicates.renderActivePair = function () {
     const status = pair.status || "new";
     const statusLabel = STATUS_LABELS[status] || status;
     const hamming = pair.cover_hamming !== undefined ? pair.cover_hamming : pair.score;
+    Duplicates.state.activePairRenderedAt = Date.now();
 
     $("#dupes-list").html(`
         <article class="dupe-focus-card" data-pair="${pairMember(pair)}">
@@ -451,13 +460,79 @@ Duplicates.dismissPair = function (pair) {
     });
 };
 
-Duplicates.updateStatus = function (pair, status) {
+Duplicates.archiveReviewSnapshot = function (archive = {}) {
+    const coverWidth = optionalNumber(archive.cover_width);
+    const coverHeight = optionalNumber(archive.cover_height);
+    const coverPixels = optionalNumber(archive.cover_pixels);
+    const snapshot = {
+        arcid: archive.arcid || "",
+        title: archive.title || "",
+        name: archive.name || "",
+        tags: archive.tags || "",
+        pagecount: optionalNumber(archive.pagecount),
+        arcsize: optionalNumber(archive.arcsize),
+        tag_count: optionalNumber(archive.tag_count),
+        language: archive.language || "",
+        date_added: archive.date_added || "",
+        cover_width: coverWidth,
+        cover_height: coverHeight,
+        cover_pixels: coverPixels !== undefined ? coverPixels : (
+            coverWidth !== undefined && coverHeight !== undefined ? coverWidth * coverHeight : undefined
+        ),
+    };
+
+    Object.keys(snapshot).forEach((key) => {
+        if (snapshot[key] === undefined) delete snapshot[key];
+    });
+    return snapshot;
+};
+
+Duplicates.reviewContext = function (inputMethod) {
+    const renderedAt = Duplicates.state.activePairRenderedAt || Date.now();
+    return {
+        input_method: inputMethod || "button",
+        threshold: Duplicates.state.threshold,
+        status_filter: Duplicates.state.status,
+        queue_index: Duplicates.state.activeIndex,
+        queue_length: Duplicates.state.pairs.length,
+        dwell_ms: Math.max(0, Date.now() - renderedAt),
+    };
+};
+
+Duplicates.visibleSnapshot = function (pair) {
+    const score = optionalNumber(pair.score);
+    const coverHamming = optionalNumber(pair.cover_hamming);
+    const snapshot = {
+        id_a: pair.id_a,
+        id_b: pair.id_b,
+        score,
+        cover_hamming: coverHamming !== undefined ? coverHamming : score,
+        pass: pair.pass || "cover",
+        status: pair.status || "new",
+        a: Duplicates.archiveReviewSnapshot(pair.a || {}),
+        b: Duplicates.archiveReviewSnapshot(pair.b || {}),
+    };
+
+    Object.keys(snapshot).forEach((key) => {
+        if (snapshot[key] === undefined) delete snapshot[key];
+    });
+    return snapshot;
+};
+
+Duplicates.reviewLogPayload = function (pair, inputMethod) {
+    return {
+        context: Duplicates.reviewContext(inputMethod),
+        visible_snapshot: Duplicates.visibleSnapshot(pair),
+    };
+};
+
+Duplicates.updateStatus = function (pair, status, reviewLogPayload = {}) {
     return Duplicates.fetchJSON(
         new LRR.ApiURL("/api/duplicates/cover/status"),
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pair, status }),
+            body: JSON.stringify({ pair, status, ...reviewLogPayload }),
         },
     );
 };
@@ -537,13 +612,13 @@ Duplicates.getFocusedPair = function () {
     return pair ? pairMember(pair) : null;
 };
 
-Duplicates.applyStatusToActivePair = function (status) {
+Duplicates.applyStatusToActivePair = function (status, inputMethod = "keyboard") {
     const pair = Duplicates.getActivePair();
     if (!pair) return;
     const member = pairMember(pair);
     Duplicates.performReviewAction({
         pair,
-        action: () => Duplicates.updateStatus(member, status),
+        action: () => Duplicates.updateStatus(member, status, Duplicates.reviewLogPayload(pair, inputMethod)),
         errorTitle: "Status update failed",
     });
 };
@@ -630,7 +705,7 @@ $(function () {
             const status = $button.attr("data-status");
             Duplicates.performReviewAction({
                 pair,
-                action: () => Duplicates.updateStatus(pairMember(pair), status),
+                action: () => Duplicates.updateStatus(pairMember(pair), status, Duplicates.reviewLogPayload(pair, "button")),
                 errorTitle: "Status update failed",
             });
             return;
