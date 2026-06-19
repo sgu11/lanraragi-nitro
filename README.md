@@ -124,6 +124,7 @@ Reader behavior:
 - **No-confirm duplicate deletes** — keep/delete actions in `/duplicates_custom` delete immediately and advance the focused queue without a confirmation modal.
 - The fork duplicate finder is mounted at `/duplicates_custom`; `/duplicates` is left close to upstream's duplicate-group page to reduce upstream-sync conflicts.
 - Technical baseline: [`docs/local-features/duplicate-detection.md`](docs/local-features/duplicate-detection.md).
+- Explainer: [`docs/deduplication-advancement-explainer-2026-06-19.md`](docs/deduplication-advancement-explainer-2026-06-19.md) and illustrated Korean HTML view.
 
 ### Performance
 
