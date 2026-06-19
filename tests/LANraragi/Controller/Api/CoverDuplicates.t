@@ -6,7 +6,7 @@ use Test::MockObject;
 use Test::MockModule qw(strict);
 use Test::Mojo;
 use Cwd qw(getcwd);
-use Mojo::JSON qw(decode_json);
+use Mojo::JSON qw(decode_json encode_json);
 
 my $cwd = getcwd();
 require "$cwd/tests/mocks.pl";
@@ -183,6 +183,187 @@ note("GET /api/duplicates/cover/stats returns cover stats");
     is($body->{last_scan_ts}, 1234567890, "last_scan_ts reported");
     is($body->{archives_with_coverhashes}, 2, "both archives have cover hashes");
     is($body->{archives_cover_pending}, 0, "no pending archives");
+}
+
+note("POST /api/duplicates/cover/status logs a review decision");
+{
+    package CoverStatusState {
+        our %meta;
+        our %archives;
+        our @events;
+        our @hset_seen;
+        our $seq = 0;
+        our $cfg_quit = 0;
+        our $data_quit = 0;
+        our $rpush_die = '';
+    }
+
+    package CoverStatusRedisCfg {
+        sub new { bless {}, shift }
+        sub hget {
+            my ($self, $key, $field) = @_;
+            return $CoverStatusState::meta{$key}{$field};
+        }
+        sub hset {
+            my ($self, $key, $field, $value) = @_;
+            push @CoverStatusState::hset_seen, [$key, $field, $value];
+            $CoverStatusState::meta{$key}{$field} = $value;
+            return 1;
+        }
+        sub incr {
+            my ($self, $key) = @_;
+            return ++$CoverStatusState::seq if $key eq 'LRR_COVER_DUPLICATE_REVIEW_EVENT_SEQ';
+            return undef;
+        }
+        sub rpush {
+            my ($self, $key, $value) = @_;
+            die "$CoverStatusState::rpush_die\n" if $CoverStatusState::rpush_die;
+            push @CoverStatusState::events, [$key, $value];
+            return scalar @CoverStatusState::events;
+        }
+        sub quit { $CoverStatusState::cfg_quit++; 1 }
+    }
+
+    package CoverStatusRedisData {
+        sub new { bless {}, shift }
+        sub hmget {
+            my $self = shift;
+            my $cb = ref($_[-1]) eq 'CODE' ? pop @_ : undef;
+            my ($key, @fields) = @_;
+            my @values = map { $CoverStatusState::archives{$key}{$_} // '' } @fields;
+            $cb->(\@values, undef) if $cb;
+            return \@values;
+        }
+        sub quit { $CoverStatusState::data_quit++; 1 }
+    }
+
+    package main;
+
+    %CoverStatusState::meta = ();
+    %CoverStatusState::archives = ();
+    @CoverStatusState::events = ();
+    @CoverStatusState::hset_seen = ();
+    $CoverStatusState::seq = 0;
+    $CoverStatusState::cfg_quit = 0;
+    $CoverStatusState::data_quit = 0;
+    $CoverStatusState::rpush_die = '';
+
+    my $id_a = 'a' x 40;
+    my $id_b = 'b' x 40;
+    my $pair = "$id_a|$id_b";
+    $CoverStatusState::meta{'LRR_COVER_DUPLICATE_PAIR_META'}{$pair} = encode_json({
+        pass => 'cover',
+        cover_hamming => 6,
+        cover_algo_version => 2,
+        status => 'new',
+        note => 'preserve me',
+    });
+    $CoverStatusState::archives{$id_a} = {
+        title => 'Archive A',
+        name => 'a.cbz',
+        tags => 'language:korean, source:gallery_source.la/galleries/1.html',
+        pagecount => '10',
+        arcsize => '1000',
+        cover_fp => encode_json({ w => 100, h => 200 }),
+    };
+    $CoverStatusState::archives{$id_b} = {
+        title => 'Archive B',
+        name => 'b.cbz',
+        tags => 'language:english, source:gallery_source.la/galleries/1.html',
+        pagecount => '12',
+        arcsize => '1200',
+        cover_fp => encode_json({ w => 100, h => 200 }),
+    };
+
+    $ctrl_mod->redefine('_get_redis_config', sub { CoverStatusRedisCfg->new });
+    $ctrl_mod->redefine('_get_redis',        sub { CoverStatusRedisData->new });
+
+    my $t = Mojolicious::Lite->new;
+    $t->routes->any('/api/duplicates/cover/status')->to('api-coverduplicates#update_status');
+    my $tx = Mojo::Transaction::HTTP->new;
+    my $c = Mojolicious::Controller->new(app => $t, tx => $tx);
+    $c->req->method('POST');
+    $c->req->url->parse('/api/duplicates/cover/status');
+    $c->req->headers->content_type('application/json');
+    $c->req->body(encode_json({
+        pair => $pair,
+        status => 'same_cover',
+        context => {
+            input_method => 'keyboard',
+            threshold => 22,
+            status_filter => 'new',
+            queue_index => 0,
+            queue_length => 24,
+        },
+        visible_snapshot => {
+            score => 6,
+            a => { arcid => $id_a, title => 'Visible A' },
+            b => { arcid => $id_b, title => 'Visible B' },
+        },
+    }));
+
+    LANraragi::Controller::Api::Coverduplicates::update_status($c);
+    my $body = decode_json($c->res->body);
+    my $updated_meta = decode_json($CoverStatusState::meta{'LRR_COVER_DUPLICATE_PAIR_META'}{$pair});
+    my $event = @CoverStatusState::events ? decode_json($CoverStatusState::events[0][1]) : {};
+
+    ok($body->{success}, "status update succeeds");
+    is($body->{event_id}, 'cover-review-1', "response includes review event id");
+    is($updated_meta->{status}, 'same_cover', "pair status updated");
+    is($updated_meta->{note}, 'preserve me', "existing pair metadata is preserved");
+    is($CoverStatusState::hset_seen[0][0], 'LRR_COVER_DUPLICATE_PAIR_META', "pair meta key used for hset");
+    is(scalar @CoverStatusState::events, 1, "one review event appended");
+    is($CoverStatusState::events[0][0] // '', 'LRR_COVER_DUPLICATE_REVIEW_EVENTS', "review event key used for rpush");
+    is($event->{pair}, $pair, "event stores pair");
+    is($event->{action_type}, 'mark_status', "event action type recorded");
+    is($event->{label}, 'same_cover', "event label recorded");
+    is($event->{previous_status}, 'new', "event previous status recorded");
+    is($event->{new_status}, 'same_cover', "event new status recorded");
+    is($event->{context}{input_method}, 'keyboard', "event context recorded");
+    is($event->{visible_snapshot}{a}{title}, 'Visible A', "visible snapshot recorded");
+    is($event->{candidate}{status}, 'same_cover', "event candidate reflects updated status");
+    is($CoverStatusState::cfg_quit, 1, "config redis quit");
+    is($CoverStatusState::data_quit, 1, "archive redis quit");
+
+    %CoverStatusState::meta = ();
+    %CoverStatusState::archives = ();
+    @CoverStatusState::events = ();
+    @CoverStatusState::hset_seen = ();
+    $CoverStatusState::seq = 0;
+    $CoverStatusState::cfg_quit = 0;
+    $CoverStatusState::data_quit = 0;
+    $CoverStatusState::rpush_die = 'append failed';
+
+    $CoverStatusState::meta{'LRR_COVER_DUPLICATE_PAIR_META'}{$pair} = encode_json({
+        pass => 'cover',
+        cover_hamming => 6,
+        cover_algo_version => 2,
+        status => 'new',
+    });
+    $CoverStatusState::archives{$id_a} = { title => 'Archive A' };
+    $CoverStatusState::archives{$id_b} = { title => 'Archive B' };
+
+    my $tx_fail = Mojo::Transaction::HTTP->new;
+    my $c_fail = Mojolicious::Controller->new(app => $t, tx => $tx_fail);
+    $c_fail->req->method('POST');
+    $c_fail->req->url->parse('/api/duplicates/cover/status');
+    $c_fail->req->headers->content_type('application/json');
+    $c_fail->req->body(encode_json({
+        pair => $pair,
+        status => 'variant',
+        context => { input_method => 'button' },
+    }));
+
+    LANraragi::Controller::Api::Coverduplicates::update_status($c_fail);
+    my $fail_body = decode_json($c_fail->res->body);
+    my $failed_meta = decode_json($CoverStatusState::meta{'LRR_COVER_DUPLICATE_PAIR_META'}{$pair});
+    is($c_fail->res->code, 500, "log failure returns 500");
+    like($fail_body->{error}, qr/status updated but review event logging failed: append failed/, "log failure explains partial success");
+    is($fail_body->{status}, 'variant', "log failure response includes updated status");
+    is($failed_meta->{status}, 'variant', "status update is not rolled back after log failure");
+    is(scalar @CoverStatusState::events, 0, "failed append stores no event");
+    is($CoverStatusState::cfg_quit, 1, "config redis quit after log failure");
+    is($CoverStatusState::data_quit, 1, "archive redis quit after log failure");
 }
 
 note("Mojolicious route name resolves the cover duplicate controller");

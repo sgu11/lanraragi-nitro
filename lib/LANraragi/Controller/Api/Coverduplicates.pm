@@ -4,6 +4,7 @@ use Mojo::Base 'Mojolicious::Controller';
 use Mojo::JSON qw(decode_json encode_json);
 use LANraragi::Model::Config;
 use LANraragi::Model::Dedup::CoverIndex;
+use LANraragi::Model::Dedup::ReviewLog;
 
 # Indirection seams for tests.
 sub _get_redis        { LANraragi::Model::Config->get_redis }
@@ -99,11 +100,53 @@ sub update_status {
     }
 
     my $redis_cfg = _get_redis_config();
+    my $redis     = _get_redis();
     my $existing = eval { decode_json($redis_cfg->hget("LRR_COVER_DUPLICATE_PAIR_META", $pair) // '{}') } // {};
+    $existing = {} unless ref $existing eq 'HASH';
+    my $previous_status = $existing->{status} // 'new';
     $existing->{status} = $status;
     $redis_cfg->hset("LRR_COVER_DUPLICATE_PAIR_META", $pair, encode_json($existing));
+
+    my $event;
+    my $log_error;
+    eval {
+        $event = LANraragi::Model::Dedup::ReviewLog::record_cover_decision(
+            $redis_cfg,
+            $redis,
+            {
+                pair => $pair,
+                action_type => 'mark_status',
+                label => $status,
+                previous_status => $previous_status,
+                new_status => $status,
+                context => $body->{context},
+                visible_snapshot => $body->{visible_snapshot},
+            }
+        );
+        1;
+    } or $log_error = $@ || 'unknown error';
+
+    $redis->quit;
     $redis_cfg->quit;
-    $self->render(json => { success => \1, pair => $pair, status => $status });
+
+    if ($log_error) {
+        chomp $log_error;
+        return $self->render(
+            status => 500,
+            json => {
+                error => "status updated but review event logging failed: $log_error",
+                pair => $pair,
+                status => $status,
+            }
+        );
+    }
+
+    $self->render(json => {
+        success => \1,
+        pair => $pair,
+        status => $status,
+        event_id => $event->{event_id},
+    });
 }
 
 1;
