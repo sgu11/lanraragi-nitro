@@ -74,6 +74,13 @@ sub _bounded_string {
     return substr($string, 0, $max);
 }
 
+sub _archive_id_or_undef {
+    my ($value) = @_;
+    return undef if !defined($value) || ref($value);
+    return undef unless "$value" =~ /\A[0-9a-fA-F]{40}\z/;
+    return lc("$value");
+}
+
 sub _bool_or_undef {
     my ($value) = @_;
     return undef unless defined $value;
@@ -290,6 +297,20 @@ sub _sanitize_visible_archive {
     return \%out;
 }
 
+sub _visible_archive_for_id {
+    my ($visible, $id, $fallback_key) = @_;
+    return undef unless ref $visible eq 'HASH';
+
+    for my $key (qw(a b)) {
+        my $archive = $visible->{$key};
+        next unless ref $archive eq 'HASH';
+        my $arcid = _archive_id_or_undef($archive->{arcid});
+        return $archive if defined $arcid && $arcid eq $id;
+    }
+
+    return $visible->{$fallback_key};
+}
+
 sub _sanitize_visible_snapshot {
     my ($visible, $id_a, $id_b) = @_;
     return {} unless ref $visible eq 'HASH';
@@ -306,8 +327,8 @@ sub _sanitize_visible_snapshot {
         my $value = _bounded_string($visible->{$field}, CONTEXT_STRING_MAX);
         $out{$field} = $value if defined $value;
     }
-    my $archive_a = _sanitize_visible_archive($visible->{a}, $id_a);
-    my $archive_b = _sanitize_visible_archive($visible->{b}, $id_b);
+    my $archive_a = _sanitize_visible_archive(_visible_archive_for_id($visible, $id_a, 'a'), $id_a);
+    my $archive_b = _sanitize_visible_archive(_visible_archive_for_id($visible, $id_b, 'b'), $id_b);
     $out{a} = $archive_a if defined $archive_a;
     $out{b} = $archive_b if defined $archive_b;
     return \%out;
@@ -337,22 +358,25 @@ sub record_cover_decision {
     my $visible = _sanitize_visible_snapshot($args->{visible_snapshot}, $id_a, $id_b);
     my $snap_a = _with_visible_fallback(_archive_snapshot($redis, $id_a), $visible->{a}, $id_a);
     my $snap_b = _with_visible_fallback(_archive_snapshot($redis, $id_b), $visible->{b}, $id_b);
+    my $label = _bounded_string($args->{label}, CONTEXT_STRING_MAX);
+    $label //= _bounded_string($args->{new_status}, CONTEXT_STRING_MAX);
+    $label //= '';
     my $event = {
         schema_version => SCHEMA_VERSION,
         event_id => "cover-review-$seq",
-        event_type => $args->{event_type} // 'duplicate_review_decision',
+        event_type => _bounded_string($args->{event_type}, CONTEXT_STRING_MAX) // 'duplicate_review_decision',
         created_at => _now_iso8601(),
         pair => $pair,
         id_a => $id_a,
         id_b => $id_b,
-        action_type => $args->{action_type} // 'mark_status',
-        label => $args->{label} // $args->{new_status} // '',
-        previous_status => $args->{previous_status},
-        new_status => $args->{new_status},
+        action_type => _bounded_string($args->{action_type}, CONTEXT_STRING_MAX) // 'mark_status',
+        label => $label,
+        previous_status => _bounded_string($args->{previous_status}, CONTEXT_STRING_MAX),
+        new_status => _bounded_string($args->{new_status}, CONTEXT_STRING_MAX),
         action_success => exists $args->{action_success} ? (_bool_or_undef($args->{action_success}) // false) : true,
-        action_error => $args->{action_error},
-        kept_archive_id => $args->{kept_archive_id},
-        deleted_archive_id => $args->{deleted_archive_id},
+        action_error => _bounded_string($args->{action_error}, VISIBLE_STRING_MAX),
+        kept_archive_id => _archive_id_or_undef($args->{kept_archive_id}),
+        deleted_archive_id => _archive_id_or_undef($args->{deleted_archive_id}),
         context => _sanitize_context($args->{context}),
         candidate => _candidate_meta($redis_cfg, $pair),
         archives => {

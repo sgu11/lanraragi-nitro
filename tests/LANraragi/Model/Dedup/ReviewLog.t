@@ -274,6 +274,59 @@ reset_state();
     ok($event->{features}{has_korean_side}, "ko-* languages count as Korean");
 }
 
+note("sanitizes top-level fields and maps reversed visible archives");
+reset_state();
+{
+    my $redis = ReviewLogRedis->new;
+    my $redis_cfg = ReviewLogRedis->new;
+    my $id_a = '1' x 40;
+    my $id_b = '2' x 40;
+    my $pair = "$id_a|$id_b";
+    my $submitted_pair = "$id_b|$id_a";
+    my $long = 'z' x 300;
+
+    $ReviewLogTestData::hash{'LRR_COVER_DUPLICATE_PAIR_META'}{$pair} = encode_json({
+        pass => 'cover',
+        cover_hamming => 9,
+        cover_algo_version => 2,
+        status => 'new',
+    });
+
+    my $event = LANraragi::Model::Dedup::ReviewLog::record_cover_decision(
+        $redis_cfg,
+        $redis,
+        {
+            pair => $submitted_pair,
+            event_type => "event-$long",
+            action_type => "action-$long",
+            label => "label-$long",
+            previous_status => [],
+            new_status => "same_cover-$long",
+            action_error => "error-$long",
+            kept_archive_id => 'A' x 40,
+            deleted_archive_id => 'not-an-id',
+            visible_snapshot => {
+                a => { arcid => $id_b, title => 'Visible B' },
+                b => { arcid => $id_a, title => 'Visible A' },
+            },
+        }
+    );
+
+    is($event->{pair}, $pair, "reversed pair is stored canonically");
+    is(length($event->{event_type}), 80, "event_type is bounded");
+    is(length($event->{action_type}), 80, "action_type is bounded");
+    is(length($event->{label}), 80, "label is bounded");
+    ok(!defined $event->{previous_status}, "non-scalar previous status is omitted");
+    is(length($event->{new_status}), 80, "new_status is bounded");
+    is(length($event->{action_error}), 256, "action_error is bounded");
+    is($event->{kept_archive_id}, 'a' x 40, "kept archive id is normalized");
+    ok(!defined $event->{deleted_archive_id}, "invalid deleted archive id is omitted");
+    is($event->{visible_snapshot}{a}{title}, 'Visible A', "visible archive A is mapped by arcid");
+    is($event->{visible_snapshot}{b}{title}, 'Visible B', "visible archive B is mapped by arcid");
+    is($event->{archives}{a}{title}, 'Visible A', "archive fallback A uses mapped visible archive");
+    is($event->{archives}{b}{title}, 'Visible B', "archive fallback B uses mapped visible archive");
+}
+
 note("preserves JSON boolean context fields");
 reset_state();
 {
