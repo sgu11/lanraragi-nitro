@@ -42,6 +42,10 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - **Middle-click toggles fullscreen** anywhere in the reader (same as pressing `F`).
 - **Reading-progress migration** no longer keeps resurfacing stale migration toasts for deleted archives/tankoubons, and respects local/authenticated progress settings before attempting a server migration.
 - **Progression Tracking disabled** now suppresses local/server progress writes during page turns instead of only ignoring saved progress on reader open.
+- **Reading-progress resume** is cancellable: stale async page loads can no longer
+  scroll back over newer user navigation, disabled progress tracking no longer
+  resumes saved progress on open, and enabled tracking coalesces rapid page-turn
+  writes before persisting the latest page.
 - Technical baseline: [`docs/local-features/reader.md`](docs/local-features/reader.md).
 
 #### Adaptive Offset Detection Details

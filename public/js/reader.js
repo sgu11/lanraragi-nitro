@@ -31,6 +31,7 @@ let showingSinglePage = true;
 let pageThumbnails = [];
 const MAX_PRELOADED_IMAGES = 8;
 const INFINITE_SCROLL_WINDOW_RADIUS = 4;
+const PROGRESS_PERSISTENCE_DELAY_MS = 200;
 let preloadedImg = {};
 let preloadedPromises = {};
 let preloadedOrder = [];
@@ -46,6 +47,12 @@ let firstSpreadStart = 2;       // fork: first spread anchor (2 => pages 2-3, 4 
 let activeDisplayWindow = null; // fork: current rendered spread, including one-page vertical slides
 let activeDisplayWindowWasRequested = false;
 let requestedDisplayWindow = null;
+let hasExplicitPageParameter = false;
+let initialPageScrollPending = false;
+let userInteractedBeforeInitialPageScroll = false;
+let navigationRequestId = 0;
+let progressPersistenceTimer = null;
+let pendingProgressPage = null;
 //Spacebar Scroll Config
 let scrollConfig = {
     scrollDist: 75,      // Viewport % distance to scroll
@@ -80,6 +87,96 @@ let markersVisible = false;
 let markers = [];
 let overlayFiltered = false;
 let pageNaviState = true;
+
+function isCurrentNavigation(navigationId) {
+    return navigationId === navigationRequestId;
+}
+
+function markUserInteractionBeforeInitialPageScroll(e) {
+    if (!initialPageScrollPending || hasExplicitPageParameter) { return; }
+    if (e?.target?.tagName === "INPUT") { return; }
+
+    userInteractedBeforeInitialPageScroll = true;
+    currentPage = 0;
+    navigationRequestId += 1;
+    if (Array.isArray(pages)) {
+        goToPage(0, { resetScroll: false });
+    }
+}
+
+function registerInitialPageScrollCancellation() {
+    window.addEventListener("wheel", markUserInteractionBeforeInitialPageScroll, { capture: true, passive: true });
+    window.addEventListener("touchstart", markUserInteractionBeforeInitialPageScroll, { capture: true, passive: true });
+    window.addEventListener("pointerdown", markUserInteractionBeforeInitialPageScroll, { capture: true, passive: true });
+    window.addEventListener("keydown", markUserInteractionBeforeInitialPageScroll, true);
+}
+
+function finishInitialPageScroll() {
+    initialPageScrollPending = false;
+}
+
+function selectInitialPage() {
+    if (hasExplicitPageParameter) {
+        return { page: currentPage, reason: "explicit-page" };
+    }
+
+    const progressPage = Number(progress);
+    if (!ignoreProgress && !userInteractedBeforeInitialPageScroll && Number.isFinite(progressPage)
+        && progressPage > 0 && progressPage < maxPage) {
+        return { page: progressPage, reason: "resume-progress" };
+    }
+
+    return { page: 0, reason: "default-first" };
+}
+
+function shouldApplyInitialPageScroll(reason) {
+    if (reason === "explicit-page") { return true; }
+    if (reason === "resume-progress") {
+        return !ignoreProgress && !userInteractedBeforeInitialPageScroll;
+    }
+    return false;
+}
+
+function clearPendingProgressPersistence() {
+    if (progressPersistenceTimer !== null) {
+        clearTimeout(progressPersistenceTimer);
+        progressPersistenceTimer = null;
+    }
+    pendingProgressPage = null;
+}
+
+function persistProgress(page, options = {}) {
+    if (state.authenticateProgress && LRR.isUserLogged()) {
+        Server.updateServerSideProgress(id, page, options);
+    } else if (state.trackProgressLocally) {
+        localStorage.setItem(`${id}-reader`, page);
+    } else if (!state.authenticateProgress) {
+        Server.updateServerSideProgress(id, page, options);
+    }
+}
+
+function flushProgressPersistence(options = {}) {
+    if (pendingProgressPage === null) { return; }
+
+    const page = pendingProgressPage;
+    clearPendingProgressPersistence();
+    if (!ignoreProgress) {
+        persistProgress(page, options);
+    }
+}
+
+function scheduleProgressPersistence(page) {
+    if (ignoreProgress) {
+        clearPendingProgressPersistence();
+        return;
+    }
+
+    pendingProgressPage = page;
+    if (progressPersistenceTimer !== null) {
+        clearTimeout(progressPersistenceTimer);
+    }
+    progressPersistenceTimer = setTimeout(flushProgressPersistence, PROGRESS_PERSISTENCE_DELAY_MS);
+}
 
 function returnToLibrary() {
     document.location.href = "./";
@@ -314,7 +411,11 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
     const params = new URLSearchParams(window.location.search);
     id = params.get("id");
     force = params.get("force_reload") !== null;
+    hasExplicitPageParameter = params.has("p");
     currentPage = (+params.get("p") || 1) - 1;
+    initialPageScrollPending = !hasExplicitPageParameter;
+    userInteractedBeforeInitialPageScroll = false;
+    registerInitialPageScrollCancellation();
 
     // Remove the "new" tag with an api call (archives only; tanks don't have an isnew flag)
     if (!id.startsWith("TANK_"))
@@ -566,15 +667,11 @@ export function loadImages() {
         // * progress is tracked and is not the last page
         // * first page
         // This allows for bookmarks to trump progress
-        // when there's no parameter, null is coerced to 0 so it becomes -1
-        currentPage = currentPage || (
-            !ignoreProgress && progress < maxPage
-                ? progress
-                : 0
-        );
+        const initialPage = selectInitialPage();
+        currentPage = initialPage.page;
 
         if (infiniteScroll) {
-            initInfiniteScrollView();
+            initInfiniteScrollView(initialPage.reason);
             if (content.tags?.includes("webtoon")) {
                 $("head").append(`
                     <style id="webtoon-css">
@@ -620,7 +717,12 @@ export function loadImages() {
             });
 
             $(".current-page").each((_i, el) => $(el).html(currentPage + 1));
-            goToPage(currentPage);
+            if (shouldApplyInitialPageScroll(initialPage.reason)) {
+                goToPage(currentPage).finally(finishInitialPageScroll);
+            } else {
+                finishInitialPageScroll();
+                goToPage(currentPage, { resetScroll: false });
+            }
         }
 
         if (showOverlayByDefault) { toggleArchiveOverlay(); }
@@ -883,7 +985,7 @@ function initFullscreen() {
     armAutoFullscreen();
 }
 
-function initInfiniteScrollView() {
+function initInfiniteScrollView(initialPageReason = "default-first") {
     $("#Map").remove();
     $("#img_doublepage").remove();
     const firstSource = getReaderImageSource(0);
@@ -951,8 +1053,16 @@ function initInfiniteScrollView() {
 
     applyContainerWidth();
     allImagesLoaded = $("#display .reader-image").toArray().every((img) => img.complete || !img.getAttribute("src"));
-    if (window.scrollY === 0 || !allImagesLoaded) {
-        requestAnimationFrame(() => goToPage(currentPage));
+    if (shouldApplyInitialPageScroll(initialPageReason) && (window.scrollY === 0 || !allImagesLoaded)) {
+        requestAnimationFrame(() => {
+            if (shouldApplyInitialPageScroll(initialPageReason)) {
+                goToPage(currentPage).finally(finishInitialPageScroll);
+            } else {
+                finishInitialPageScroll();
+            }
+        });
+    } else {
+        finishInitialPageScroll();
     }
 }
 
@@ -1578,36 +1688,55 @@ function updateMetadata() {
     $("#i3").removeClass("loading");
 }
 
-async function goToPage(page) {
+async function goToPage(page, { resetScroll = true } = {}) {
     return Perf.measure("reader.goToPage", async () => {
+        navigationRequestId += 1;
+        const navigationId = navigationRequestId;
         const displayWindowOverride = requestedDisplayWindow;
         requestedDisplayWindow = null;
         previousPage = currentPage;
-        currentPage = Math.min(maxPage, Math.max(0, +page));
+        const targetPage = Math.min(maxPage, Math.max(0, +page));
+        currentPage = targetPage;
         showingSinglePage = false;
 
         if (infiniteScroll) {
             activeDisplayWindow = null;
             activeDisplayWindowWasRequested = false;
             materializeInfiniteScrollWindow(currentPage);
-            $("#display img").get(currentPage).scrollIntoView({ block: "nearest" });
+            if (!isCurrentNavigation(navigationId)) { return; }
+            if (resetScroll) {
+                $("#display img").get(currentPage).scrollIntoView({ block: "nearest" });
+            }
         } else {
             if (doublePageMode) {
-                await loadImage(currentPage);
-                if (currentPage > 0) { await loadImage(currentPage - 1); }
-                if (currentPage < maxPage) { await loadImage(currentPage + 1); }
+                await loadImage(targetPage);
+                if (!isCurrentNavigation(navigationId)) { return; }
+                if (targetPage > 0) {
+                    await loadImage(targetPage - 1);
+                    if (!isCurrentNavigation(navigationId)) { return; }
+                }
+                if (targetPage < maxPage) {
+                    await loadImage(targetPage + 1);
+                    if (!isCurrentNavigation(navigationId)) { return; }
+                }
 
-                const displayWindow = displayWindowOverride || getDisplayWindow(currentPage, getSpreadState());
-                activeDisplayWindow = displayWindow;
-                activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
-                currentPage = displayWindow.start;
+                const displayWindow = displayWindowOverride || getDisplayWindow(targetPage, getSpreadState({
+                    currentPage: targetPage,
+                }));
+                const displayStart = displayWindow.start;
 
                 if (displayWindow.end > displayWindow.start) {
-                    const img1 = await loadImage(currentPage);
-                    const img1Filename = getFilename(currentPage);
+                    const img1 = await loadImage(displayStart);
+                    if (!isCurrentNavigation(navigationId)) { return; }
+                    const img1Filename = getFilename(displayStart);
                     const img2 = await loadImage(displayWindow.end);
+                    if (!isCurrentNavigation(navigationId)) { return; }
                     const img2Filename = getFilename(displayWindow.end);
                     await Promise.all([decodeImage(img1), decodeImage(img2)]);
+                    if (!isCurrentNavigation(navigationId)) { return; }
+                    activeDisplayWindow = displayWindow;
+                    activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
+                    currentPage = displayStart;
                     if (mangaMode) {
                         $("#img").attr("src", img2);
                         $("#img").attr("data-filename", img2Filename);
@@ -1621,9 +1750,14 @@ async function goToPage(page) {
                     }
                     $("#display").addClass("double-mode");
                 } else {
-                    const img = await loadImage(currentPage);
-                    const imgFilename = getFilename(currentPage);
+                    const img = await loadImage(displayStart);
+                    if (!isCurrentNavigation(navigationId)) { return; }
+                    const imgFilename = getFilename(displayStart);
                     await decodeImage(img);
+                    if (!isCurrentNavigation(navigationId)) { return; }
+                    activeDisplayWindow = displayWindow;
+                    activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
+                    currentPage = displayStart;
                     $("#img").attr("src", img);
                     $("#img").attr("data-filename", imgFilename);
                     $("#img_doublepage").attr("src", "");
@@ -1632,9 +1766,12 @@ async function goToPage(page) {
                     showingSinglePage = true;
                 }
             } else {
-                const img = await loadImage(currentPage);
-                const imgFilename = getFilename(currentPage);
+                const img = await loadImage(targetPage);
+                if (!isCurrentNavigation(navigationId)) { return; }
+                const imgFilename = getFilename(targetPage);
                 await decodeImage(img);
+                if (!isCurrentNavigation(navigationId)) { return; }
+                currentPage = targetPage;
                 $("#img").attr("src", img);
                 $("#img").attr("data-filename", imgFilename);
                 $("#img_doublepage").attr("src", "");
@@ -1655,10 +1792,13 @@ async function goToPage(page) {
             // update full image link
             $("#imgLink").attr("href", pages[currentPage]);
 
-            // scroll to top
-            window.scrollTo(0, 0);
+            if (!isCurrentNavigation(navigationId)) { return; }
+            if (resetScroll) {
+                window.scrollTo(0, 0);
+            }
         }
 
+        if (!isCurrentNavigation(navigationId)) { return; }
         updateArchiveOverlay();
         updateProgress();
     });
@@ -1672,14 +1812,9 @@ function updateProgress() {
     let page = currentPage + 1; // progress is 1-indexed
 
     if (!ignoreProgress) {
-        // Send an API request to update progress on the server
-        if (state.authenticateProgress && LRR.isUserLogged()) {
-            Server.updateServerSideProgress(id, page);
-        } else if (state.trackProgressLocally) {
-            localStorage.setItem(`${id}-reader`, page);
-        } else if (!state.authenticateProgress) {
-            Server.updateServerSideProgress(id, page);
-        }
+        scheduleProgressPersistence(page);
+    } else {
+        clearPendingProgressPersistence();
     }
 
     // Load stamps
@@ -1730,7 +1865,10 @@ function revokePreloadedImages() {
     preloadedOrder = [];
 }
 
-window.addEventListener("pagehide", revokePreloadedImages);
+window.addEventListener("pagehide", () => {
+    flushProgressPersistence({ keepalive: true });
+    revokePreloadedImages();
+});
 
 async function decodeImage(src) {
     const img = new Image();
@@ -1925,6 +2063,7 @@ function toggleHeader() {
 
 function toggleProgressTracking() {
     ignoreProgress = localStorage.ignoreProgress = !ignoreProgress;
+    if (ignoreProgress) { clearPendingProgressPersistence(); }
     $("#toggle-progress input").toggleClass("toggled");
 }
 

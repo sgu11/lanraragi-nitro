@@ -25,6 +25,7 @@ English version: [`README.md`](README.md).
 - **Middle-click fullscreen**: reader 어디서든 middle-click으로 fullscreen toggle 가능함. `F` key와 동일한 의미임.
 - **Reading-progress migration**: 삭제된 archive/tankoubon의 stale migration toast 반복 표시 방지, local/authenticated progress 설정 확인 후 server migration 시도함.
 - **Progression Tracking disabled**: reader open 시 saved progress 무시뿐 아니라 page turn 중 local/server progress write도 억제함.
+- **Reading-progress resume**: async page load가 늦게 끝나도 최신 user navigation/scroll을 덮어쓰지 않음. Progress tracking off 상태에서는 saved progress로 자동 이동하지 않고, tracking on 상태에서는 빠른 page turn write를 최신 page 기준으로 coalesce함.
 - Technical baseline: [`docs/local-features/reader.md`](docs/local-features/reader.md).
 
 #### Adaptive Offset Detection 상세

@@ -34,9 +34,59 @@ test("reader disabled progress tracking suppresses persistence while preserving 
 
     assert.notEqual(start, -1);
     assert.notEqual(end, -1);
-    assert.match(updateProgress, /if \(!ignoreProgress\) \{[\s\S]*Server\.updateServerSideProgress\(id, page\);[\s\S]*localStorage\.setItem\(`\$\{id\}-reader`, page\);[\s\S]*\n    \}/);
+    assert.match(updateProgress, /if \(!ignoreProgress\) \{\s*scheduleProgressPersistence\(page\);\s*\} else \{\s*clearPendingProgressPersistence\(\);\s*\}/);
+    assert.match(js, /function persistProgress\(page[\s\S]*Server\.updateServerSideProgress\(id, page[\s\S]*localStorage\.setItem\(`\$\{id\}-reader`, page\);[\s\S]*Server\.updateServerSideProgress\(id, page/);
     assert.match(updateProgress, /\/\/ Load stamps[\s\S]*loadStamps\(page\);/);
     assert.ok(updateProgress.indexOf("if (!ignoreProgress)") < updateProgress.indexOf("// Load stamps"));
+});
+
+test("reader disabled progress tracking does not apply an implicit saved-progress jump", async () => {
+    const js = await source("public/js/reader.js");
+    const loadStart = js.indexOf("export function loadImages()");
+    const loadEnd = js.indexOf("export function initializeSettings()");
+    const loadImages = js.slice(loadStart, loadEnd);
+
+    assert.notEqual(loadStart, -1);
+    assert.notEqual(loadEnd, -1);
+    assert.match(js, /let hasExplicitPageParameter = false;/);
+    assert.match(js, /function selectInitialPage\(\)/);
+    assert.match(js, /function shouldApplyInitialPageScroll\(reason\)/);
+    assert.match(js, /!ignoreProgress && !userInteractedBeforeInitialPageScroll && Number\.isFinite\(progressPage\)/);
+    assert.match(loadImages, /const initialPage = selectInitialPage\(\);[\s\S]*currentPage = initialPage\.page;/);
+    assert.match(loadImages, /shouldApplyInitialPageScroll\(initialPage\.reason\)/);
+    assert.doesNotMatch(loadImages, /currentPage = currentPage \|\| \(/);
+});
+
+test("reader cancels stale async page navigations before scrolling or saving progress", async () => {
+    const js = await source("public/js/reader.js");
+    const goStart = js.indexOf("async function goToPage(page");
+    const goEnd = js.indexOf("function updateProgress()");
+    const goToPage = js.slice(goStart, goEnd);
+
+    assert.notEqual(goStart, -1);
+    assert.notEqual(goEnd, -1);
+    assert.match(js, /let navigationRequestId = 0;/);
+    assert.match(js, /function isCurrentNavigation\(navigationId\)/);
+    assert.match(goToPage, /navigationRequestId \+= 1;\s*const navigationId = navigationRequestId;/);
+    assert.match(goToPage, /if \(!isCurrentNavigation\(navigationId\)\) \{ return; \}/);
+    assert.ok(goToPage.lastIndexOf("if (!isCurrentNavigation(navigationId)) { return; }") < goToPage.indexOf("updateProgress();"));
+});
+
+test("reader progress persistence is latest-only and bypassed when tracking is disabled", async () => {
+    const js = await source("public/js/reader.js");
+    const updateStart = js.indexOf("function updateProgress()");
+    const updateEnd = js.indexOf("function preloadImages()");
+    const updateProgress = js.slice(updateStart, updateEnd);
+
+    assert.notEqual(updateStart, -1);
+    assert.notEqual(updateEnd, -1);
+    assert.match(js, /const PROGRESS_PERSISTENCE_DELAY_MS = 200;/);
+    assert.match(js, /function scheduleProgressPersistence\(page\)/);
+    assert.match(js, /function flushProgressPersistence/);
+    assert.match(js, /if \(ignoreProgress\) \{[\s\S]*clearPendingProgressPersistence\(\);[\s\S]*return;[\s\S]*\}/);
+    assert.match(js, /pendingProgressPage = page;/);
+    assert.match(js, /progressPersistenceTimer = setTimeout\(flushProgressPersistence, PROGRESS_PERSISTENCE_DELAY_MS\);/);
+    assert.match(updateProgress, /if \(!ignoreProgress\) \{\s*scheduleProgressPersistence\(page\);\s*\}/);
 });
 
 test("reader Delete key confirms archive deletion before returning to library", async () => {

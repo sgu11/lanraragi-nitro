@@ -427,14 +427,16 @@ export function loadBookmarkCategoryId() {
  *
  * @param {*} id Archive ID
  * @param {number} currentPage Page the user navigated to
+ * @param {object} options Fetch options for lifecycle flushes
+ * @param {boolean} options.keepalive Whether the request should outlive page unload
  */
-export function updateServerSideProgress(id, currentPage) {
+export function updateServerSideProgress(id, currentPage, { keepalive = false } = {}) {
 
     let endpointUrl = id.startsWith("TANK_") ? 
         new LRR.ApiURL(`/api/tankoubons/${id}/progress/${currentPage}`) : 
         new LRR.ApiURL(`/api/archives/${id}/progress/${currentPage}`);
 
-    return fetch(endpointUrl, { method: "PUT" })
+    return fetch(endpointUrl, { method: "PUT", keepalive })
         .then((response) => (response.ok ? {code: response.status, data: response.json()} : { code: response.status, data: {success: 0, error: I18N.GenericReponseError} }))
         .then((response) => {
             const { code, data } = response;
