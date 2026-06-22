@@ -16,7 +16,7 @@ test("fork grid selection is isolated behind a context-menu seam", async () => {
     assert.match(gridSelection, /document\.addEventListener\("contextmenu", handleContextMenuCapture, true\)/);
     assert.match(gridSelection, /localStorage\.setItem\("msmSelection", JSON\.stringify\(ids\)\)/);
     assert.match(gridSelection, /id\.startsWith\("TANK_"\)/);
-    assert.match(gridSelection, /#msm-toggle,\s*#msm-carousel-controls,\s*#carousel-mode-menu/);
+    assert.match(gridSelection, /\.grid-selection-enabled #msm-toggle,\s*\.grid-selection-enabled #msm-carousel-controls,\s*\.grid-selection-enabled #carousel-mode-menu/);
 });
 
 test("upstream MSM implementation remains present but is no longer the fork user path", async () => {
