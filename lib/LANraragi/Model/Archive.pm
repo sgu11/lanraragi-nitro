@@ -22,6 +22,7 @@ use LANraragi::Utils::TempFolder qw(get_temp);
 use LANraragi::Utils::Logging    qw(get_logger);
 use LANraragi::Utils::Archive    qw(extract_single_file extract_single_file extract_thumbnail);
 use LANraragi::Utils::Database   qw(invalidate_cache set_title set_tags set_summary get_archive_json get_archive_json_multi);
+use LANraragi::Utils::ImageBorderCrop qw(CROP_ALGORITHM_VERSION crop_blank_borders);
 use LANraragi::Utils::ImageResponse qw(render_thumbnail_placeholder);
 use LANraragi::Utils::PageCache  qw(fetch put);
 use LANraragi::Utils::Redis      qw(redis_decode redis_encode);
@@ -349,6 +350,38 @@ sub get_page_data ( $id, $path, $metrics = undef ) {
     return $content;
 }
 
+sub _crop_cache_key ( $id, $path, $format ) {
+    return "crop_page/v" . CROP_ALGORITHM_VERSION . "/$id/$path/$format";
+}
+
+sub _crop_resize_cache_key ( $id, $path, $threshold, $quality ) {
+    return "crop_resize_page/v" . CROP_ALGORITHM_VERSION . "/$id/$path/$threshold/$quality";
+}
+
+sub _crop_nocrop_cache_key ( $id, $path ) {
+    return "crop_page_nocrop/v" . CROP_ALGORITHM_VERSION . "/$id/$path";
+}
+
+sub _apply_border_crop ( $id, $path, $format, $content, $metrics = undef ) {
+    my $nocrop_key = _crop_nocrop_cache_key( $id, $path );
+    if ( defined fetch($nocrop_key) ) {
+        $metrics->{cache_status} = "nocrop" if defined $metrics;
+        return ( $content, 0 );
+    }
+
+    my $crop_start = [gettimeofday];
+    my $cropped = crop_blank_borders( $content, $format );
+    $metrics->{crop_seconds} = tv_interval($crop_start) if defined $metrics;
+
+    if ( defined $cropped && length($cropped) ) {
+        return ( $cropped, 1 );
+    }
+
+    put( $nocrop_key, "1" );
+    $metrics->{cache_status} = "nocrop" if defined $metrics;
+    return ( $content, 0 );
+}
+
 sub serve_page {
     my ( $self, $id, $path ) = @_;
 
@@ -363,22 +396,32 @@ sub serve_page {
         cache_status     => "miss",
         extract_seconds  => 0,
         resize_seconds   => 0,
+        crop_seconds     => 0,
     );
+    my $crop_borders = ( $self->req->param('crop') // "" ) eq "border";
+
+    my ( $n, $p, $file_ext ) = fileparse( $path, qr/\.[^.]*/ );
+    my $format = substr( $file_ext, 1 ) || "jpg";
 
     # Apply resizing transformation if set in Settings
     if ( LANraragi::Model::Config->enable_resize ) {
-        $image_metrics{variant} = "resized";
+        $image_metrics{variant} = $crop_borders ? "cropped_resized" : "resized";
 
         # Store resized files in a subfolder of the ID's temp folder, keyed by quality
         my $threshold = LANraragi::Model::Config->get_threshold;
         my $quality   = LANraragi::Model::Config->get_readquality;
 
-        my $cachekey = "resize_page/$id/$path/$threshold/$quality";
+        my $cachekey = $crop_borders
+          ? _crop_resize_cache_key( $id, $path, $threshold, $quality )
+          : "resize_page/$id/$path/$threshold/$quality";
         my $content  = fetch($cachekey);
         if ( !defined($content) ) {
             $image_metrics{cache_status} = "miss";
             my %page_metrics;
             my $page_content = get_page_data( $id, $path, \%page_metrics );
+            if ($crop_borders) {
+                ( $page_content ) = _apply_border_crop( $id, $path, $format, $page_content, \%image_metrics );
+            }
             my $resize_start = [gettimeofday];
             $content = LANraragi::Model::Reader::resize_image( $page_content, $quality, $threshold );
             $image_metrics{extract_seconds} = $page_metrics{extract_seconds} // 0;
@@ -406,8 +449,21 @@ sub serve_page {
     } else {
 
         # Get the file extension to report content-type properly
-        my ( $n, $p, $file_ext ) = fileparse( $path, qr/\.[^.]*/ );
-        my $content = get_page_data( $id, $path, \%image_metrics );
+        my $cachekey = _crop_cache_key( $id, $path, $format );
+        my $content = $crop_borders ? fetch($cachekey) : undef;
+        if ($crop_borders && defined($content)) {
+            $image_metrics{variant}      = "cropped";
+            $image_metrics{cache_status} = "hit";
+        } else {
+            $content = get_page_data( $id, $path, \%image_metrics );
+            if ($crop_borders) {
+                $image_metrics{variant}      = "cropped";
+                $image_metrics{cache_status} = "miss";
+                my $was_cropped;
+                ( $content, $was_cropped ) = _apply_border_crop( $id, $path, $format, $content, \%image_metrics );
+                put( $cachekey, $content ) if $was_cropped;
+            }
+        }
         $logger->debug( "Data size:" . length($content) );
 
         $self->res->headers->cache_control('private, max-age=3600, immutable');

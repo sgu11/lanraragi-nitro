@@ -188,6 +188,7 @@
                 <li>[% c.lh("R: open a random archive.") %]</li>
                 <li>[% c.lh("F or Middle-click: toggle fullscreen mode") %]</li>
                 <li>[% c.lh("B: toggle bookmark") %]</li>
+                <li>[% c.lh("K: toggle blank border cropping") %]</li>
                 <li>[% c.lh("N: toggle auto next page") %]</li>
                 <li>[% c.lh("G: go to page number") %]</li>
                 <li>[% c.lh("S: set a Stamp") %]</li>
@@ -289,6 +290,14 @@
     <input id="quality-high" class="favtag-btn config-btn" type="button" value="[% c.lh('High Quality') %]">
     <input id="quality-sharp" class="favtag-btn config-btn" type="button" value="[% c.lh('Sharp') %]">
     <input id="quality-pixelated" class="favtag-btn config-btn" type="button" value="[% c.lh('Pixelated') %]">
+</div>
+
+<div id="toggle-border-crop">
+    <h2 class="config-panel"> [% c.lh("Blank Border Cropping") %] </h2>
+    <span class="config-panel">[% c.lh("Requests reader page variants with blank scan borders removed. Press K to toggle.") %]
+    </span>
+    <input id="border-crop-on" class="favtag-btn config-btn" type="button" value="[% c.lh('On') %]">
+    <input id="border-crop-off" class="favtag-btn config-btn" type="button" value="[% c.lh('Off') %]">
 </div>
 
 <div id="toggle-mobile-fullscreen">

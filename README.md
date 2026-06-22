@@ -16,6 +16,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 
 - **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
 - **Image quality** options exposed in settings, with a working mobile toggle.
+- **Blank border cropping** can be toggled from Reader Options or with `K`;
+  reader page preloads request cached `/api/archives/{id}/page?crop=border`
+  variants while the full-image link keeps pointing at the original page.
 - **Fit-height fix in fullscreen** — recomputes correct height on enter/exit instead of leaving stale layout.
 - **Double-page rendering** no longer flickers between page transitions.
 - **Adaptive offset** keeps covers and wide pages single, stores server-detected

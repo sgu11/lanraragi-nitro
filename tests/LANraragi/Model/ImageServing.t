@@ -7,9 +7,11 @@ use Test::Mojo;
 use Mojolicious;
 use File::Path qw(make_path);
 use File::Temp qw(tempdir);
+use Image::Magick;
 
 use LANraragi::Model::Archive;
 use LANraragi::Model::Tankoubon;
+use LANraragi::Utils::ImageBorderCrop qw(CROP_ALGORITHM_VERSION);
 
 package FakeImageHeaders {
     sub new { bless {}, shift }
@@ -56,6 +58,11 @@ package FakeImageMinion {
         my ( $self, $id ) = @_;
         return $self->{jobs}{$id};
     }
+}
+
+package FakeImageLogger {
+    sub new { return bless {}, shift }
+    sub debug { return 1 }
 }
 
 package FakeImageLockRedis {
@@ -112,6 +119,7 @@ sub install_config_mocks {
     *LANraragi::Model::Config::enable_avif_thumbnails = sub { return 0 };
     *LANraragi::Model::Config::get_jxlthumbpages = sub { return 0 };
     *LANraragi::Model::Config::get_redis_config = sub { return $lock_redis };
+    *LANraragi::Model::Config::enable_resize = sub { return 0 };
 }
 
 install_config_mocks();
@@ -125,6 +133,12 @@ sub build_image_app {
             LANraragi::Model::Archive::serve_thumbnail( $c, $c->param('id') );
         }
     );
+    $app->routes->get('/archives/:id/page')->to(
+        cb => sub {
+            my $c = shift;
+            LANraragi::Model::Archive::serve_page( $c, $c->param('id'), $c->param('path') );
+        }
+    );
     $app->routes->get('/tankoubons/:id/thumbnail')->to(
         cb => sub {
             my $c = shift;
@@ -132,6 +146,27 @@ sub build_image_app {
         }
     );
     return Test::Mojo->new($app);
+}
+
+sub make_page_blob {
+    my ( $width, $height, $background, $rect, $content ) = @_;
+    my $img = Image::Magick->new( size => "${width}x${height}" );
+    $img->Read("xc:$background");
+    my ( $x, $y, $w, $h ) = @$rect;
+    $img->Draw(
+        primitive => "rectangle",
+        points    => "$x,$y " . ( $x + $w - 1 ) . "," . ( $y + $h - 1 ),
+        fill      => $content,
+    );
+    return $img->ImageToBlob( magick => "png" );
+}
+
+sub image_dimensions {
+    my ($blob) = @_;
+    my $img = Image::Magick->new;
+    my $err = $img->BlobToImage($blob);
+    die "$err\n" if $err;
+    return ( $img->Get("width"), $img->Get("height") );
 }
 
 sub missing_thumbnail_controller {
@@ -230,6 +265,51 @@ note("tankoubon thumbnail placeholder is served inline with cache headers");
       ->header_like( "Content-Type", qr{^image/png}, "tank placeholder content type is image/png" )
       ->header_like( "Content-Disposition", qr{\binline\b}, "tank placeholder is displayed inline" )
       ->header_like( "Cache-Control", qr{public, max-age=86400}, "tank placeholder has cache headers" );
+}
+
+note("archive page crop=border serves and reuses a cropped page variant");
+{
+    my $id = "1234567890abcdef1234567890abcdef12345678";
+    my $page_path = "page-001.png";
+    my $source = make_page_blob( 100, 100, "#f8f8f8", [ 12, 10, 76, 82 ], "#222222" );
+    my %cache;
+    my $extracts = 0;
+
+    no warnings 'redefine';
+    local *LANraragi::Model::Archive::get_page_data = sub {
+        my ( $id, $path, $metrics ) = @_;
+        $extracts++;
+        $metrics->{cache_status} = "miss" if defined $metrics;
+        return $source;
+    };
+    local *LANraragi::Model::Archive::fetch = sub {
+        my ($key) = @_;
+        return $cache{$key};
+    };
+    local *LANraragi::Model::Archive::put = sub {
+        my ( $key, $value ) = @_;
+        $cache{$key} = $value;
+        return 1;
+    };
+    local *LANraragi::Model::Archive::get_logger = sub { return FakeImageLogger->new };
+    local *LANraragi::Model::Metrics::record_image_serving_metrics = sub { return 1 };
+
+    my $t = build_image_app();
+    $t->get_ok("/archives/$id/page?path=$page_path&crop=border")
+      ->status_is(200)
+      ->header_like( "Content-Disposition", qr{\binline\b}, "cropped page is displayed inline" )
+      ->header_like( "Cache-Control", qr{private, max-age=3600, immutable}, "cropped page has reader cache headers" );
+
+    my ( $w, $h ) = image_dimensions( $t->tx->res->body );
+    is( $w, 80, "cropped page width includes safety padding" );
+    is( $h, 86, "cropped page height includes safety padding" );
+    is( $extracts, 1, "first cropped page request extracts the original page once" );
+
+    my $cache_key = "crop_page/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path/png";
+    ok( exists $cache{$cache_key}, "cropped page variant is cached separately" );
+
+    $t->get_ok("/archives/$id/page?path=$page_path&crop=border")->status_is(200);
+    is( $extracts, 1, "second cropped page request reuses the cropped variant cache" );
 }
 
 done_testing();

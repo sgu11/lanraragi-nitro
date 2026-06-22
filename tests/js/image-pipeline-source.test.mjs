@@ -64,3 +64,25 @@ test("reader Delete key confirms archive deletion before returning to library", 
     assert.match(js, /function returnToLibrary\(\) \{\s*document\.location\.href = "\.\/";\s*\}/);
     assert.match(js, /Server\.deleteArchive\(id, returnToLibrary\);/);
 });
+
+test("reader blank-border crop setting maps readahead URLs and exposes k shortcut", async () => {
+    const js = await source("public/js/reader.js");
+    const template = await source("templates/reader.html.tt2");
+    const openapi = await source("tools/openapi.yaml");
+
+    assert.match(js, /let cropBorders = false;/);
+    assert.match(js, /localStorage\.cropBorders === "true"/);
+    assert.match(js, /function getReaderImageSource\(index\)/);
+    assert.match(js, /url\.searchParams\.set\("crop", "border"\)/);
+    assert.match(js, /const src = getReaderImageSource\(index\);/);
+    assert.match(js, /const rawSrc = pages\[index\];/);
+    assert.match(js, /\$\(document\)\.on\("click\.toggle-border-crop", "#toggle-border-crop input", toggleBorderCrop\);/);
+    assert.match(js, /case 75:\s*\/\/ k[\s\S]*toggleBorderCrop\(\);[\s\S]*break;/);
+
+    assert.match(template, /id="toggle-border-crop"/);
+    assert.match(template, /id="border-crop-on"/);
+    assert.match(template, /id="border-crop-off"/);
+    assert.match(template, /K: toggle blank border cropping/);
+
+    assert.match(openapi, /name: crop[\s\S]*description: >-\s*Optionally request a reader-optimized page variant with blank borders cropped/);
+});

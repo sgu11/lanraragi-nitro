@@ -38,6 +38,7 @@ let preloadedSizes = {};
 let preloadedDimensions = {};   // fork: page index -> { width, height }, for spread rendering decisions
 let spaceScroll = { timeout: null, animationId: null };
 let imageQuality = "auto";      // fork: reader image-rendering ("auto"|"high-quality"|"smooth-sharp"|"pixelated")
+let cropBorders = false;
 let mobileFullscreen = true;    // fork: auto-enter fullscreen on first reading click
 let spreadStart = "auto";       // fork: adaptive offset mode ("auto" on, "pair2" off)
 let detectedFirstSpreadStart = undefined; // fork: server-detected first interior spread anchor ("2"|"4"|"UNKNOWN"|undefined)
@@ -147,6 +148,7 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
     $(document).on("auxclick.fullscreen", (e) => { if (e.button === 1) { e.preventDefault(); toggleFullScreen(); } });
     // Fork: image-quality selector + auto-fullscreen toggle + double-page spread-start.
     $("#image-quality input").on("click.image-quality", setImageQuality);
+    $(document).on("click.toggle-border-crop", "#toggle-border-crop input", toggleBorderCrop);
     $(document).on("click.toggle-mobile-fullscreen", "#toggle-mobile-fullscreen input", toggleMobileFullscreen);
     $(document).on("click.toggle-spread-start", "#toggle-spread-start input", cycleSpreadStart);
     $(document).on("click.toggle-auto-next-page", ".toggle-auto-next-page", toggleAutoNextPage);
@@ -706,6 +708,9 @@ export function initializeSettings() {
     $(qualityMap[imageQuality] || "#quality-auto").addClass("toggled");
     applyImageQuality();
 
+    cropBorders = localStorage.cropBorders === "true";
+    updateBorderCropToggle();
+
     // fork: auto-fullscreen-on-first-click
     mobileFullscreen = localStorage.mobileFullscreen !== "false"; // default true
     $(mobileFullscreen ? "#mobile-fullscreen-on" : "#mobile-fullscreen-off").addClass("toggled");
@@ -729,6 +734,38 @@ function setImageQuality() {
     $("#image-quality input").removeClass("toggled");
     $(`#${this.id}`).addClass("toggled");
     applyImageQuality();
+}
+
+function updateBorderCropToggle() {
+    $("#toggle-border-crop input").removeClass("toggled");
+    $(cropBorders ? "#border-crop-on" : "#border-crop-off").addClass("toggled");
+}
+
+function getReaderImageSource(index) {
+    const rawSrc = pages[index];
+    if (!cropBorders || !rawSrc) {
+        return rawSrc;
+    }
+
+    const url = new URL(rawSrc, window.location.href);
+    url.searchParams.set("crop", "border");
+    return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function toggleBorderCrop() {
+    cropBorders = !cropBorders;
+    localStorage.cropBorders = cropBorders;
+    updateBorderCropToggle();
+    revokePreloadedImages();
+    preloadedDimensions = {};
+    preloadedSizes = {};
+
+    if (!pages) { return; }
+    if (infiniteScroll) {
+        window.location.reload();
+        return;
+    }
+    goToPage(currentPage);
 }
 
 function toggleMobileFullscreen() {
@@ -849,10 +886,11 @@ function initFullscreen() {
 function initInfiniteScrollView() {
     $("#Map").remove();
     $("#img_doublepage").remove();
+    const firstSource = getReaderImageSource(0);
     $(".reader-image").first()
         .attr("id", "page-0")
-        .attr("data-src", pages[0])
-        .attr("src", pages[0])
+        .attr("data-src", firstSource)
+        .attr("src", firstSource)
         .attr("loading", "eager");
 
     // Disable other options that don't work with infinite scroll
@@ -885,8 +923,9 @@ function initInfiniteScrollView() {
     }, { rootMargin: "1200px" });
 
     observer.observe($(".reader-image").first().get(0));
-    pages.slice(1).forEach((source, offset) => {
+    pages.slice(1).forEach((_source, offset) => {
         const index = offset + 1;
+        const source = getReaderImageSource(index);
         const img = new Image();
         img.id = `page-${index}`;
         img.height = 800;
@@ -994,6 +1033,9 @@ function handleShortcuts(e) {
             break;
         case 74: // j - fork: toggle adaptive offset (auto / pair2)
             cycleSpreadStart();
+            break;
+        case 75: // k
+            toggleBorderCrop();
             break;
         case 77: // m
             toggleMangaMode();
@@ -1701,7 +1743,9 @@ function getReaderPreloadStrategy() {
 }
 
 async function loadImage(index) {
-    const src = pages[index];
+    const rawSrc = pages[index];
+    if (!rawSrc) { return rawSrc; }
+    const src = getReaderImageSource(index);
 
     const displayedImage = index === currentPage ? $("#img").get(0) : null;
     if (!preloadedImg[src] && displayedImage?.getAttribute("src") === src && displayedImage.complete) {

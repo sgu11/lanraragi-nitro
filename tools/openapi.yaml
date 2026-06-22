@@ -1628,6 +1628,16 @@ paths:
           description: Path to the image.
           schema:
             type: string
+        - name: crop
+          in: query
+          required: false
+          description: >-
+            Optionally request a reader-optimized page variant with blank borders cropped.
+            Supported value: `border`.
+          schema:
+            type: string
+            enum:
+              - border
       responses:
         '200':
           description: Archive page
