@@ -160,3 +160,15 @@ test("reader fit modes upscale cropped pages to the selected viewport or contain
     assert.match(applyContainerWidth, /`width: \$\{state\.containerWidth\}; max-width: 100%`/);
     assert.match(applyContainerWidth, /"width: 90%; max-width: 90%"[\s\S]*"width: 100%"/);
 });
+
+test("reader fit-container and fullscreen modes upscale small pages", async () => {
+    const js = await source("public/js/reader.js");
+    const applyStart = js.indexOf("function applyContainerWidth()");
+    const applyEnd = js.indexOf("function registerPreload()", applyStart);
+    const applyContainerWidth = js.slice(applyStart, applyEnd);
+
+    assert.notEqual(applyStart, -1);
+    assert.notEqual(applyEnd, -1);
+    assert.doesNotMatch(applyContainerWidth, /if \(fscreen\.inFullscreen\(\)\)\s*return;/);
+    assert.match(applyContainerWidth, /"width: 1200px; max-width: 100%"[\s\S]*"width: 100%"/);
+});

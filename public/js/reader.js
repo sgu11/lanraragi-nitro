@@ -2133,20 +2133,19 @@ function registerContainerWidth() {
 
 function applyContainerWidth() {
     $(".reader-image, .sni").attr("style", "");
-
-    // If we are in fullscreen don't apply anything
-    if (fscreen.inFullscreen())
-        return;
+    const fullscreen = fscreen.inFullscreen();
 
     if (fitMode === "fit-height") {
         // Fit to height forces the image to 90% of visible screen height.
         // Hidden-header paginated mode uses the full viewport because bottom chrome is hidden.
-        const height = getFitHeightViewportPercent(infiniteScroll, localStorage.hideHeader === "true");
+        const height = fullscreen ? 100 : getFitHeightViewportPercent(infiniteScroll, localStorage.hideHeader === "true");
         $(".reader-image").attr("style", `height: ${height}vh; max-height: ${height}vh; width: auto; object-fit: contain;`);
         $(".sni").attr("style", "width: fit-content; width: -moz-fit-content; max-width: 100%");
     } else if (fitMode === "fit-width") {
         $(".reader-image").attr("style", "width: 100%;");
         $(".sni").attr("style", "max-width: 98%");
+    } else if (fullscreen) {
+        $(".reader-image").attr("style", "width: 100%");
     } else if (state.containerWidth) {
         // If the user defined a custom width, then we can fall back to that one
         $(".sni").attr("style", `width: ${state.containerWidth}; max-width: 100%`);
@@ -2157,7 +2156,8 @@ function applyContainerWidth() {
         $(".reader-image").attr("style", "width: 100%");
     } else {
         // Finally, fall back to 1200px width if none of the above matches
-        $(".sni").attr("style", "max-width: 1200px");
+        $(".sni").attr("style", "width: 1200px; max-width: 100%");
+        $(".reader-image").attr("style", "width: 100%");
     }
 
     renderMarkers();
