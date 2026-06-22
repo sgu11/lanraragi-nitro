@@ -886,7 +886,7 @@ body.infinite-scroll #display {
 }
 
 body.infinite-scroll #display img {
-  margin: 5px auto;
+  margin: 0 auto;
   cursor: pointer;
 }
 

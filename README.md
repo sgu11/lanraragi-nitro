@@ -19,6 +19,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - **Blank border cropping** can be toggled from Reader Options or with `K`;
   reader page preloads request cached `/api/archives/{id}/page?crop=border`
   variants while the full-image link keeps pointing at the original page.
+- **Infinite-scroll reader spacing** now uses zero vertical image margin in the
+  normal infinite-scroll layout.
 - **Fit-height fix in fullscreen** — recomputes correct height on enter/exit instead of leaving stale layout.
 - **Double-page rendering** no longer flickers between page transitions.
 - **Adaptive offset** keeps covers and wide pages single, stores server-detected
