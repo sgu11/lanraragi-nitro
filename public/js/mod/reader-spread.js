@@ -8,6 +8,117 @@
  *   "pair2" - cover alone, then pair page 2 with page 3
  */
 
+export function normalizeReaderPage(page, maxPage = Number.MAX_SAFE_INTEGER) {
+    const lastPage = Math.max(0, Number(maxPage) || 0);
+    const pageNumber = Math.trunc(Number(page));
+    if (!Number.isFinite(pageNumber)) {
+        return 0;
+    }
+    return Math.max(0, Math.min(lastPage, pageNumber));
+}
+
+export function createReaderCursor(initialPage = 0) {
+    return {
+        displayPage: normalizeReaderPage(initialPage),
+        pendingPage: null,
+        token: 0,
+        queuedRelativeStep: 0,
+        queuedResetAuto: false,
+    };
+}
+
+export function beginReaderNavigation(cursor, targetPage, maxPage) {
+    cursor.token += 1;
+    cursor.pendingPage = normalizeReaderPage(targetPage, maxPage);
+    cursor.queuedRelativeStep = 0;
+    cursor.queuedResetAuto = false;
+    return {
+        token: cursor.token,
+        page: cursor.pendingPage,
+    };
+}
+
+export function isCurrentReaderNavigation(cursor, token) {
+    return cursor.token === token;
+}
+
+export function isReaderNavigationPending(cursor) {
+    return cursor.pendingPage !== null;
+}
+
+export function commitReaderNavigation(cursor, token, displayPage, maxPage) {
+    if (!isCurrentReaderNavigation(cursor, token)) {
+        return false;
+    }
+
+    cursor.displayPage = normalizeReaderPage(displayPage, maxPage);
+    cursor.pendingPage = null;
+    return true;
+}
+
+export function cancelReaderNavigation(cursor) {
+    cursor.token += 1;
+    cursor.pendingPage = null;
+    cursor.queuedRelativeStep = 0;
+    cursor.queuedResetAuto = false;
+}
+
+export function setReaderDisplayPage(cursor, page, maxPage) {
+    cursor.displayPage = normalizeReaderPage(page, maxPage);
+    return cursor.displayPage;
+}
+
+export function queueReaderNavigationStep(cursor, step, { resetAuto = false } = {}) {
+    const numericStep = Number(step);
+    if (!Number.isFinite(numericStep) || numericStep === 0) {
+        return false;
+    }
+
+    cursor.queuedRelativeStep = numericStep > 0 ? 1 : -1;
+    cursor.queuedResetAuto = Boolean(resetAuto);
+    return true;
+}
+
+export function consumeQueuedReaderNavigationStep(cursor) {
+    if (!cursor.queuedRelativeStep) {
+        return null;
+    }
+
+    const queued = {
+        step: cursor.queuedRelativeStep,
+        resetAuto: cursor.queuedResetAuto,
+    };
+    cursor.queuedRelativeStep = 0;
+    cursor.queuedResetAuto = false;
+    return queued;
+}
+
+export function selectReaderOpeningPage({
+    explicitPage = null,
+    progressPage = null,
+    progressEnabled = false,
+    userInteractedBeforeInitialPageScroll = false,
+    maxPage = 0,
+} = {}) {
+    if (Number.isInteger(explicitPage)) {
+        return {
+            page: normalizeReaderPage(explicitPage, maxPage),
+            reason: "explicit-page",
+        };
+    }
+
+    const syncedProgressPage = Number(progressPage);
+    if (progressEnabled && !userInteractedBeforeInitialPageScroll
+        && Number.isFinite(syncedProgressPage) && syncedProgressPage > 0 && syncedProgressPage < maxPage) {
+        return {
+            page: normalizeReaderPage(syncedProgressPage, maxPage),
+            reason: "resume-progress",
+        };
+    }
+
+    return { page: 0, reason: "default-first" };
+}
+
 export function normalizeFirstSpreadStart(firstSpreadStart) {
     if (firstSpreadStart === 2 || firstSpreadStart === "2") {
         return 2;

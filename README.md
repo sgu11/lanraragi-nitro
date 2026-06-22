@@ -62,8 +62,12 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   shifted `?p=` page does not snap back to the canonical spread start, and
   prev/next navigation keeps a one-page session stride.
 - **Reader early page-turn input** no longer advances invisible pending pages:
-  rapid key/tap navigation while the opening page is still loading resolves to
-  the next rendered page instead of skipping ahead several pages at once.
+  rapid key/tap navigation while a page is still loading is coalesced through a
+  reader cursor, so it resolves to the next rendered page instead of skipping
+  ahead several pages at once.
+- **Reader session state is separate from synced progress**: the active page is
+  committed to the reading-session URL on render/scroll, while synced progress
+  is only an opening hint when no explicit `?p=` session page is present.
 - **Reading-progress resume** is cancellable: stale async page loads can no longer
   scroll back over newer user navigation, disabled progress tracking no longer
   resumes saved progress on open, and enabled tracking coalesces rapid page-turn

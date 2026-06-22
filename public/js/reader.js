@@ -13,12 +13,22 @@ import {
     shouldWheelNavigatePages,
 } from "./mod/reader-chrome.js";
 import {
+    beginReaderNavigation,
+    cancelReaderNavigation,
+    commitReaderNavigation,
+    consumeQueuedReaderNavigationStep,
+    createReaderCursor,
     getDisplayWindow,
     getPageNavigationDestination,
     getSinglePageSpreadWindow,
     getSpreadWindowWithPageShift,
+    isCurrentReaderNavigation,
+    isReaderNavigationPending,
     isWidePage,
     normalizeSpreadStartMode,
+    queueReaderNavigationStep,
+    selectReaderOpeningPage,
+    setReaderDisplayPage,
     spreadStartFlags,
 } from "./mod/reader-spread.js";
 
@@ -26,6 +36,7 @@ let id = "";
 let force = false;
 let previousPage = -1;
 let currentPage = -1;
+let readerCursor = createReaderCursor(0);
 let currentChapter = null;
 let showingSinglePage = true;
 let pageThumbnails = [];
@@ -52,7 +63,6 @@ let requestedDisplayWindowStride = null;
 let hasExplicitPageParameter = false;
 let initialPageScrollPending = false;
 let userInteractedBeforeInitialPageScroll = false;
-let navigationRequestId = 0;
 let progressPersistenceTimer = null;
 let pendingProgressPage = null;
 //Spacebar Scroll Config
@@ -91,7 +101,28 @@ let overlayFiltered = false;
 let pageNaviState = true;
 
 function isCurrentNavigation(navigationId) {
-    return navigationId === navigationRequestId;
+    return isCurrentReaderNavigation(readerCursor, navigationId);
+}
+
+function setCurrentDisplayPage(page) {
+    currentPage = setReaderDisplayPage(readerCursor, page, maxPage);
+    return currentPage;
+}
+
+function commitCurrentNavigation(navigationId, page) {
+    if (!commitReaderNavigation(readerCursor, navigationId, page, maxPage)) {
+        return false;
+    }
+
+    currentPage = readerCursor.displayPage;
+    return true;
+}
+
+function runQueuedReaderNavigation() {
+    const queued = consumeQueuedReaderNavigationStep(readerCursor);
+    if (queued) {
+        changePage(queued.step, queued.resetAuto);
+    }
 }
 
 function markUserInteractionBeforeInitialPageScroll(e) {
@@ -99,8 +130,8 @@ function markUserInteractionBeforeInitialPageScroll(e) {
     if (e?.target?.tagName === "INPUT") { return; }
 
     userInteractedBeforeInitialPageScroll = true;
-    currentPage = 0;
-    navigationRequestId += 1;
+    cancelReaderNavigation(readerCursor);
+    setCurrentDisplayPage(0);
     if (Array.isArray(pages)) {
         goToPage(0, { resetScroll: false });
     }
@@ -157,26 +188,32 @@ function getSessionDisplayWindow(page) {
 }
 
 function selectInitialPage() {
-    if (hasExplicitPageParameter) {
+    const initialPage = selectReaderOpeningPage({
+        explicitPage: hasExplicitPageParameter ? currentPage : null,
+        progressPage: progress,
+        progressEnabled: !ignoreProgress,
+        userInteractedBeforeInitialPageScroll,
+        maxPage,
+    });
+
+    if (initialPage.reason === "explicit-page") {
         return {
-            page: currentPage,
+            page: initialPage.page,
             reason: "explicit-page",
-            displayWindow: getSessionDisplayWindow(currentPage),
+            displayWindow: getSessionDisplayWindow(initialPage.page),
             displayWindowStride: 1,
         };
     }
 
-    const progressPage = Number(progress);
-    if (!ignoreProgress && !userInteractedBeforeInitialPageScroll && Number.isFinite(progressPage)
-        && progressPage > 0 && progressPage < maxPage) {
+    if (initialPage.reason === "resume-progress") {
         return {
-            page: progressPage,
+            page: initialPage.page,
             reason: "resume-progress",
-            displayWindow: getStoredProgressDisplayWindow(progressPage),
+            displayWindow: getStoredProgressDisplayWindow(initialPage.page),
         };
     }
 
-    return { page: 0, reason: "default-first" };
+    return initialPage;
 }
 
 function shouldApplyInitialPageScroll(reason) {
@@ -206,7 +243,7 @@ function syncInfiniteScrollCurrentPageFromViewport() {
     for (let i = 0; i < images.length; i++) {
         const rect = images[i].getBoundingClientRect();
         if (rect.top <= midViewport && rect.bottom >= midViewport) {
-            currentPage = i;
+            setCurrentDisplayPage(i);
             break;
         }
     }
@@ -253,6 +290,18 @@ function scheduleProgressPersistence(page) {
         clearTimeout(progressPersistenceTimer);
     }
     progressPersistenceTimer = setTimeout(flushProgressPersistence, PROGRESS_PERSISTENCE_DELAY_MS);
+}
+
+function commitReaderSessionPage(page) {
+    replaceReaderSessionPage(page);
+}
+
+function updateSyncedReadingProgress(page) {
+    if (!ignoreProgress) {
+        scheduleProgressPersistence(page);
+    } else {
+        clearPendingProgressPersistence();
+    }
 }
 
 function returnToLibrary() {
@@ -491,6 +540,7 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
     force = params.get("force_reload") !== null;
     hasExplicitPageParameter = params.has("p");
     currentPage = (+params.get("p") || 1) - 1;
+    readerCursor = createReaderCursor(currentPage);
     initialPageScrollPending = !hasExplicitPageParameter;
     userInteractedBeforeInitialPageScroll = false;
     registerInitialPageScrollCancellation();
@@ -746,7 +796,7 @@ export function loadImages() {
         // * first page
         // This allows for bookmarks to trump progress
         const initialPage = selectInitialPage();
-        currentPage = initialPage.page;
+        setCurrentDisplayPage(initialPage.page);
         requestedDisplayWindow = initialPage.displayWindow || null;
         requestedDisplayWindowStride = initialPage.displayWindowStride || null;
 
@@ -1775,8 +1825,8 @@ function updateMetadata() {
 
 async function goToPage(page, { resetScroll = true, preserveDisplayWindow = false } = {}) {
     return Perf.measure("reader.goToPage", async () => {
-        navigationRequestId += 1;
-        const navigationId = navigationRequestId;
+        const navigation = beginReaderNavigation(readerCursor, page, maxPage);
+        const navigationId = navigation.token;
         const displayWindowOverride = requestedDisplayWindow || (preserveDisplayWindow && activeDisplayWindowWasRequested ? activeDisplayWindow : null);
         const displayWindowStrideOverride = requestedDisplayWindow
             ? requestedDisplayWindowStride
@@ -1784,7 +1834,7 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
         requestedDisplayWindow = null;
         requestedDisplayWindowStride = null;
         previousPage = currentPage;
-        const targetPage = Math.min(maxPage, Math.max(0, +page));
+        const targetPage = navigation.page;
         showingSinglePage = false;
 
         if (infiniteScroll) {
@@ -1795,7 +1845,7 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
             if (resetScroll) {
                 $("#display img").get(targetPage).scrollIntoView({ block: "nearest" });
             }
-            currentPage = targetPage;
+            if (!commitCurrentNavigation(navigationId, targetPage)) { return; }
         } else {
             if (doublePageMode) {
                 await loadImage(targetPage);
@@ -1826,7 +1876,7 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
                     activeDisplayWindow = displayWindow;
                     activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
                     activeDisplayWindowStride = displayWindowStrideOverride || 2;
-                    currentPage = displayStart;
+                    if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
                     if (mangaMode) {
                         $("#img").attr("src", img2);
                         $("#img").attr("data-filename", img2Filename);
@@ -1848,7 +1898,7 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
                     activeDisplayWindow = displayWindow;
                     activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
                     activeDisplayWindowStride = displayWindowStrideOverride || 2;
-                    currentPage = displayStart;
+                    if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
                     $("#img").attr("src", img);
                     $("#img").attr("data-filename", imgFilename);
                     $("#img_doublepage").attr("src", "");
@@ -1862,7 +1912,7 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
                 const imgFilename = getFilename(targetPage);
                 await decodeImage(img);
                 if (!isCurrentNavigation(navigationId)) { return; }
-                currentPage = targetPage;
+                if (!commitCurrentNavigation(navigationId, targetPage)) { return; }
                 $("#img").attr("src", img);
                 $("#img").attr("data-filename", imgFilename);
                 $("#img_doublepage").attr("src", "");
@@ -1892,6 +1942,7 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
         if (!isCurrentNavigation(navigationId)) { return; }
         updateArchiveOverlay();
         updateProgress();
+        runQueuedReaderNavigation();
     });
 }
 
@@ -1901,13 +1952,8 @@ function updateProgress() {
     renderMarkers();
 
     let page = currentPage + 1; // progress is 1-indexed
-    replaceReaderSessionPage(page);
-
-    if (!ignoreProgress) {
-        scheduleProgressPersistence(page);
-    } else {
-        clearPendingProgressPersistence();
-    }
+    commitReaderSessionPage(page);
+    updateSyncedReadingProgress(page);
 
     // Load stamps
     if (!infiniteScroll) {
@@ -2522,6 +2568,11 @@ function changePage(targetPage, resetAuto = false) {
     if (resetAuto && autoNextPage) {
         autoNextPageCountdown = Math.trunc(AutoNextPageInterval);
         $(".toggle-auto-next-page").text(autoNextPageCountdown);
+    }
+
+    if (Number.isFinite(Number(targetPage)) && isReaderNavigationPending(readerCursor)) {
+        queueReaderNavigationStep(readerCursor, targetPage, { resetAuto });
+        return;
     }
 
     // Sync position if in infinite scroll mode

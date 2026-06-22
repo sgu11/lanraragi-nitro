@@ -34,10 +34,11 @@ test("reader disabled progress tracking suppresses persistence while preserving 
 
     assert.notEqual(start, -1);
     assert.notEqual(end, -1);
-    assert.match(updateProgress, /if \(!ignoreProgress\) \{\s*scheduleProgressPersistence\(page\);\s*\} else \{\s*clearPendingProgressPersistence\(\);\s*\}/);
+    assert.match(js, /function updateSyncedReadingProgress\(page\)[\s\S]*if \(!ignoreProgress\) \{\s*scheduleProgressPersistence\(page\);\s*\} else \{\s*clearPendingProgressPersistence\(\);\s*\}/);
     assert.match(js, /function persistProgress\(page[\s\S]*Server\.updateServerSideProgress\(id, page[\s\S]*localStorage\.setItem\(`\$\{id\}-reader`, page\);[\s\S]*Server\.updateServerSideProgress\(id, page/);
+    assert.match(updateProgress, /commitReaderSessionPage\(page\);\s*updateSyncedReadingProgress\(page\);/);
     assert.match(updateProgress, /\/\/ Load stamps[\s\S]*loadStamps\(page\);/);
-    assert.ok(updateProgress.indexOf("if (!ignoreProgress)") < updateProgress.indexOf("// Load stamps"));
+    assert.ok(updateProgress.indexOf("updateSyncedReadingProgress(page);") < updateProgress.indexOf("// Load stamps"));
 });
 
 test("reader disabled progress tracking does not apply an implicit saved-progress jump", async () => {
@@ -51,8 +52,10 @@ test("reader disabled progress tracking does not apply an implicit saved-progres
     assert.match(js, /let hasExplicitPageParameter = false;/);
     assert.match(js, /function selectInitialPage\(\)/);
     assert.match(js, /function shouldApplyInitialPageScroll\(reason\)/);
-    assert.match(js, /!ignoreProgress && !userInteractedBeforeInitialPageScroll && Number\.isFinite\(progressPage\)/);
-    assert.match(loadImages, /const initialPage = selectInitialPage\(\);[\s\S]*currentPage = initialPage\.page;/);
+    assert.match(js, /selectReaderOpeningPage/);
+    assert.match(js, /progressEnabled: !ignoreProgress,/);
+    assert.match(js, /userInteractedBeforeInitialPageScroll,/);
+    assert.match(loadImages, /const initialPage = selectInitialPage\(\);[\s\S]*setCurrentDisplayPage\(initialPage\.page\);/);
     assert.match(loadImages, /shouldApplyInitialPageScroll\(initialPage\.reason\)/);
     assert.doesNotMatch(loadImages, /currentPage = currentPage \|\| \(/);
 });
@@ -62,22 +65,31 @@ test("reader cancels stale async page navigations before scrolling or saving pro
     const goStart = js.indexOf("async function goToPage(page");
     const goEnd = js.indexOf("function updateProgress()");
     const goToPage = js.slice(goStart, goEnd);
+    const changeStart = js.indexOf("function changePage(targetPage");
+    const changeEnd = js.indexOf("function handlePaginator", changeStart);
+    const changePage = js.slice(changeStart, changeEnd);
     const targetStart = goToPage.indexOf("const targetPage");
     const asyncBranchStart = goToPage.indexOf("if (infiniteScroll)");
     const beforeAsyncBranch = goToPage.slice(targetStart, asyncBranchStart);
 
     assert.notEqual(goStart, -1);
     assert.notEqual(goEnd, -1);
+    assert.notEqual(changeStart, -1);
+    assert.notEqual(changeEnd, -1);
     assert.notEqual(targetStart, -1);
     assert.notEqual(asyncBranchStart, -1);
-    assert.match(js, /let navigationRequestId = 0;/);
+    assert.match(js, /let readerCursor = createReaderCursor\(0\);/);
     assert.match(js, /function isCurrentNavigation\(navigationId\)/);
-    assert.match(goToPage, /navigationRequestId \+= 1;\s*const navigationId = navigationRequestId;/);
+    assert.match(goToPage, /const navigation = beginReaderNavigation\(readerCursor, page, maxPage\);\s*const navigationId = navigation\.token;/);
     assert.doesNotMatch(beforeAsyncBranch, /currentPage = targetPage;/);
+    assert.match(goToPage, /const targetPage = navigation\.page;/);
+    assert.match(goToPage, /commitCurrentNavigation\(navigationId, targetPage\)/);
     assert.match(goToPage, /materializeInfiniteScrollWindow\(targetPage\);/);
     assert.match(goToPage, /\$\("#display img"\)\.get\(targetPage\)\.scrollIntoView\(\{ block: "nearest" \}\);/);
     assert.match(goToPage, /if \(!isCurrentNavigation\(navigationId\)\) \{ return; \}/);
     assert.ok(goToPage.lastIndexOf("if (!isCurrentNavigation(navigationId)) { return; }") < goToPage.indexOf("updateProgress();"));
+    assert.match(goToPage, /updateProgress\(\);\s*runQueuedReaderNavigation\(\);/);
+    assert.match(changePage, /isReaderNavigationPending\(readerCursor\)[\s\S]*queueReaderNavigationStep\(readerCursor, targetPage, \{ resetAuto \}\);[\s\S]*return;/);
 });
 
 test("reader progress persistence is latest-only and bypassed when tracking is disabled", async () => {
@@ -94,7 +106,8 @@ test("reader progress persistence is latest-only and bypassed when tracking is d
     assert.match(js, /if \(ignoreProgress\) \{[\s\S]*clearPendingProgressPersistence\(\);[\s\S]*return;[\s\S]*\}/);
     assert.match(js, /pendingProgressPage = page;/);
     assert.match(js, /progressPersistenceTimer = setTimeout\(flushProgressPersistence, PROGRESS_PERSISTENCE_DELAY_MS\);/);
-    assert.match(updateProgress, /if \(!ignoreProgress\) \{\s*scheduleProgressPersistence\(page\);\s*\}/);
+    assert.match(js, /function updateSyncedReadingProgress\(page\)[\s\S]*scheduleProgressPersistence\(page\);/);
+    assert.match(updateProgress, /updateSyncedReadingProgress\(page\);/);
 });
 
 test("reader session page survives reload independent of progress persistence", async () => {
@@ -111,8 +124,9 @@ test("reader session page survives reload independent of progress persistence", 
     assert.notEqual(fullScreenStart, -1);
     assert.notEqual(fullScreenEnd, -1);
     assert.match(js, /function replaceReaderSessionPage\(page\)/);
+    assert.match(js, /function commitReaderSessionPage\(page\)[\s\S]*replaceReaderSessionPage\(page\);/);
     assert.match(js, /window\.history\.replaceState\(null, "", url\);/);
-    assert.match(updateProgress, /replaceReaderSessionPage\(page\);[\s\S]*if \(!ignoreProgress\) \{/);
+    assert.match(updateProgress, /commitReaderSessionPage\(page\);[\s\S]*updateSyncedReadingProgress\(page\);/);
     assert.match(handleFullScreen, /requestAnimationFrame\(\(\) => \{[\s\S]*syncInfiniteScrollCurrentPageFromViewport\(\);[\s\S]*replaceReaderSessionPage\(currentPage \+ 1\);[\s\S]*\}\);/);
 });
 
@@ -136,7 +150,7 @@ test("reader explicit session page preserves shifted double-page window", async 
     assert.notEqual(shiftEnd, -1);
     assert.match(js, /function getSessionDisplayWindow\(page\)/);
     assert.match(js, /getSpreadWindowWithPageShift\(0, getSpreadState\(\{[\s\S]*displayWindow: \{ start: page, end: page \},[\s\S]*\}\)\)/);
-    assert.match(selectInitialPage, /reason: "explicit-page",[\s\S]*displayWindow: getSessionDisplayWindow\(currentPage\),[\s\S]*displayWindowStride: 1,/);
+    assert.match(selectInitialPage, /reason: "explicit-page",[\s\S]*displayWindow: getSessionDisplayWindow\(initialPage\.page\),[\s\S]*displayWindowStride: 1,/);
     assert.match(loadImages, /requestedDisplayWindowStride = initialPage\.displayWindowStride \|\| null;/);
     assert.match(shiftRequestedSpreadByPageCount, /const stride = activeDisplayWindowStride \|\| 2;/);
     assert.match(shiftRequestedSpreadByPageCount, /getSpreadWindowWithPageShift\(step > 0 \? stride : -stride/);
@@ -165,7 +179,7 @@ test("reader progress resume restores shifted double-page spread windows", async
     assert.match(js, /function rememberProgressDisplayWindow\(\)/);
     assert.match(js, /function getStoredProgressDisplayWindow\(page\)/);
     assert.match(persistProgress, /rememberProgressDisplayWindow\(\);/);
-    assert.match(selectInitialPage, /displayWindow: getStoredProgressDisplayWindow\(progressPage\)/);
+    assert.match(selectInitialPage, /displayWindow: getStoredProgressDisplayWindow\(initialPage\.page\)/);
     assert.match(loadImages, /requestedDisplayWindow = initialPage\.displayWindow \|\| null;[\s\S]*goToPage\(currentPage\)/);
 });
 
