@@ -55,6 +55,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - **Reading-progress migration** no longer keeps resurfacing stale migration toasts for deleted archives/tankoubons or malformed local page values, and respects local/authenticated progress settings before attempting a server migration.
 - **Reading-progress migration startup** tolerates mixed cached JS modules after deploy, so index load no longer depends on a freshly fetched `common.js`.
 - **Progression Tracking disabled** now suppresses local/server progress writes during page turns instead of only ignoring saved progress on reader open.
+- **Reader session page** now stays in the URL while reading, so reloads and
+  infinite-scroll fullscreen exits keep the visible page even when Progression
+  Tracking is disabled.
 - **Reading-progress resume** is cancellable: stale async page loads can no longer
   scroll back over newer user navigation, disabled progress tracking no longer
   resumes saved progress on open, and enabled tracking coalesces rapid page-turn

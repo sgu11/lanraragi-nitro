@@ -171,6 +171,32 @@ function shouldApplyInitialPageScroll(reason) {
     return false;
 }
 
+function replaceReaderSessionPage(page) {
+    const pageNumber = Number(page);
+    if (!Number.isInteger(pageNumber) || pageNumber < 1) { return; }
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("p") === String(pageNumber)) { return; }
+
+    url.searchParams.set("p", pageNumber);
+    window.history.replaceState(null, "", url);
+}
+
+function syncInfiniteScrollCurrentPageFromViewport() {
+    if (!infiniteScroll) { return currentPage; }
+
+    const images = [...document.querySelectorAll(".reader-image")];
+    const midViewport = window.innerHeight / 2;
+    for (let i = 0; i < images.length; i++) {
+        const rect = images[i].getBoundingClientRect();
+        if (rect.top <= midViewport && rect.bottom >= midViewport) {
+            currentPage = i;
+            break;
+        }
+    }
+    return currentPage;
+}
+
 function clearPendingProgressPersistence() {
     if (progressPersistenceTimer !== null) {
         clearTimeout(progressPersistenceTimer);
@@ -1850,6 +1876,7 @@ function updateProgress() {
     renderMarkers();
 
     let page = currentPage + 1; // progress is 1-indexed
+    replaceReaderSessionPage(page);
 
     if (!ignoreProgress) {
         scheduleProgressPersistence(page);
@@ -2220,6 +2247,12 @@ function handleFullScreen(enableFullscreen = false) {
         }
     }
     applyContainerWidth();
+    if (!enableFullscreen && infiniteScroll) {
+        requestAnimationFrame(() => {
+            syncInfiniteScrollCurrentPageFromViewport();
+            replaceReaderSessionPage(currentPage + 1);
+        });
+    }
 }
 
 function getCurrentChapter() {
@@ -2468,15 +2501,7 @@ function changePage(targetPage, resetAuto = false) {
 
     // Sync position if in infinite scroll mode
     if (infiniteScroll) {
-        const images = [...document.querySelectorAll(".reader-image")];
-        const midViewport = window.innerHeight / 2;
-        for (let i = 0; i < images.length; i++) {
-            const rect = images[i].getBoundingClientRect();
-            if (rect.top <= midViewport && rect.bottom >= midViewport) {
-                currentPage = i;
-                break;
-            }
-        }
+        syncInfiniteScrollCurrentPageFromViewport();
     }
     let destination;
     if (targetPage === "first") {

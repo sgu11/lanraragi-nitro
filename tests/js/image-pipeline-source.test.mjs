@@ -89,6 +89,25 @@ test("reader progress persistence is latest-only and bypassed when tracking is d
     assert.match(updateProgress, /if \(!ignoreProgress\) \{\s*scheduleProgressPersistence\(page\);\s*\}/);
 });
 
+test("reader session page survives reload independent of progress persistence", async () => {
+    const js = await source("public/js/reader.js");
+    const updateStart = js.indexOf("function updateProgress()");
+    const updateEnd = js.indexOf("function preloadImages()");
+    const updateProgress = js.slice(updateStart, updateEnd);
+    const fullScreenStart = js.indexOf("function handleFullScreen");
+    const fullScreenEnd = js.indexOf("function getCurrentChapter", fullScreenStart);
+    const handleFullScreen = js.slice(fullScreenStart, fullScreenEnd);
+
+    assert.notEqual(updateStart, -1);
+    assert.notEqual(updateEnd, -1);
+    assert.notEqual(fullScreenStart, -1);
+    assert.notEqual(fullScreenEnd, -1);
+    assert.match(js, /function replaceReaderSessionPage\(page\)/);
+    assert.match(js, /window\.history\.replaceState\(null, "", url\);/);
+    assert.match(updateProgress, /replaceReaderSessionPage\(page\);[\s\S]*if \(!ignoreProgress\) \{/);
+    assert.match(handleFullScreen, /requestAnimationFrame\(\(\) => \{[\s\S]*syncInfiniteScrollCurrentPageFromViewport\(\);[\s\S]*replaceReaderSessionPage\(currentPage \+ 1\);[\s\S]*\}\);/);
+});
+
 test("reader progress resume restores shifted double-page spread windows", async () => {
     const js = await source("public/js/reader.js");
     const selectStart = js.indexOf("function selectInitialPage()");
