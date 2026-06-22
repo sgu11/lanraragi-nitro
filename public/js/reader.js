@@ -868,7 +868,7 @@ function toggleBorderCrop() {
         window.location.reload();
         return false;
     }
-    goToPage(currentPage);
+    goToPage(currentPage, { preserveDisplayWindow: true });
     return false;
 }
 
@@ -1692,11 +1692,11 @@ function updateMetadata() {
     $("#i3").removeClass("loading");
 }
 
-async function goToPage(page, { resetScroll = true } = {}) {
+async function goToPage(page, { resetScroll = true, preserveDisplayWindow = false } = {}) {
     return Perf.measure("reader.goToPage", async () => {
         navigationRequestId += 1;
         const navigationId = navigationRequestId;
-        const displayWindowOverride = requestedDisplayWindow;
+        const displayWindowOverride = requestedDisplayWindow || (preserveDisplayWindow && activeDisplayWindowWasRequested ? activeDisplayWindow : null);
         requestedDisplayWindow = null;
         previousPage = currentPage;
         const targetPage = Math.min(maxPage, Math.max(0, +page));

@@ -115,6 +115,24 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
     assert.match(init, /if \(\[32, 38, 40\]\.includes\(e\.which\)\) handleShortcuts\(e\);/);
 });
 
+test("border crop redraw preserves a shifted double-page spread", async () => {
+    const js = await source("public/js/reader.js");
+    const toggleStart = js.indexOf("function toggleBorderCrop()");
+    const toggleEnd = js.indexOf("function toggleMobileFullscreen()", toggleStart);
+    const goToStart = js.indexOf("async function goToPage");
+    const goToEnd = js.indexOf("function updateProgress()", goToStart);
+    const toggleBorderCrop = js.slice(toggleStart, toggleEnd);
+    const goToPage = js.slice(goToStart, goToEnd);
+
+    assert.notEqual(toggleStart, -1);
+    assert.notEqual(toggleEnd, -1);
+    assert.notEqual(goToStart, -1);
+    assert.notEqual(goToEnd, -1);
+    assert.match(toggleBorderCrop, /goToPage\(currentPage, \{ preserveDisplayWindow: true \}\);/);
+    assert.match(goToPage, /preserveDisplayWindow = false/);
+    assert.match(goToPage, /requestedDisplayWindow \|\| \(preserveDisplayWindow && activeDisplayWindowWasRequested \? activeDisplayWindow : null\)/);
+});
+
 test("reader fit modes upscale cropped pages to the selected viewport or container", async () => {
     const js = await source("public/js/reader.js");
     const applyStart = js.indexOf("function applyContainerWidth()");
