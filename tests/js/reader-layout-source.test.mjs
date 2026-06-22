@@ -114,3 +114,18 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
     assert.match(shortcut, /case 40: \/\/ down arrow[\s\S]*slideSpreadBySinglePage\(1\)/);
     assert.match(init, /if \(\[32, 38, 40\]\.includes\(e\.which\)\) handleShortcuts\(e\);/);
 });
+
+test("reader fit modes upscale cropped pages to the selected viewport or container", async () => {
+    const js = await source("public/js/reader.js");
+    const applyStart = js.indexOf("function applyContainerWidth()");
+    const applyEnd = js.indexOf("function registerPreload()", applyStart);
+    const applyContainerWidth = js.slice(applyStart, applyEnd);
+
+    assert.notEqual(applyStart, -1);
+    assert.notEqual(applyEnd, -1);
+    assert.match(applyContainerWidth, /height: \$\{height\}vh; max-height: \$\{height\}vh; width: auto; object-fit: contain;/);
+    assert.doesNotMatch(applyContainerWidth, /`max-height: \$\{height\}vh;`/);
+    assert.match(applyContainerWidth, /"width: fit-content; width: -moz-fit-content; max-width: 100%"/);
+    assert.match(applyContainerWidth, /`width: \$\{state\.containerWidth\}; max-width: 100%`/);
+    assert.match(applyContainerWidth, /"width: 90%; max-width: 90%"[\s\S]*"width: 100%"/);
+});

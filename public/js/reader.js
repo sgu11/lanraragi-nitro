@@ -2008,18 +2008,19 @@ function applyContainerWidth() {
         // Fit to height forces the image to 90% of visible screen height.
         // Hidden-header paginated mode uses the full viewport because bottom chrome is hidden.
         const height = getFitHeightViewportPercent(infiniteScroll, localStorage.hideHeader === "true");
-        $(".reader-image").attr("style", `max-height: ${height}vh;`);
-        $(".sni").attr("style", "width: fit-content; width: -moz-fit-content");
+        $(".reader-image").attr("style", `height: ${height}vh; max-height: ${height}vh; width: auto; object-fit: contain;`);
+        $(".sni").attr("style", "width: fit-content; width: -moz-fit-content; max-width: 100%");
     } else if (fitMode === "fit-width") {
         $(".reader-image").attr("style", "width: 100%;");
         $(".sni").attr("style", "max-width: 98%");
     } else if (state.containerWidth) {
         // If the user defined a custom width, then we can fall back to that one
-        $(".sni").attr("style", `max-width: ${state.containerWidth}`);
+        $(".sni").attr("style", `width: ${state.containerWidth}; max-width: 100%`);
         $(".reader-image").attr("style", "width: 100%");
     } else if (!showingSinglePage) {
         // Otherwise, if we are showing two pages we can override the default width
-        $(".sni").attr("style", "max-width: 90%");
+        $(".sni").attr("style", "width: 90%; max-width: 90%");
+        $(".reader-image").attr("style", "width: 100%");
     } else {
         // Finally, fall back to 1200px width if none of the above matches
         $(".sni").attr("style", "max-width: 1200px");

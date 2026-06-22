@@ -24,6 +24,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   Reader Options On/Off buttons show the active crop setting.
 - **Infinite-scroll reader spacing** now uses zero vertical image margin in the
   normal infinite-scroll layout.
+- **Fit modes upscale cropped reader pages** so blank-border-cropped images in
+  double-page mode still fill the selected height or container instead of
+  staying at their smaller natural size.
 - **Fit-height fix in fullscreen** — recomputes correct height on enter/exit instead of leaving stale layout.
 - **Double-page rendering** no longer flickers between page transitions.
 - **Adaptive offset** keeps covers and wide pages single, stores server-detected
