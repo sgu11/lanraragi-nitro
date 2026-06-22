@@ -20,7 +20,7 @@ export function metadataResponseMeansMissing(response, data) {
         return false;
     }
 
-    return /\b(?:doesn't|does not) exist\b/i.test(data.error);
+    return /\b(?:doesn(?:'|&#39;)t|does not) exist\b/i.test(data.error);
 }
 
 export function shouldMigrateProgressValue(progress, serverProgress) {

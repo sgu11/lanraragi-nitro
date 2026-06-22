@@ -29,6 +29,13 @@ test("missing archive metadata responses are treated as stale local progress", (
     assert.equal(
         metadataResponseMeansMissing(
             { status: 400 },
+            { success: 0, error: "This ID doesn&#39;t exist on the server." },
+        ),
+        true,
+    );
+    assert.equal(
+        metadataResponseMeansMissing(
+            { status: 400 },
             { success: 0, error: "Server-side Progress Tracking is disabled on this instance." },
         ),
         false,
