@@ -695,7 +695,7 @@ export function loadImages() {
             //   | P | N | P |  N: Next
             //   +---+---+---+
             $(document).on("click", (event) => {
-                if ($("#overlay-shade").is(":visible") || !pageNaviState) return;
+                if ($("#overlay-shade").is(":visible") || !pageNaviState || $(event.target).closest(".absolute-options").length) return;
 
                 const container = document.getElementById("i3");
                 if (!container) return;

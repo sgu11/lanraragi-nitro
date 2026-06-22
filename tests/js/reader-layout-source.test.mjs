@@ -91,6 +91,19 @@ test("hidden-header paginated reader uses fullscreen wheel page navigation unles
     assert.match(wheel, /changePage\(direction, true\);/);
 });
 
+test("paginated reader tap-zone navigation ignores reader chrome button clicks", async () => {
+    const js = await source("public/js/reader.js");
+    const navStart = js.indexOf("$(document).on(\"click\", (event) => {");
+    const navEnd = js.indexOf("});", navStart);
+    const nav = js.slice(navStart, navEnd);
+
+    assert.notEqual(navStart, -1);
+    assert.notEqual(navEnd, -1);
+    assert.match(nav, /\$\(event\.target\)\.closest\("\.absolute-options"\)\.length/);
+    assert.match(nav, /changePage\(-1, true\);/);
+    assert.match(nav, /changePage\(1, true\);/);
+});
+
 test("minimal double-spread reader uses vertical keys for single-page spread sliding", async () => {
     const js = await source("public/js/reader.js");
     const shortcutStart = js.indexOf("function handleShortcuts(e)");
