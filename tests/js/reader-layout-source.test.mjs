@@ -77,7 +77,7 @@ test("reader border crop strings have English locale fallbacks", async () => {
     assert.match(locale, /msgid "K: toggle blank border cropping"\nmsgstr "K: toggle blank border cropping"/);
 });
 
-test("hidden-header paginated reader uses fullscreen wheel page navigation", async () => {
+test("hidden-header paginated reader uses fullscreen wheel page navigation unless reader options are open", async () => {
     const js = await source("public/js/reader.js");
     const wheelStart = js.indexOf("function handleWheel(e)");
     const wheelEnd = js.indexOf("function checkFiletypeSupport", wheelStart);
@@ -85,6 +85,7 @@ test("hidden-header paginated reader uses fullscreen wheel page navigation", asy
 
     assert.notEqual(wheelStart, -1);
     assert.notEqual(wheelEnd, -1);
+    assert.match(wheel, /if \(\$\(("#settingsOverlay"|'#settingsOverlay')\)\.is\(":visible"\)\) return;/);
     assert.match(wheel, /if \(shouldWheelNavigatePages\(\{[\s\S]*infiniteScroll,[\s\S]*fullscreen: fscreen\.inFullscreen\(\),[\s\S]*headerHidden: localStorage\.hideHeader === "true",[\s\S]*\}\) && !wheelDebounce\) \{/);
     assert.match(wheel, /e\.preventDefault\(\);/);
     assert.match(wheel, /changePage\(direction, true\);/);

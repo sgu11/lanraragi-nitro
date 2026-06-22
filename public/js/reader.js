@@ -1275,6 +1275,8 @@ function spaceScrollProcessInput(e) {
 let wheelDebounce = false;
 
 function handleWheel(e) {
+    if ($("#settingsOverlay").is(":visible")) return;
+
     if (shouldWheelNavigatePages({
         infiniteScroll,
         fullscreen: fscreen.inFullscreen(),
