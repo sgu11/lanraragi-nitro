@@ -7,6 +7,7 @@ const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), "ut
 test("versioned module paths also include deploy-specific asset cache busting", async () => {
     const app = await source("lib/LANraragi.pm");
     const index = await source("templates/index.html.tt2");
+    const indexModule = await source("public/js/mod/index.js");
     const importmap = await source("templates/common/importmap.html.tt2");
     const reader = await source("templates/reader.html.tt2");
     const duplicatesCustom = await source("templates/duplicates_custom.html.tt2");
@@ -21,6 +22,8 @@ test("versioned module paths also include deploy-specific asset cache busting", 
     assert.match(index, /\/js\/\$version\/mod\/index\.js\?\$asset_version/);
     assert.match(index, /\/js\/\$version\/mod\/common\.js\?\$asset_version/);
     assert.match(importmap, /\/js\/i18n\.js\?\$asset_version/);
+    assert.match(indexModule, /from "progress-migration"/);
+    assert.match(importmap, /"progress-migration": "\[% c\.url_for\("\/js\/\$version\/mod\/progress-migration\.js\?\$asset_version"\) %\]"/);
     assert.match(importmap, /\/js\/\$version\/vendor\/preact\.module\.js\?\$asset_version/);
     assert.match(reader, /\/css\/lrr\.css\?\$asset_version/);
     assert.match(reader, /\/js\/reader\.js\?\$asset_version/);

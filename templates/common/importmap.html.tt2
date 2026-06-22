@@ -2,6 +2,7 @@
     {
         "imports": {
             "i18n": "[% c.url_for("/js/i18n.js?$asset_version") %]",
+            "progress-migration": "[% c.url_for("/js/$version/mod/progress-migration.js?$asset_version") %]",
             "fscreen": "[% c.url_for("/js/$version/vendor/fscreen.esm.js?$asset_version") %]",
 
             "preact": "[% c.url_for("/js/$version/vendor/preact.module.js?$asset_version") %]",

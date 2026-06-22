@@ -10,7 +10,7 @@ import {
     metadataResponseMeansMissing,
     shouldMigrateProgressValue,
     shouldRunProgressMigration,
-} from "./progress-migration.js";
+} from "progress-migration";
 import I18N from "i18n";
 import * as marked from "marked";
 import DOMPurify from "dompurify";
