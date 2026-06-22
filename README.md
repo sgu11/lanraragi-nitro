@@ -16,7 +16,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 
 - **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
 - **Image quality** options exposed in settings, with a working mobile toggle.
-- **Blank border cropping** can be toggled from Reader Options or with `K`;
+- **Blank border cropping** can be toggled from the reader chrome, Reader
+  Options, or with `K`;
   reader page preloads request cached `/api/archives/{id}/page?crop=border`
   variants while the full-image link keeps pointing at the original page.
 - **Infinite-scroll reader spacing** now uses zero vertical image margin in the

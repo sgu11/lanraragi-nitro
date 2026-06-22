@@ -44,6 +44,23 @@ test("paginated reader can use minimal chrome without enabling infinite scroll",
     assert.match(js, /getFitHeightViewportPercent\(infiniteScroll, localStorage\.hideHeader === "true"\)/);
 });
 
+test("reader chrome exposes border crop toggle instead of help button", async () => {
+    const js = await source("public/js/reader.js");
+    const template = await source("templates/reader.html.tt2");
+    const leftOptionsStart = template.indexOf("<div class=\"absolute-options absolute-left\">");
+    const leftOptionsEnd = template.indexOf("<div class=\"absolute-options absolute-right\">", leftOptionsStart);
+    const leftOptions = template.slice(leftOptionsStart, leftOptionsEnd);
+
+    assert.notEqual(leftOptionsStart, -1);
+    assert.notEqual(leftOptionsEnd, -1);
+    assert.match(leftOptions, /id="toggle-settings-overlay"/);
+    assert.match(leftOptions, /id="toggle-border-crop-button"/);
+    assert.match(leftOptions, /fa-crop-alt/);
+    assert.doesNotMatch(leftOptions, /id="toggle-help"/);
+    assert.match(js, /\$\(document\)\.on\("click\.toggle-border-crop-button", "#toggle-border-crop-button", toggleBorderCrop\);/);
+    assert.match(js, /\$\(cropBorders \? "#border-crop-on, #toggle-border-crop-button" : "#border-crop-off"\)\.addClass\("toggled"\);/);
+});
+
 test("hidden-header paginated reader uses fullscreen wheel page navigation", async () => {
     const js = await source("public/js/reader.js");
     const wheelStart = js.indexOf("function handleWheel(e)");

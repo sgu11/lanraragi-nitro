@@ -246,6 +246,7 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
     // Fork: image-quality selector + auto-fullscreen toggle + double-page spread-start.
     $("#image-quality input").on("click.image-quality", setImageQuality);
     $(document).on("click.toggle-border-crop", "#toggle-border-crop input", toggleBorderCrop);
+    $(document).on("click.toggle-border-crop-button", "#toggle-border-crop-button", toggleBorderCrop);
     $(document).on("click.toggle-mobile-fullscreen", "#toggle-mobile-fullscreen input", toggleMobileFullscreen);
     $(document).on("click.toggle-spread-start", "#toggle-spread-start input", cycleSpreadStart);
     $(document).on("click.toggle-auto-next-page", ".toggle-auto-next-page", toggleAutoNextPage);
@@ -840,7 +841,8 @@ function setImageQuality() {
 
 function updateBorderCropToggle() {
     $("#toggle-border-crop input").removeClass("toggled");
-    $(cropBorders ? "#border-crop-on" : "#border-crop-off").addClass("toggled");
+    $("#toggle-border-crop-button").removeClass("toggled");
+    $(cropBorders ? "#border-crop-on, #toggle-border-crop-button" : "#border-crop-off").addClass("toggled");
 }
 
 function getReaderImageSource(index) {
@@ -862,12 +864,13 @@ function toggleBorderCrop() {
     preloadedDimensions = {};
     preloadedSizes = {};
 
-    if (!pages) { return; }
+    if (!pages) { return false; }
     if (infiniteScroll) {
         window.location.reload();
-        return;
+        return false;
     }
     goToPage(currentPage);
+    return false;
 }
 
 function toggleMobileFullscreen() {

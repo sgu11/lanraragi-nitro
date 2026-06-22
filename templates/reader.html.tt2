@@ -339,7 +339,7 @@
 [% BLOCK pagesel %]
 <div class="absolute-options absolute-left">
     <a class="fa fa-cog fa-2x" id="toggle-settings-overlay" href="#" title="[% c.lh('Reader Options') %]"></a>
-    <a class="fa fa-question-circle fa-2x" id="toggle-help" href="#" title="[% c.lh('Help') %]"></a>
+    <a class="fa fa-crop-alt fa-2x" id="toggle-border-crop-button" href="#" title="[% c.lh('Blank Border Cropping') %]"></a>
 </div>
 
 <div class="absolute-options absolute-right">
