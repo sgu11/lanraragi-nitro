@@ -52,7 +52,7 @@ ok( $record, "image serving metrics can be recorded" );
 ok( $export, "image serving metrics can be exported to Prometheus" );
 
 SKIP: {
-    skip "image metrics are not implemented yet", 11 unless $record && $export;
+    skip "image metrics are not implemented yet", 13 unless $record && $export;
 
     my $redis = FakeMetricsRedis->new;
 
@@ -66,6 +66,7 @@ SKIP: {
         cache_status          => "miss",
         duration_seconds      => 0.25,
         extract_seconds       => 0.10,
+        crop_seconds          => 0.07,
         resize_seconds        => 0.05,
         bytes                 => 1024,
     );
@@ -74,6 +75,7 @@ SKIP: {
     is( $redis->{hashes}{$key}{count}, 1, "records request count" );
     is( $redis->{hashes}{$key}{duration_sum}, 0.25, "records total duration" );
     is( $redis->{hashes}{$key}{extract_duration_sum}, 0.10, "records extract duration" );
+    is( $redis->{hashes}{$key}{crop_duration_sum}, 0.07, "records crop duration" );
     is( $redis->{hashes}{$key}{resize_duration_sum}, 0.05, "records resize duration" );
     is( $redis->{hashes}{$key}{bytes_sum}, 1024, "records response bytes" );
 
@@ -82,6 +84,7 @@ SKIP: {
     like( $prometheus, qr/lanraragi_image_serving_requests_total\{kind="page",variant="resized",cache="miss"\} 1/, "exports request counter" );
     like( $prometheus, qr/lanraragi_image_serving_duration_seconds_total\{kind="page",variant="resized",cache="miss"\} 0\.25/, "exports total duration" );
     like( $prometheus, qr/lanraragi_image_serving_extract_seconds_total\{kind="page",variant="resized",cache="miss"\} 0\.1/, "exports extract duration" );
+    like( $prometheus, qr/lanraragi_image_serving_crop_seconds_total\{kind="page",variant="resized",cache="miss"\} 0\.07/, "exports crop duration" );
     like( $prometheus, qr/lanraragi_image_serving_resize_seconds_total\{kind="page",variant="resized",cache="miss"\} 0\.05/, "exports resize duration" );
     like( $prometheus, qr/lanraragi_image_serving_bytes_total\{kind="page",variant="resized",cache="miss"\} 1024/, "exports response bytes" );
 }

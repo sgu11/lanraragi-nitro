@@ -17,6 +17,23 @@ export function normalizeReaderPage(page, maxPage = Number.MAX_SAFE_INTEGER) {
     return Math.max(0, Math.min(lastPage, pageNumber));
 }
 
+export function getDoublePageInitialProbePages(targetPage, maxPage) {
+    const lastPage = Math.max(0, Number(maxPage) || 0);
+    const page = normalizeReaderPage(targetPage, lastPage);
+    const probePages = [page];
+
+    if (page === 0) {
+        return probePages;
+    }
+    if (page > 0) {
+        probePages.push(page - 1);
+    }
+    if (page < lastPage) {
+        probePages.push(page + 1);
+    }
+    return probePages;
+}
+
 export function createReaderCursor(initialPage = 0) {
     return {
         displayPage: normalizeReaderPage(initialPage),

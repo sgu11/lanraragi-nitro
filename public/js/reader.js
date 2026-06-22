@@ -19,6 +19,7 @@ import {
     consumeQueuedReaderNavigationStep,
     createReaderCursor,
     getDisplayWindow,
+    getDoublePageInitialProbePages,
     getPageNavigationDestination,
     getSinglePageSpreadWindow,
     getSpreadWindowWithPageShift,
@@ -122,7 +123,9 @@ function runQueuedReaderNavigation() {
     const queued = consumeQueuedReaderNavigationStep(readerCursor);
     if (queued) {
         changePage(queued.step, queued.resetAuto);
+        return true;
     }
+    return false;
 }
 
 function markUserInteractionBeforeInitialPageScroll(e) {
@@ -1848,14 +1851,8 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
             if (!commitCurrentNavigation(navigationId, targetPage)) { return; }
         } else {
             if (doublePageMode) {
-                await loadImage(targetPage);
-                if (!isCurrentNavigation(navigationId)) { return; }
-                if (targetPage > 0) {
-                    await loadImage(targetPage - 1);
-                    if (!isCurrentNavigation(navigationId)) { return; }
-                }
-                if (targetPage < maxPage) {
-                    await loadImage(targetPage + 1);
+                for (const probePage of getDoublePageInitialProbePages(targetPage, maxPage)) {
+                    await loadImage(probePage);
                     if (!isCurrentNavigation(navigationId)) { return; }
                 }
 
@@ -1921,7 +1918,6 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
                 showingSinglePage = true;
             }
 
-            preloadImages();
             applyContainerWidth();
 
             currentPageLoaded = false;
@@ -1942,7 +1938,10 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
         if (!isCurrentNavigation(navigationId)) { return; }
         updateArchiveOverlay();
         updateProgress();
-        runQueuedReaderNavigation();
+        const ranQueuedNavigation = runQueuedReaderNavigation();
+        if (!ranQueuedNavigation && !infiniteScroll) {
+            preloadImages();
+        }
     });
 }
 

@@ -7,6 +7,7 @@ import {
     getPageNavigationDestination,
     getSinglePageSpreadWindow,
     getSpreadWindowWithPageShift,
+    getDoublePageInitialProbePages,
     normalizeSpreadStartMode,
     spreadStartFlags,
     shouldPairPageTwoWithThree,
@@ -99,6 +100,12 @@ test("navigation follows display windows instead of fixed offsets", () => {
     assert.equal(getPageNavigationDestination(1, { ...state, currentPage: 1 }), 3);
     assert.equal(getPageNavigationDestination(1, { ...state, currentPage: 3 }), 4);
     assert.equal(getPageNavigationDestination(-1, { ...state, currentPage: 4 }), 3);
+});
+
+test("double-page cover navigation only probes the cover before rendering", () => {
+    assert.deepEqual(getDoublePageInitialProbePages(0, 20), [0]);
+    assert.deepEqual(getDoublePageInitialProbePages(5, 20), [5, 4, 6]);
+    assert.deepEqual(getDoublePageInitialProbePages(20, 20), [20, 19]);
 });
 
 test("single-page spread sliding allows overlapping double-page windows", () => {

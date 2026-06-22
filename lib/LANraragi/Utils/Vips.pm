@@ -85,6 +85,7 @@ if ($VIPS_LOADED) {
     $vips_ffi->attach( vips_cast => ['VipsImage', 'VipsImage*', 'int'] => ['opaque'] => 'int' );
     $vips_ffi->attach( vips_embed => ['VipsImage', 'VipsImage*', 'int', 'int', 'int', 'int'] => ['opaque'] => 'int' );
     $vips_ffi->attach( vips_extract_area => ['VipsImage', 'VipsImage*', 'int', 'int', 'int', 'int'] => ['opaque'] => 'int' );
+    $vips_ffi->attach( vips_find_trim => ['VipsImage', 'int*', 'int*', 'int*', 'int*'] => ['string', 'double', 'opaque'] => 'int' );
 } else {
     # Dummy functions if libvips is not loaded
     *vips_init = sub { die "libvips is not loaded. Cannot call vips_init." };
@@ -106,6 +107,7 @@ if ($VIPS_LOADED) {
     *vips_thumbnail_buffer = sub { die "libvips is not loaded. Cannot call vips_thumbnail_buffer." };
     *vips_image_write_to_memory = sub { die "libvips is not loaded. Cannot call vips_image_write_to_memory." };
     *vips_cast = sub { die "libvips is not loaded. Cannot call vips_cast." };
+    *vips_find_trim = sub { die "libvips is not loaded. Cannot call vips_find_trim." };
 }
 
 # Define VipsInterpretation enum values.
@@ -282,6 +284,13 @@ sub extract_area ($image, $left, $top, $width, $height) {
     my $ret = vips_extract_area($image, \$out, $left, $top, $width, $height, undef);
     die "Error extracting area: " . fetch_and_clear_error() if $ret != 0;
     return $out;
+}
+
+sub find_trim ($image, $threshold = 10) {
+    my ( $left, $top, $width, $height ) = ( 0, 0, 0, 0 );
+    my $ret = vips_find_trim($image, \$left, \$top, \$width, \$height, "threshold", $threshold, undef);
+    die "Error finding trim bounds: " . fetch_and_clear_error() if $ret != 0;
+    return ( $left, $top, $width, $height );
 }
 
 # Read raw pixel bytes from a VipsImage. Returns ($bytes, $len).

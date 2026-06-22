@@ -146,6 +146,28 @@ test("border crop redraw preserves a shifted double-page spread", async () => {
     assert.match(goToPage, /requestedDisplayWindow \|\| \(preserveDisplayWindow && activeDisplayWindowWasRequested \? activeDisplayWindow : null\)/);
 });
 
+test("queued reader navigation runs before stale-page readahead", async () => {
+    const js = await source("public/js/reader.js");
+    const runQueuedStart = js.indexOf("function runQueuedReaderNavigation()");
+    const runQueuedEnd = js.indexOf("function markUserInteractionBeforeInitialPageScroll", runQueuedStart);
+    const goToStart = js.indexOf("async function goToPage");
+    const goToEnd = js.indexOf("function updateProgress()", goToStart);
+    const runQueuedReaderNavigation = js.slice(runQueuedStart, runQueuedEnd);
+    const goToPage = js.slice(goToStart, goToEnd);
+    const queuedIndex = goToPage.indexOf("const ranQueuedNavigation = runQueuedReaderNavigation();");
+    const preloadIndex = goToPage.search(/if \(!ranQueuedNavigation && !infiniteScroll\) \{\s*preloadImages\(\);\s*\}/);
+
+    assert.notEqual(runQueuedStart, -1);
+    assert.notEqual(runQueuedEnd, -1);
+    assert.notEqual(goToStart, -1);
+    assert.notEqual(goToEnd, -1);
+    assert.match(runQueuedReaderNavigation, /return true;/);
+    assert.match(runQueuedReaderNavigation, /return false;/);
+    assert.notEqual(queuedIndex, -1);
+    assert.notEqual(preloadIndex, -1);
+    assert.ok(queuedIndex < preloadIndex, "queued navigation is consumed before readahead starts");
+});
+
 test("reader fit modes upscale cropped pages to the selected viewport or container", async () => {
     const js = await source("public/js/reader.js");
     const applyStart = js.indexOf("function applyContainerWidth()");

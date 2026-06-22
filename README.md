@@ -24,6 +24,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   Reader Options On/Off buttons show the active crop setting.
 - **Blank border crop redraws** preserve shifted double-page spreads instead of
   snapping them back to the canonical pairing.
+- **Blank border cropping** now uses libvips first, falls back to ImageMagick
+  when needed, records crop timing in metrics, and bumps the crop cache version.
 - **Reading-progress resume** preserves shifted double-page spreads such as
   `5 + 6` instead of snapping reloads back to the canonical pairing.
 - **Infinite-scroll reader spacing** now uses zero vertical image margin in the
@@ -66,6 +68,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   rapid key/tap navigation while a page is still loading is coalesced through a
   reader cursor, so it resolves to the next rendered page instead of skipping
   ahead several pages at once.
+- **Cold double-page navigation** renders the requested page before background
+  readahead, so a cold cover page is no longer blocked by neighbor probes.
 - **Reader session state is separate from synced progress**: the active page is
   committed to the reading-session URL on render/scroll, while synced progress
   is only an opening hint when no explicit `?p=` session page is present.

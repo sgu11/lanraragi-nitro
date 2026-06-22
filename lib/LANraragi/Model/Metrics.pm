@@ -140,6 +140,7 @@ sub record_image_serving_metrics {
         $redis->hincrby( $key, "count", 1 );
         $redis->hincrbyfloat( $key, "duration_sum",         $args{duration_seconds} // 0 );
         $redis->hincrbyfloat( $key, "extract_duration_sum", $args{extract_seconds}  // 0 );
+        $redis->hincrbyfloat( $key, "crop_duration_sum",    $args{crop_seconds}     // 0 );
         $redis->hincrbyfloat( $key, "resize_duration_sum",  $args{resize_seconds}   // 0 );
         $redis->hincrby( $key, "bytes_sum", $args{bytes} // 0 );
     };
@@ -299,6 +300,7 @@ sub get_prometheus_image_metrics {
         $aggregated_image_metrics{"lanraragi_image_serving_requests_total"}{$labels}       += $metric_data{count}                 || 0;
         $aggregated_image_metrics{"lanraragi_image_serving_duration_seconds_total"}{$labels} += $metric_data{duration_sum}          || 0;
         $aggregated_image_metrics{"lanraragi_image_serving_extract_seconds_total"}{$labels}  += $metric_data{extract_duration_sum}  || 0;
+        $aggregated_image_metrics{"lanraragi_image_serving_crop_seconds_total"}{$labels}     += $metric_data{crop_duration_sum}     || 0;
         $aggregated_image_metrics{"lanraragi_image_serving_resize_seconds_total"}{$labels}   += $metric_data{resize_duration_sum}   || 0;
         $aggregated_image_metrics{"lanraragi_image_serving_bytes_total"}{$labels}            += $metric_data{bytes_sum}             || 0;
     }
@@ -324,6 +326,14 @@ sub get_prometheus_image_metrics {
     foreach my $labels ( sort keys %{ $aggregated_image_metrics{"lanraragi_image_serving_extract_seconds_total"} || {} } ) {
         my $value = $aggregated_image_metrics{"lanraragi_image_serving_extract_seconds_total"}{$labels};
         push @output, "lanraragi_image_serving_extract_seconds_total{$labels} $value";
+    }
+
+    push @output, "# TYPE lanraragi_image_serving_crop_seconds_total counter";
+    push @output, "# UNIT lanraragi_image_serving_crop_seconds_total seconds";
+    push @output, "# HELP lanraragi_image_serving_crop_seconds_total Total border crop time while serving images";
+    foreach my $labels ( sort keys %{ $aggregated_image_metrics{"lanraragi_image_serving_crop_seconds_total"} || {} } ) {
+        my $value = $aggregated_image_metrics{"lanraragi_image_serving_crop_seconds_total"}{$labels};
+        push @output, "lanraragi_image_serving_crop_seconds_total{$labels} $value";
     }
 
     push @output, "# TYPE lanraragi_image_serving_resize_seconds_total counter";

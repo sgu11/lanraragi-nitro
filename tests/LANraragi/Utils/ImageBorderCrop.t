@@ -5,6 +5,7 @@ use v5.36;
 
 use Test::More;
 use Image::Magick;
+use LANraragi::Utils::Vips;
 
 my $loaded = eval { require LANraragi::Utils::ImageBorderCrop; 1 };
 ok( $loaded, "ImageBorderCrop module loads" );
@@ -13,6 +14,8 @@ if ( !$loaded ) {
     done_testing();
     exit;
 }
+
+is( LANraragi::Utils::ImageBorderCrop::CROP_ALGORITHM_VERSION(), 2, "crop cache version bumps for libvips crop output" );
 
 sub make_image_blob ( $width, $height, $background, $rect = undef, $content = "black" ) {
     my $img = Image::Magick->new( size => "${width}x${height}" );
@@ -66,6 +69,17 @@ note("dark scan borders are handled as blank too");
     my ( $w, $h ) = blob_dimensions($cropped);
     is( $w, 94, "dark-border crop width includes safety padding" );
     is( $h, 68, "dark-border crop height includes safety padding" );
+}
+
+SKIP: {
+    skip "libvips is not installed", 3 unless LANraragi::Utils::Vips::is_vips_loaded();
+
+    my $blob = make_image_blob( 100, 100, "#f8f8f8", [ 12, 10, 76, 82 ], "#222222" );
+    my $cropped = LANraragi::Utils::ImageBorderCrop::crop_blank_borders_vips( $blob, "png" );
+    ok( defined $cropped, "libvips crop path returns bytes" );
+    my ( $w, $h ) = blob_dimensions($cropped);
+    is( $w, 80, "libvips crop keeps horizontal safety padding" );
+    is( $h, 86, "libvips crop keeps vertical safety padding" );
 }
 
 done_testing();

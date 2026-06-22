@@ -88,7 +88,7 @@ test("reader cancels stale async page navigations before scrolling or saving pro
     assert.match(goToPage, /\$\("#display img"\)\.get\(targetPage\)\.scrollIntoView\(\{ block: "nearest" \}\);/);
     assert.match(goToPage, /if \(!isCurrentNavigation\(navigationId\)\) \{ return; \}/);
     assert.ok(goToPage.lastIndexOf("if (!isCurrentNavigation(navigationId)) { return; }") < goToPage.indexOf("updateProgress();"));
-    assert.match(goToPage, /updateProgress\(\);\s*runQueuedReaderNavigation\(\);/);
+    assert.match(goToPage, /updateProgress\(\);\s*const ranQueuedNavigation = runQueuedReaderNavigation\(\);/);
     assert.match(changePage, /isReaderNavigationPending\(readerCursor\)[\s\S]*queueReaderNavigationStep\(readerCursor, targetPage, \{ resetAuto \}\);[\s\S]*return;/);
 });
 
