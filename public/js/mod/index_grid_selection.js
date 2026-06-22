@@ -9,6 +9,8 @@ let latestCatList = [];
 let redrawQueued = false;
 let mutationObserver = null;
 let longClickTimer = null;
+let rightClickTargetId = null;
+let rightLongClickFired = false;
 
 export function initialize(catList = []) {
     latestCatList = catList || [];
@@ -85,10 +87,10 @@ export function applySelectionHighlights() {
 }
 
 function bindEvents() {
-    document.addEventListener("click", handleArchiveClick, true);
     document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("pointerup", handlePointerUp, true);
     document.addEventListener("contextmenu", handleContextMenuCapture, true);
-    ["pointerup", "pointercancel", "pointerleave", "dragstart"].forEach((type) => {
+    ["pointercancel", "pointerleave", "dragstart"].forEach((type) => {
         document.addEventListener(type, clearLongClickTimer, true);
     });
 
@@ -126,27 +128,38 @@ function bindEvents() {
     $(document).on("draw.dt.grid-selection", ".datatables", queueApplySelectionHighlights);
 }
 
-function handleArchiveClick(event) {
+function handlePointerDown(event) {
+    clearLongClickTimer();
+    rightClickTargetId = null;
+    rightLongClickFired = false;
+    if (event.button !== 2) return;
+
     const trigger = getSelectableTrigger(event);
     if (!trigger) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    toggle(trigger.id);
-}
+    rightClickTargetId = trigger.id;
+    if (!selectedArchives.has(trigger.id)) return;
 
-function handlePointerDown(event) {
-    clearLongClickTimer();
-    if (event.button !== 2) return;
-
-    const trigger = getSelectableTrigger(event);
-    if (!trigger || !selectedArchives.has(trigger.id)) return;
-
-    event.preventDefault();
     longClickTimer = window.setTimeout(() => {
         longClickTimer = null;
+        rightLongClickFired = true;
         openSelectionContextMenu(trigger, event);
     }, LONG_CLICK_MS);
+}
+
+function handlePointerUp(event) {
+    if (event.button !== 2) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    clearLongClickTimer();
+    if (!rightClickTargetId || rightLongClickFired) return;
+
+    const id = rightClickTargetId;
+    rightClickTargetId = null;
+    toggle(id);
 }
 
 function handleContextMenuCapture(event) {
