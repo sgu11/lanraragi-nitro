@@ -10,8 +10,9 @@ test("fork grid selection is isolated behind a context-menu seam", async () => {
 
     assert.match(contextMenu, /import \* as GridSelection from "\.\/index_grid_selection\.js";/);
     assert.match(contextMenu, /GridSelection\.initialize\(catList\)/);
-    assert.match(contextMenu, /GridSelection\.buildContextMenu\(id, catList\)/);
+    assert.match(contextMenu, /const\s+gridSelectionMenu\s*=\s*GridSelection\.buildContextMenu\(id, catList\);[\s\S]*?if\s*\(\s*gridSelectionMenu\s*\)\s*return\s+gridSelectionMenu;/);
     assert.match(contextMenu, /GridSelection\.remove\(id\)/);
+    assert.doesNotMatch(contextMenu, /^\s+"msm-toggle-archive"\s*:/m);
 
     assert.match(gridSelection, /document\.addEventListener\("contextmenu", handleContextMenuCapture, true\)/);
     assert.match(gridSelection, /localStorage\.setItem\("msmSelection", JSON\.stringify\(ids\)\)/);
