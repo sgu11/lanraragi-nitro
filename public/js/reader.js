@@ -145,9 +145,22 @@ function getStoredProgressDisplayWindow(page) {
     return null;
 }
 
+function getSessionDisplayWindow(page) {
+    if (!doublePageMode || infiniteScroll) { return null; }
+
+    return getSpreadWindowWithPageShift(0, getSpreadState({
+        currentPage: page,
+        displayWindow: { start: page, end: page },
+    }));
+}
+
 function selectInitialPage() {
     if (hasExplicitPageParameter) {
-        return { page: currentPage, reason: "explicit-page" };
+        return {
+            page: currentPage,
+            reason: "explicit-page",
+            displayWindow: getSessionDisplayWindow(currentPage),
+        };
     }
 
     const progressPage = Number(progress);

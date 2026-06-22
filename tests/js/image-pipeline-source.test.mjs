@@ -108,6 +108,19 @@ test("reader session page survives reload independent of progress persistence", 
     assert.match(handleFullScreen, /requestAnimationFrame\(\(\) => \{[\s\S]*syncInfiniteScrollCurrentPageFromViewport\(\);[\s\S]*replaceReaderSessionPage\(currentPage \+ 1\);[\s\S]*\}\);/);
 });
 
+test("reader explicit session page preserves shifted double-page window", async () => {
+    const js = await source("public/js/reader.js");
+    const selectStart = js.indexOf("function selectInitialPage()");
+    const selectEnd = js.indexOf("function shouldApplyInitialPageScroll", selectStart);
+    const selectInitialPage = js.slice(selectStart, selectEnd);
+
+    assert.notEqual(selectStart, -1);
+    assert.notEqual(selectEnd, -1);
+    assert.match(js, /function getSessionDisplayWindow\(page\)/);
+    assert.match(js, /getSpreadWindowWithPageShift\(0, getSpreadState\(\{[\s\S]*displayWindow: \{ start: page, end: page \},[\s\S]*\}\)\)/);
+    assert.match(selectInitialPage, /reason: "explicit-page",[\s\S]*displayWindow: getSessionDisplayWindow\(currentPage\)/);
+});
+
 test("reader progress resume restores shifted double-page spread windows", async () => {
     const js = await source("public/js/reader.js");
     const selectStart = js.indexOf("function selectInitialPage()");
