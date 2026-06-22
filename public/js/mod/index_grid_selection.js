@@ -295,8 +295,35 @@ function queueApplySelectionHighlights() {
 
 function observeRenderedArchives() {
     if (mutationObserver) return;
-    mutationObserver = new MutationObserver(queueApplySelectionHighlights);
-    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    mutationObserver = new MutationObserver(handleArchiveMutations);
+
+    const targets = Array.from(document.querySelectorAll(".datatables, #thumbs_container, #toppane"));
+    if (targets.length === 0) targets.push(document.body);
+    targets.forEach((target) => mutationObserver.observe(target, { childList: true, subtree: true }));
+}
+
+function handleArchiveMutations(records) {
+    const hasArchiveMutation = records.some((record) => !isIgnoredMutation(record));
+    if (hasArchiveMutation) queueApplySelectionHighlights();
+}
+
+function isIgnoredMutation(record) {
+    const target = getElementTarget(record.target);
+    if (isGridSelectionChrome(target)) return true;
+
+    return Array.from(record.addedNodes)
+        .concat(Array.from(record.removedNodes))
+        .every((node) => isGridSelectionChrome(getElementTarget(node)));
+}
+
+function getElementTarget(node) {
+    if (node instanceof Element) return node;
+    return node.parentElement || null;
+}
+
+function isGridSelectionChrome(element) {
+    if (!element) return false;
+    return Boolean(element.closest("#grid-selection-banner") || element.closest("#grid-selection-style"));
 }
 
 function injectBanner() {
@@ -333,7 +360,8 @@ function updateBanner() {
     const count = selectedArchives.size;
     banner.hidden = count === 0;
     const countNode = banner.querySelector(".grid-selection-count");
-    if (countNode) countNode.textContent = `${count} selected`;
+    const countText = `${count} selected`;
+    if (countNode && countNode.textContent !== countText) countNode.textContent = countText;
 }
 
 function hideSupersededControls() {
