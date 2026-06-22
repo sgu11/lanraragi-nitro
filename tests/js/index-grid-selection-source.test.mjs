@@ -14,7 +14,12 @@ test("fork grid selection is isolated behind a context-menu seam", async () => {
     assert.match(contextMenu, /GridSelection\.remove\(id\)/);
     assert.doesNotMatch(contextMenu, /^\s+"msm-toggle-archive"\s*:/m);
 
-    assert.match(gridSelection, /document\.addEventListener\("contextmenu", handleContextMenuCapture, true\)/);
+    assert.match(gridSelection, /document\.addEventListener\("click", handleArchiveClick, true\)/);
+    assert.match(gridSelection, /document\.addEventListener\("pointerdown", handlePointerDown, true\)/);
+    assert.match(gridSelection, /const\s+LONG_CLICK_MS\s*=\s*600;/);
+    assert.match(gridSelection, /new MouseEvent\("contextmenu"/);
+    assert.match(gridSelection, /menuEvent\.gridSelectionLongClick = true;/);
+    assert.match(gridSelection, /trigger\.dispatchEvent\(menuEvent\)/);
     assert.match(gridSelection, /localStorage\.setItem\("msmSelection", JSON\.stringify\(ids\)\)/);
     assert.match(gridSelection, /id\.startsWith\("TANK_"\)/);
     assert.match(gridSelection, /\.grid-selection-enabled #msm-toggle,\s*\.grid-selection-enabled #msm-carousel-controls,\s*\.grid-selection-enabled #carousel-mode-menu/);

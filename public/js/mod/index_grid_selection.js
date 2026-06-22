@@ -3,10 +3,12 @@ import * as IndexTable from "./index_datatables.js";
 import I18N from "i18n";
 
 const selectedArchives = new Set();
+const LONG_CLICK_MS = 600;
 let initialized = false;
 let latestCatList = [];
 let redrawQueued = false;
 let mutationObserver = null;
+let longClickTimer = null;
 
 export function initialize(catList = []) {
     latestCatList = catList || [];
@@ -83,7 +85,12 @@ export function applySelectionHighlights() {
 }
 
 function bindEvents() {
+    document.addEventListener("click", handleArchiveClick, true);
+    document.addEventListener("pointerdown", handlePointerDown, true);
     document.addEventListener("contextmenu", handleContextMenuCapture, true);
+    ["pointerup", "pointercancel", "pointerleave", "dragstart"].forEach((type) => {
+        document.addEventListener(type, clearLongClickTimer, true);
+    });
 
     $(document).on("click.grid-selection-select-page", "#grid-selection-select-page", (event) => {
         event.preventDefault();
@@ -119,17 +126,67 @@ function bindEvents() {
     $(document).on("draw.dt.grid-selection", ".datatables", queueApplySelectionHighlights);
 }
 
-function handleContextMenuCapture(event) {
-    const trigger = event.target.closest(".context-menu[id]");
-    if (!trigger || !LRR.isUserLogged()) return;
-
-    const { id } = trigger;
-    if (!isSelectableId(id)) return;
-    if (selectedArchives.has(id)) return;
+function handleArchiveClick(event) {
+    const trigger = getSelectableTrigger(event);
+    if (!trigger) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    select(id);
+    toggle(trigger.id);
+}
+
+function handlePointerDown(event) {
+    clearLongClickTimer();
+    if (event.button !== 2) return;
+
+    const trigger = getSelectableTrigger(event);
+    if (!trigger || !selectedArchives.has(trigger.id)) return;
+
+    event.preventDefault();
+    longClickTimer = window.setTimeout(() => {
+        longClickTimer = null;
+        openSelectionContextMenu(trigger, event);
+    }, LONG_CLICK_MS);
+}
+
+function handleContextMenuCapture(event) {
+    const trigger = getSelectableTrigger(event);
+    if (!trigger) return;
+    if (event.gridSelectionLongClick) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+}
+
+function toggle(id) {
+    if (selectedArchives.has(id)) remove(id);
+    else select(id);
+}
+
+function getSelectableTrigger(event) {
+    const trigger = getElementTarget(event.target)?.closest(".context-menu[id]");
+    if (!trigger || !LRR.isUserLogged() || !isSelectableId(trigger.id)) return null;
+    return trigger;
+}
+
+function clearLongClickTimer() {
+    if (!longClickTimer) return;
+    window.clearTimeout(longClickTimer);
+    longClickTimer = null;
+}
+
+function openSelectionContextMenu(trigger, sourceEvent) {
+    const menuEvent = new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: sourceEvent.clientX,
+        clientY: sourceEvent.clientY,
+        button: 2,
+        buttons: 0,
+        view: window,
+    });
+    menuEvent.gridSelectionLongClick = true;
+    trigger.dispatchEvent(menuEvent);
 }
 
 function handleBulkAction(action, clickedId, catList) {
