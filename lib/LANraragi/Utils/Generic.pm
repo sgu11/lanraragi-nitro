@@ -258,9 +258,10 @@ sub generate_css_detail {
 # Print a dropdown list to select CSS, and adds <link> tags for all the style sheets present in the /style folder.
 sub generate_themes_header {
 
-    my $self    = shift;
-    my $version = $self->LRR_VERSION;
-    my @css     = get_css_list;
+    my $self          = shift;
+    my $asset_version = eval { $self->LRR_ASSET_VERSION };
+    $asset_version = $self->LRR_VERSION unless defined $asset_version && length $asset_version;
+    my @css = get_css_list;
 
     # Html that we'll insert in the header to declare all the available styles.
     my $html = "";
@@ -270,7 +271,7 @@ sub generate_themes_header {
 
         my $css_file = $css[$i];
         my ( $css_name, $css_color ) = css_default_data($css_file);
-        my $css_url = $self->url_for("/themes/$css_file?$version");
+        my $css_url = $self->url_for("/themes/$css_file?$asset_version");
 
         # If this is the default sheet, set it up as so.
         if ( $css[$i] eq LANraragi::Model::Config->get_style ) {

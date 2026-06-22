@@ -11,7 +11,7 @@
 
 	<link type="image/png" rel="icon" href="favicon.ico" />
 	<link rel="manifest" href="app.webappmanifest" />
-	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$version") %]" />
+	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$asset_version") %]" />
 	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/config.css") %]" />
 
 	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/fontawesome-all.min.css") %]" />
@@ -29,10 +29,10 @@
 	<script src="[% c.url_for("/js/vendor/tippy-bundle.umd.min.js") %]" type="text/JAVASCRIPT"></script>
 	<script src="[% c.url_for("/js/vendor/Sortable.min.js") %]" type="text/JAVASCRIPT"></script>
 
-	<script src="[% c.url_for("/js/edit.js?$version") %]" type="module"></script>
+	<script src="[% c.url_for("/js/edit.js?$asset_version") %]" type="module"></script>
 
 	<script type="module">
-		import * as IndexTable from "[% c.url_for("/js/$version/mod/index_datatables.js") %]";
+		import * as IndexTable from "[% c.url_for("/js/$version/mod/index_datatables.js?$asset_version") %]";
 
 		jQuery(() => {
 			window.IndexTable = IndexTable;

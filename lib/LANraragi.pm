@@ -41,6 +41,43 @@ sub is_baseurl_cookie_exempt {
     return 0;
 }
 
+sub get_git_revision {
+    my $gitdir = Mojo::File->new(".git");
+
+    if ( -f $gitdir ) {
+        my $gitfile = $gitdir->slurp;
+        return unless $gitfile =~ /^gitdir:\s*(.+?)\s*$/m;
+        $gitdir = Mojo::File->new($1);
+    }
+
+    return unless -d $gitdir;
+
+    my $head_path = $gitdir->child("HEAD");
+    return unless -e $head_path;
+
+    my $head = $head_path->slurp;
+    chomp $head;
+
+    my $revision = $head;
+    if ( $head =~ /^ref:\s*(.+)$/ ) {
+        my $ref_path = $gitdir->child($1);
+        return unless -e $ref_path;
+        $revision = $ref_path->slurp;
+        chomp $revision;
+    }
+
+    return unless $revision =~ /^([0-9a-f]{7,40})$/i;
+    return substr( $1, 0, 12 );
+}
+
+sub build_asset_version {
+    my $version = shift;
+    my $revision = $ENV{LRR_ASSET_REVISION} // get_git_revision();
+
+    return $version unless defined $revision && $revision =~ /^[0-9A-Za-z._-]+$/;
+    return "$version-$revision";
+}
+
 # This method will run once at server start
 sub startup {
     my $self = shift;
@@ -59,6 +96,7 @@ sub startup {
     my $version = $version_info->{version};
     my $vername = $version_info->{version_name};
     my $descstr = $version_info->{description};
+    my $asset_version = build_asset_version($version);
 
     my $secret          = "";
     my $secretfile_path = get_temp . "/oshino";
@@ -86,8 +124,10 @@ sub startup {
     #(they still need to declare use Model::Config)
     $self->helper( LRR_CONF    => sub { LANraragi::Model::Config:: } );
     $self->helper( LRR_VERSION => sub { return $version; } );
+    $self->helper( LRR_ASSET_VERSION => sub { return $asset_version; } );
     $self->helper( LRR_VERNAME => sub { return $vername; } );
     $self->helper( LRR_DESC    => sub { return $descstr; } );
+    $self->defaults( asset_version => $asset_version );
 
     #Helper to build logger objects quickly
     $self->helper(
@@ -244,8 +284,8 @@ sub startup {
         }
     );
 
-    # Long-cache static assets. Templates already append ?v=$version for cache-busting,
-    # so a 1-day max-age is safe across releases.
+    # Long-cache static assets. Templates append the deploy-specific asset version
+    # for cache-busting, so a 1-day max-age is safe across fork deploys.
     $self->hook(
         after_static => sub {
             my $c    = shift;

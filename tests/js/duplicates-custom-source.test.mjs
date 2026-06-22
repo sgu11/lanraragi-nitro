@@ -96,8 +96,8 @@ test("custom duplicate finder renders pair-relative comparison chips", async () 
     assert.match(styles, /\.dupe-resolution-chip/);
     assert.match(styles, /\.dupe-resolution-chip\.is-highlighted/);
 
-    assert.match(template, /duplicates_custom\.css"\) %]\?\[% version %]-no-delete-confirm/);
-    assert.match(template, /duplicates_custom\.js"\) %]\?\[% version %]-no-delete-confirm/);
+    assert.match(template, /duplicates_custom\.css"\) %]\?\[% asset_version %]-no-delete-confirm/);
+    assert.match(template, /duplicates_custom\.js"\) %]\?\[% asset_version %]-no-delete-confirm/);
 });
 
 test("custom duplicate fork-only labels do not call Maketext", async () => {

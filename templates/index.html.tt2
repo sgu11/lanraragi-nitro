@@ -11,7 +11,7 @@
 
 	<link type="image/png" rel="icon" href="favicon.ico" />
 	<link rel="manifest" href="app.webappmanifest" />
-	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$version") %]" />
+	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$asset_version") %]" />
 
 	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/fontawesome-all.min.css") %]" />
 	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/jquery.contextMenu.min.css") %]" />
@@ -37,10 +37,10 @@
 	<script src="[% c.url_for("/js/vendor/clipboard.min.js") %]" type="text/JAVASCRIPT"></script>
 
 	<script type="module">
-		import * as Index from "[% c.url_for("/js/$version/mod/index.js") %]";
-		import * as IndexTable from "[% c.url_for("/js/$version/mod/index_datatables.js") %]";
-		import * as LRR from "[% c.url_for("/js/$version/mod/common.js") %]";
-		import * as ContextMenu from "[% c.url_for("/js/$version/mod/index_contextmenu.js") %]";
+		import * as Index from "[% c.url_for("/js/$version/mod/index.js?$asset_version") %]";
+		import * as IndexTable from "[% c.url_for("/js/$version/mod/index_datatables.js?$asset_version") %]";
+		import * as LRR from "[% c.url_for("/js/$version/mod/common.js?$asset_version") %]";
+		import * as ContextMenu from "[% c.url_for("/js/$version/mod/index_contextmenu.js?$asset_version") %]";
 
 		jQuery(() => {
 			[% IF usingdefpass %]
