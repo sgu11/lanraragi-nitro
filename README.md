@@ -59,7 +59,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   infinite-scroll fullscreen exits keep the visible page even when Progression
   Tracking is disabled.
 - **Reader session URLs** preserve shifted double-page spreads, so reloading a
-  shifted `?p=` page does not snap back to the canonical spread start.
+  shifted `?p=` page does not snap back to the canonical spread start, and
+  prev/next navigation keeps a one-page session stride.
 - **Reading-progress resume** is cancellable: stale async page loads can no longer
   scroll back over newer user navigation, disabled progress tracking no longer
   resumes saved progress on open, and enabled tracking coalesces rapid page-turn

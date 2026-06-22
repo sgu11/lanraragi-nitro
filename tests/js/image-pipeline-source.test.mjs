@@ -113,12 +113,26 @@ test("reader explicit session page preserves shifted double-page window", async 
     const selectStart = js.indexOf("function selectInitialPage()");
     const selectEnd = js.indexOf("function shouldApplyInitialPageScroll", selectStart);
     const selectInitialPage = js.slice(selectStart, selectEnd);
+    const loadStart = js.indexOf("export function loadImages()");
+    const loadEnd = js.indexOf("export function initializeSettings()", loadStart);
+    const loadImages = js.slice(loadStart, loadEnd);
+    const shiftStart = js.indexOf("function shiftRequestedSpreadByPageCount");
+    const shiftEnd = js.indexOf("function cycleSpreadStart", shiftStart);
+    const shiftRequestedSpreadByPageCount = js.slice(shiftStart, shiftEnd);
 
     assert.notEqual(selectStart, -1);
     assert.notEqual(selectEnd, -1);
+    assert.notEqual(loadStart, -1);
+    assert.notEqual(loadEnd, -1);
+    assert.notEqual(shiftStart, -1);
+    assert.notEqual(shiftEnd, -1);
     assert.match(js, /function getSessionDisplayWindow\(page\)/);
     assert.match(js, /getSpreadWindowWithPageShift\(0, getSpreadState\(\{[\s\S]*displayWindow: \{ start: page, end: page \},[\s\S]*\}\)\)/);
-    assert.match(selectInitialPage, /reason: "explicit-page",[\s\S]*displayWindow: getSessionDisplayWindow\(currentPage\)/);
+    assert.match(selectInitialPage, /reason: "explicit-page",[\s\S]*displayWindow: getSessionDisplayWindow\(currentPage\),[\s\S]*displayWindowStride: 1,/);
+    assert.match(loadImages, /requestedDisplayWindowStride = initialPage\.displayWindowStride \|\| null;/);
+    assert.match(shiftRequestedSpreadByPageCount, /const stride = activeDisplayWindowStride \|\| 2;/);
+    assert.match(shiftRequestedSpreadByPageCount, /getSpreadWindowWithPageShift\(step > 0 \? stride : -stride/);
+    assert.match(shiftRequestedSpreadByPageCount, /requestedDisplayWindowStride = stride;/);
 });
 
 test("reader progress resume restores shifted double-page spread windows", async () => {

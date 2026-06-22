@@ -46,7 +46,9 @@ let detectedFirstSpreadStart = undefined; // fork: server-detected first interio
 let firstSpreadStart = 2;       // fork: first spread anchor (2 => pages 2-3, 4 => pages 3-4)
 let activeDisplayWindow = null; // fork: current rendered spread, including one-page vertical slides
 let activeDisplayWindowWasRequested = false;
+let activeDisplayWindowStride = 2;
 let requestedDisplayWindow = null;
+let requestedDisplayWindowStride = null;
 let hasExplicitPageParameter = false;
 let initialPageScrollPending = false;
 let userInteractedBeforeInitialPageScroll = false;
@@ -160,6 +162,7 @@ function selectInitialPage() {
             page: currentPage,
             reason: "explicit-page",
             displayWindow: getSessionDisplayWindow(currentPage),
+            displayWindowStride: 1,
         };
     }
 
@@ -745,6 +748,7 @@ export function loadImages() {
         const initialPage = selectInitialPage();
         currentPage = initialPage.page;
         requestedDisplayWindow = initialPage.displayWindow || null;
+        requestedDisplayWindowStride = initialPage.displayWindowStride || null;
 
         if (infiniteScroll) {
             initInfiniteScrollView(initialPage.reason);
@@ -1015,9 +1019,11 @@ function shiftRequestedSpreadByPageCount(step) {
         return false;
     }
 
-    requestedDisplayWindow = getSpreadWindowWithPageShift(step > 0 ? 2 : -2, getSpreadState({
+    const stride = activeDisplayWindowStride || 2;
+    requestedDisplayWindow = getSpreadWindowWithPageShift(step > 0 ? stride : -stride, getSpreadState({
         displayWindow: activeDisplayWindow,
     }));
+    requestedDisplayWindowStride = stride;
     goToPage(requestedDisplayWindow.start);
     return true;
 }
@@ -1772,7 +1778,11 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
         navigationRequestId += 1;
         const navigationId = navigationRequestId;
         const displayWindowOverride = requestedDisplayWindow || (preserveDisplayWindow && activeDisplayWindowWasRequested ? activeDisplayWindow : null);
+        const displayWindowStrideOverride = requestedDisplayWindow
+            ? requestedDisplayWindowStride
+            : (preserveDisplayWindow && activeDisplayWindowWasRequested ? activeDisplayWindowStride : null);
         requestedDisplayWindow = null;
+        requestedDisplayWindowStride = null;
         previousPage = currentPage;
         const targetPage = Math.min(maxPage, Math.max(0, +page));
         currentPage = targetPage;
@@ -1815,6 +1825,7 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
                     if (!isCurrentNavigation(navigationId)) { return; }
                     activeDisplayWindow = displayWindow;
                     activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
+                    activeDisplayWindowStride = displayWindowStrideOverride || 2;
                     currentPage = displayStart;
                     if (mangaMode) {
                         $("#img").attr("src", img2);
@@ -1836,6 +1847,7 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
                     if (!isCurrentNavigation(navigationId)) { return; }
                     activeDisplayWindow = displayWindow;
                     activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
+                    activeDisplayWindowStride = displayWindowStrideOverride || 2;
                     currentPage = displayStart;
                     $("#img").attr("src", img);
                     $("#img").attr("data-filename", imgFilename);
