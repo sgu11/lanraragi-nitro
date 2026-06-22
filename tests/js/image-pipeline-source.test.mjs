@@ -62,12 +62,20 @@ test("reader cancels stale async page navigations before scrolling or saving pro
     const goStart = js.indexOf("async function goToPage(page");
     const goEnd = js.indexOf("function updateProgress()");
     const goToPage = js.slice(goStart, goEnd);
+    const targetStart = goToPage.indexOf("const targetPage");
+    const asyncBranchStart = goToPage.indexOf("if (infiniteScroll)");
+    const beforeAsyncBranch = goToPage.slice(targetStart, asyncBranchStart);
 
     assert.notEqual(goStart, -1);
     assert.notEqual(goEnd, -1);
+    assert.notEqual(targetStart, -1);
+    assert.notEqual(asyncBranchStart, -1);
     assert.match(js, /let navigationRequestId = 0;/);
     assert.match(js, /function isCurrentNavigation\(navigationId\)/);
     assert.match(goToPage, /navigationRequestId \+= 1;\s*const navigationId = navigationRequestId;/);
+    assert.doesNotMatch(beforeAsyncBranch, /currentPage = targetPage;/);
+    assert.match(goToPage, /materializeInfiniteScrollWindow\(targetPage\);/);
+    assert.match(goToPage, /\$\("#display img"\)\.get\(targetPage\)\.scrollIntoView\(\{ block: "nearest" \}\);/);
     assert.match(goToPage, /if \(!isCurrentNavigation\(navigationId\)\) \{ return; \}/);
     assert.ok(goToPage.lastIndexOf("if (!isCurrentNavigation(navigationId)) { return; }") < goToPage.indexOf("updateProgress();"));
 });

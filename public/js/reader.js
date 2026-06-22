@@ -1785,17 +1785,17 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
         requestedDisplayWindowStride = null;
         previousPage = currentPage;
         const targetPage = Math.min(maxPage, Math.max(0, +page));
-        currentPage = targetPage;
         showingSinglePage = false;
 
         if (infiniteScroll) {
             activeDisplayWindow = null;
             activeDisplayWindowWasRequested = false;
-            materializeInfiniteScrollWindow(currentPage);
+            materializeInfiniteScrollWindow(targetPage);
             if (!isCurrentNavigation(navigationId)) { return; }
             if (resetScroll) {
-                $("#display img").get(currentPage).scrollIntoView({ block: "nearest" });
+                $("#display img").get(targetPage).scrollIntoView({ block: "nearest" });
             }
+            currentPage = targetPage;
         } else {
             if (doublePageMode) {
                 await loadImage(targetPage);
