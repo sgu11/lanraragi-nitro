@@ -24,6 +24,10 @@ let carouselDirty = true;
 let swiper = {};
 let serverVersion = "";
 let debugMode = false;
+let progressTracking = {
+    isProgressLocal: true,
+    isProgressAuthenticated: true,
+};
 export let pageSize = 100;
 export let isMultiSelectMode = false;
 export let selectedArchives = new Set();
@@ -231,7 +235,14 @@ export function initializeAll() {
         (data) => {
             serverVersion = data.version;
             debugMode = !!data.debug_mode;
-            LRR.setProgressTracking(!data.server_tracks_progress, data.authenticated_progress);
+            progressTracking = {
+                isProgressLocal: !data.server_tracks_progress,
+                isProgressAuthenticated: data.authenticated_progress,
+            };
+            LRR.setProgressTracking(
+                progressTracking.isProgressLocal,
+                progressTracking.isProgressAuthenticated,
+            );
             pageSize = data.archives_per_page;
 
             // Check version if not in debug mode
@@ -1017,7 +1028,7 @@ export function fetchChangelog() {
  */
 export function migrateProgress() {
     // No migration if local progress is enabled, or if progress is authenticated and we're not logged in.
-    const { isProgressLocal, isProgressAuthenticated } = LRR.getProgressTracking();
+    const { isProgressLocal, isProgressAuthenticated } = progressTracking;
     if (!shouldRunProgressMigration(isProgressLocal, isProgressAuthenticated, LRR.isUserLogged())) {
         return;
     }

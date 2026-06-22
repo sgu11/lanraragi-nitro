@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -6,6 +7,8 @@ import {
     shouldMigrateProgressValue,
     shouldRunProgressMigration,
 } from "../../public/js/mod/progress-migration.js";
+
+const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
 test("progress migration runs only when server-side progress is available for this user", () => {
     assert.equal(shouldRunProgressMigration(true, false, true), false);
@@ -37,4 +40,14 @@ test("progress migration compares page numbers numerically", () => {
     assert.equal(shouldMigrateProgressValue("2", 10), false);
     assert.equal(shouldMigrateProgressValue(null, 0), false);
     assert.equal(shouldMigrateProgressValue("not-a-number", 0), false);
+});
+
+test("index progress migration does not require a new common.js getter", async () => {
+    const index = await source("public/js/mod/index.js");
+
+    assert.doesNotMatch(index, /LRR\.getProgressTracking\(\)/);
+    assert.match(index, /let progressTracking = \{\s*isProgressLocal: true,\s*isProgressAuthenticated: true,\s*\};/);
+    assert.match(index, /progressTracking = \{\s*isProgressLocal: !data\.server_tracks_progress,\s*isProgressAuthenticated: data\.authenticated_progress,\s*\};/);
+    assert.match(index, /LRR\.setProgressTracking\(\s*progressTracking\.isProgressLocal,\s*progressTracking\.isProgressAuthenticated,\s*\);/);
+    assert.match(index, /const \{ isProgressLocal, isProgressAuthenticated \} = progressTracking;/);
 });
