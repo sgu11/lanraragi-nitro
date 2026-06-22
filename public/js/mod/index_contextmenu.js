@@ -5,6 +5,7 @@ import * as LRR from "./common.js";
 import * as Server from "./server.js";
 import * as Index from "./index.js";
 import * as IndexTable from "./index_datatables.js";
+import * as GridSelection from "./index_grid_selection.js";
 import I18N from "i18n";
 
 let pseudoCopyBtn = undefined;
@@ -42,6 +43,7 @@ function restoreDeleting(id) {
 }
 
 function reconcileDeletedArchive(id) {
+    GridSelection.remove(id);
     Index.removeArchiveFromSelection(id);
     Index.markCarouselDirty();
     IndexTable.reloadAfterArchiveMutation();
@@ -189,6 +191,7 @@ function loadContextMenuRatings(id, refreshCallback) {
 
 export function initialize(catListData) {
     const catList = catListData || [];
+    GridSelection.initialize(catList);
     pseudoCopyBtn = $("#pseudo-copy-btn");
     const clipboard = new window.ClipboardJS("#pseudo-copy-btn");
 
@@ -215,6 +218,8 @@ export function initialize(catListData) {
         build: ($trigger, _e) => {
             const id = $trigger.attr("id");
             const isTankoubon = id && id.startsWith("TANK_");
+            const gridSelectionMenu = GridSelection.buildContextMenu(id, catList);
+            if (gridSelectionMenu) return gridSelectionMenu;
 
             let items = {
                 "read": {
@@ -230,12 +235,6 @@ export function initialize(catListData) {
                 "copy link": {
                     name: I18N.CopyLink,
                     icon: "fas fa-link"
-                },
-                "msm-toggle-archive": {
-                    name: Index.selectedArchives.has(id)
-                        ? I18N.MSMRemoveFromSelection
-                        : I18N.MSMAddToSelection,
-                    icon: "fas fa-check-square"
                 }
             };
 
