@@ -20,6 +20,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   Options, or with `K`;
   reader page preloads request cached `/api/archives/{id}/page?crop=border`
   variants while the full-image link keeps pointing at the original page.
+- **Blank border crop toolbar icon** remains visually stateless while the
+  Reader Options On/Off buttons show the active crop setting.
 - **Infinite-scroll reader spacing** now uses zero vertical image margin in the
   normal infinite-scroll layout.
 - **Fit-height fix in fullscreen** — recomputes correct height on enter/exit instead of leaving stale layout.

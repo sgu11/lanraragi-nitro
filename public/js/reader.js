@@ -841,8 +841,7 @@ function setImageQuality() {
 
 function updateBorderCropToggle() {
     $("#toggle-border-crop input").removeClass("toggled");
-    $("#toggle-border-crop-button").removeClass("toggled");
-    $(cropBorders ? "#border-crop-on, #toggle-border-crop-button" : "#border-crop-off").addClass("toggled");
+    $(cropBorders ? "#border-crop-on" : "#border-crop-off").addClass("toggled");
 }
 
 function getReaderImageSource(index) {
