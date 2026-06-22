@@ -1,3 +1,12 @@
+function parseProgressValue(value) {
+    if (value === null || value === undefined) {
+        return NaN;
+    }
+
+    const text = String(value).trim();
+    return /^\d+$/.test(text) ? Number.parseInt(text, 10) : NaN;
+}
+
 export function shouldRunProgressMigration(isProgressLocal, isProgressAuthenticated, userLogged) {
     return !isProgressLocal && !(isProgressAuthenticated && !userLogged);
 }
@@ -19,8 +28,8 @@ export function shouldMigrateProgressValue(progress, serverProgress) {
         return false;
     }
 
-    const localProgress = Number.parseInt(progress, 10);
-    const storedServerProgress = Number.parseInt(serverProgress, 10);
+    const localProgress = parseProgressValue(progress);
+    const storedServerProgress = parseProgressValue(serverProgress);
 
     return Number.isFinite(localProgress) && Number.isFinite(storedServerProgress) && localProgress > storedServerProgress;
 }

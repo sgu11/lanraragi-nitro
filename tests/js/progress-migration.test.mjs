@@ -40,6 +40,7 @@ test("progress migration compares page numbers numerically", () => {
     assert.equal(shouldMigrateProgressValue("2", 10), false);
     assert.equal(shouldMigrateProgressValue(null, 0), false);
     assert.equal(shouldMigrateProgressValue("not-a-number", 0), false);
+    assert.equal(shouldMigrateProgressValue("10bad", 2), false);
 });
 
 test("index progress migration does not require a new common.js getter", async () => {

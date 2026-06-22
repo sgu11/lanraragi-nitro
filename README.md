@@ -41,7 +41,7 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   one page. After a one-page slide, normal prev/next navigation keeps the shifted
   double-page stride until a direct page jump or display-mode change resets it.
 - **Middle-click toggles fullscreen** anywhere in the reader (same as pressing `F`).
-- **Reading-progress migration** no longer keeps resurfacing stale migration toasts for deleted archives/tankoubons, and respects local/authenticated progress settings before attempting a server migration.
+- **Reading-progress migration** no longer keeps resurfacing stale migration toasts for deleted archives/tankoubons or malformed local page values, and respects local/authenticated progress settings before attempting a server migration.
 - **Reading-progress migration startup** tolerates mixed cached JS modules after deploy, so index load no longer depends on a freshly fetched `common.js`.
 - **Progression Tracking disabled** now suppresses local/server progress writes during page turns instead of only ignoring saved progress on reader open.
 - **Reading-progress resume** is cancellable: stale async page loads can no longer
