@@ -14,6 +14,9 @@ test("versioned module paths also include deploy-specific asset cache busting", 
 
     assert.match(app, /LRR_ASSET_VERSION/);
     assert.match(app, /asset_version/);
+    assert.match(app, /use Digest::SHA qw\(sha1_hex\);/);
+    assert.match(app, /sub get_source_asset_revision/);
+    assert.match(app, /get_git_revision\(\) \/\/ get_source_asset_revision\(\)/);
 
     assert.match(index, /\/js\/\$version\/mod\/index\.js\?\$asset_version/);
     assert.match(index, /\/js\/\$version\/mod\/common\.js\?\$asset_version/);

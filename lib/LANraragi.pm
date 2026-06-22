@@ -12,6 +12,8 @@ use Config;
 use URI::Escape;
 use Time::HiRes qw(gettimeofday);
 use Compress::Zlib qw(memGzip);
+use Digest::SHA qw(sha1_hex);
+use File::Find qw(find);
 
 use LANraragi::Utils::Generic    qw(start_shinobu start_minion get_version);
 use LANraragi::Utils::Logging    qw(get_logger get_logdir);
@@ -70,9 +72,31 @@ sub get_git_revision {
     return substr( $1, 0, 12 );
 }
 
+sub get_source_asset_revision {
+    my @roots = grep { -e $_ } qw(templates public/js public/css public/themes);
+    return unless @roots;
+
+    my @entries;
+    find(
+        {
+            no_chdir => 1,
+            wanted   => sub {
+                return unless -f $_;
+
+                my @stat = stat _;
+                push @entries, join( ":", $File::Find::name, $stat[7], $stat[9] );
+            }
+        },
+        @roots
+    );
+
+    return unless @entries;
+    return substr( sha1_hex( join( "\n", sort @entries ) ), 0, 12 );
+}
+
 sub build_asset_version {
     my $version = shift;
-    my $revision = $ENV{LRR_ASSET_REVISION} // get_git_revision();
+    my $revision = $ENV{LRR_ASSET_REVISION} // get_git_revision() // get_source_asset_revision();
 
     return $version unless defined $revision && $revision =~ /^[0-9A-Za-z._-]+$/;
     return "$version-$revision";
