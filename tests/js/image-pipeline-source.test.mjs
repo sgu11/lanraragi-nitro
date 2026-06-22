@@ -89,6 +89,32 @@ test("reader progress persistence is latest-only and bypassed when tracking is d
     assert.match(updateProgress, /if \(!ignoreProgress\) \{\s*scheduleProgressPersistence\(page\);\s*\}/);
 });
 
+test("reader progress resume restores shifted double-page spread windows", async () => {
+    const js = await source("public/js/reader.js");
+    const selectStart = js.indexOf("function selectInitialPage()");
+    const selectEnd = js.indexOf("function shouldApplyInitialPageScroll", selectStart);
+    const persistStart = js.indexOf("function persistProgress");
+    const persistEnd = js.indexOf("function flushProgressPersistence", persistStart);
+    const loadStart = js.indexOf("export function loadImages()");
+    const loadEnd = js.indexOf("export function initializeSettings()", loadStart);
+    const selectInitialPage = js.slice(selectStart, selectEnd);
+    const persistProgress = js.slice(persistStart, persistEnd);
+    const loadImages = js.slice(loadStart, loadEnd);
+
+    assert.notEqual(selectStart, -1);
+    assert.notEqual(selectEnd, -1);
+    assert.notEqual(persistStart, -1);
+    assert.notEqual(persistEnd, -1);
+    assert.notEqual(loadStart, -1);
+    assert.notEqual(loadEnd, -1);
+    assert.match(js, /function getProgressDisplayWindowKey\(\)/);
+    assert.match(js, /function rememberProgressDisplayWindow\(\)/);
+    assert.match(js, /function getStoredProgressDisplayWindow\(page\)/);
+    assert.match(persistProgress, /rememberProgressDisplayWindow\(\);/);
+    assert.match(selectInitialPage, /displayWindow: getStoredProgressDisplayWindow\(progressPage\)/);
+    assert.match(loadImages, /requestedDisplayWindow = initialPage\.displayWindow \|\| null;[\s\S]*goToPage\(currentPage\)/);
+});
+
 test("reader Delete key confirms archive deletion before returning to library", async () => {
     const js = await source("public/js/reader.js");
     const shortcutStart = js.indexOf("function handleShortcuts(e)");

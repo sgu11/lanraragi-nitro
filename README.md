@@ -24,6 +24,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   Reader Options On/Off buttons show the active crop setting.
 - **Blank border crop redraws** preserve shifted double-page spreads instead of
   snapping them back to the canonical pairing.
+- **Reading-progress resume** preserves shifted double-page spreads such as
+  `5 + 6` instead of snapping reloads back to the canonical pairing.
 - **Infinite-scroll reader spacing** now uses zero vertical image margin in the
   normal infinite-scroll layout.
 - **Fit modes upscale cropped reader pages** so blank-border-cropped images in

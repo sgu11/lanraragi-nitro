@@ -115,6 +115,36 @@ function finishInitialPageScroll() {
     initialPageScrollPending = false;
 }
 
+function getProgressDisplayWindowKey() {
+    return `${id}-reader-window`;
+}
+
+function rememberProgressDisplayWindow() {
+    if (doublePageMode && !infiniteScroll && activeDisplayWindowWasRequested
+        && activeDisplayWindow?.end > activeDisplayWindow.start) {
+        localStorage.setItem(getProgressDisplayWindowKey(), JSON.stringify(activeDisplayWindow));
+    } else {
+        localStorage.removeItem(getProgressDisplayWindowKey());
+    }
+}
+
+function getStoredProgressDisplayWindow(page) {
+    if (!doublePageMode || infiniteScroll) { return null; }
+
+    try {
+        const stored = JSON.parse(localStorage.getItem(getProgressDisplayWindowKey()));
+        const start = Number(stored?.start);
+        const end = Number(stored?.end);
+        if (start === page && Number.isInteger(start) && Number.isInteger(end)
+            && end > start && start >= 0 && end <= maxPage) {
+            return { start, end };
+        }
+    } catch {
+        localStorage.removeItem(getProgressDisplayWindowKey());
+    }
+    return null;
+}
+
 function selectInitialPage() {
     if (hasExplicitPageParameter) {
         return { page: currentPage, reason: "explicit-page" };
@@ -123,7 +153,11 @@ function selectInitialPage() {
     const progressPage = Number(progress);
     if (!ignoreProgress && !userInteractedBeforeInitialPageScroll && Number.isFinite(progressPage)
         && progressPage > 0 && progressPage < maxPage) {
-        return { page: progressPage, reason: "resume-progress" };
+        return {
+            page: progressPage,
+            reason: "resume-progress",
+            displayWindow: getStoredProgressDisplayWindow(progressPage),
+        };
     }
 
     return { page: 0, reason: "default-first" };
@@ -146,6 +180,7 @@ function clearPendingProgressPersistence() {
 }
 
 function persistProgress(page, options = {}) {
+    rememberProgressDisplayWindow();
     if (state.authenticateProgress && LRR.isUserLogged()) {
         Server.updateServerSideProgress(id, page, options);
     } else if (state.trackProgressLocally) {
@@ -670,6 +705,7 @@ export function loadImages() {
         // This allows for bookmarks to trump progress
         const initialPage = selectInitialPage();
         currentPage = initialPage.page;
+        requestedDisplayWindow = initialPage.displayWindow || null;
 
         if (infiniteScroll) {
             initInfiniteScrollView(initialPage.reason);
