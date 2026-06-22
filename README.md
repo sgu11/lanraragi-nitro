@@ -24,8 +24,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   Reader Options On/Off buttons show the active crop setting.
 - **Blank border crop redraws** preserve shifted double-page spreads instead of
   snapping them back to the canonical pairing.
-- **Blank border cropping** now uses libvips first, falls back to ImageMagick
-  when needed, records crop timing in metrics, and bumps the crop cache version.
+- **Blank border cropping** now uses libvips first, skips cover/color/landscape
+  spread pages, only crops light scan borders, records crop timing in metrics,
+  and bumps the crop cache version.
 - **Reading-progress resume** preserves shifted double-page spreads such as
   `5 + 6` instead of snapping reloads back to the canonical pairing.
 - **Infinite-scroll reader spacing** now uses zero vertical image margin in the

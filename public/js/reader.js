@@ -976,9 +976,16 @@ function updateBorderCropToggle() {
     $(cropBorders ? "#border-crop-on" : "#border-crop-off").addClass("toggled");
 }
 
+function shouldRequestBorderCrop(index) {
+    if (!cropBorders) { return false; }
+    if (index === 0) { return false; }
+    if (isWidePage(preloadedDimensions[index])) { return false; }
+    return true;
+}
+
 function getReaderImageSource(index) {
     const rawSrc = pages[index];
-    if (!cropBorders || !rawSrc) {
+    if (!shouldRequestBorderCrop(index) || !rawSrc) {
         return rawSrc;
     }
 

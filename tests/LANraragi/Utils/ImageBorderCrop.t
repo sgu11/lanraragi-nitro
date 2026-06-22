@@ -15,7 +15,7 @@ if ( !$loaded ) {
     exit;
 }
 
-is( LANraragi::Utils::ImageBorderCrop::CROP_ALGORITHM_VERSION(), 2, "crop cache version bumps for libvips crop output" );
+is( LANraragi::Utils::ImageBorderCrop::CROP_ALGORITHM_VERSION(), 3, "crop cache version bumps for light-border-only eligibility" );
 
 sub make_image_blob ( $width, $height, $background, $rect = undef, $content = "black" ) {
     my $img = Image::Magick->new( size => "${width}x${height}" );
@@ -61,14 +61,25 @@ note("all-blank images are not cropped");
     is( $cropped, undef, "crop returns undef when no content is found" );
 }
 
-note("dark scan borders are handled as blank too");
+note("dark scan borders are skipped instead of cropped");
 {
     my $blob = make_image_blob( 120, 80, "#101010", [ 15, 8, 90, 64 ], "#e6e6e6" );
     my $cropped = LANraragi::Utils::ImageBorderCrop::crop_blank_borders( $blob, "png" );
-    ok( defined $cropped, "dark-border crop returns bytes" );
-    my ( $w, $h ) = blob_dimensions($cropped);
-    is( $w, 94, "dark-border crop width includes safety padding" );
-    is( $h, 68, "dark-border crop height includes safety padding" );
+    is( $cropped, undef, "dark-border page returns nocrop" );
+}
+
+note("color pages are skipped even with light borders");
+{
+    my $blob = make_image_blob( 120, 160, "#f8f8f8", [ 14, 12, 92, 132 ], "#bb4433" );
+    my $cropped = LANraragi::Utils::ImageBorderCrop::crop_blank_borders( $blob, "png" );
+    is( $cropped, undef, "color page returns nocrop" );
+}
+
+note("landscape joined spread pages are skipped");
+{
+    my $blob = make_image_blob( 160, 90, "#f8f8f8", [ 18, 10, 124, 70 ], "#222222" );
+    my $cropped = LANraragi::Utils::ImageBorderCrop::crop_blank_borders( $blob, "png" );
+    is( $cropped, undef, "landscape joined spread returns nocrop" );
 }
 
 SKIP: {

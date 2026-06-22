@@ -216,7 +216,10 @@ test("reader blank-border crop setting maps readahead URLs and exposes k shortcu
 
     assert.match(js, /let cropBorders = false;/);
     assert.match(js, /localStorage\.cropBorders === "true"/);
+    assert.match(js, /function shouldRequestBorderCrop\(index\)/);
+    assert.match(js, /if \(index === 0\) \{\s*return false;\s*\}/);
     assert.match(js, /function getReaderImageSource\(index\)/);
+    assert.match(js, /if \(!shouldRequestBorderCrop\(index\) \|\| !rawSrc\)/);
     assert.match(js, /url\.searchParams\.set\("crop", "border"\)/);
     assert.match(js, /const src = getReaderImageSource\(index\);/);
     assert.match(js, /const rawSrc = pages\[index\];/);
