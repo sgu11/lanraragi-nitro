@@ -15,7 +15,7 @@ if ( !$loaded ) {
     exit;
 }
 
-is( LANraragi::Utils::ImageBorderCrop::CROP_ALGORITHM_VERSION(), 3, "crop cache version bumps for light-border-only eligibility" );
+is( LANraragi::Utils::ImageBorderCrop::CROP_ALGORITHM_VERSION(), 4, "crop cache version bumps for per-edge strip detection" );
 
 sub make_image_blob ( $width, $height, $background, $rect = undef, $content = "black" ) {
     my $img = Image::Magick->new( size => "${width}x${height}" );
@@ -27,6 +27,22 @@ sub make_image_blob ( $width, $height, $background, $rect = undef, $content = "b
             points    => "$x,$y " . ( $x + $w - 1 ) . "," . ( $y + $h - 1 ),
             fill      => $content,
         );
+    }
+    return $img->ImageToBlob( magick => "png" );
+}
+
+sub make_one_sided_noisy_left_strip_blob {
+    my $img = Image::Magick->new( size => "220x320" );
+    $img->Read("xc:#f8f8f8");
+    $img->Draw(
+        primitive => "rectangle",
+        points    => "44,0 219,319",
+        fill      => "#222222",
+    );
+    for my $y ( 0 .. 319 ) {
+        next if $y % 23;
+        $img->SetPixel( x => 0, y => $y, color => [ 0.78, 0.78, 0.78 ] );
+        $img->SetPixel( x => 1, y => $y, color => [ 0.83, 0.83, 0.83 ] );
     }
     return $img->ImageToBlob( magick => "png" );
 }
@@ -45,6 +61,28 @@ note("off-white blank borders are cropped with a small safety padding");
     my ( $w, $h ) = blob_dimensions($cropped);
     is( $w, 80, "crop keeps horizontal safety padding" );
     is( $h, 86, "crop keeps vertical safety padding" );
+}
+
+note("one-sided noisy light strips are cropped without requiring all corners to be light");
+{
+    my $blob = make_one_sided_noisy_left_strip_blob();
+    my $bounds = LANraragi::Utils::ImageBorderCrop::detect_crop_bounds($blob);
+    is_deeply(
+        $bounds,
+        {
+            x      => 42,
+            y      => 0,
+            width  => 178,
+            height => 320,
+        },
+        "ImageMagick fallback detects the left-only strip after ignoring edge noise"
+    );
+
+    my $cropped = LANraragi::Utils::ImageBorderCrop::crop_blank_borders( $blob, "png" );
+    ok( defined $cropped, "cropped bytes are returned for the left-only strip" );
+    my ( $w, $h ) = blob_dimensions($cropped);
+    is( $w, 178, "crop removes only the left light strip with safety padding" );
+    is( $h, 320, "crop keeps full height when top and bottom are not blank strips" );
 }
 
 note("small borders are ignored to avoid wasteful re-encoding");
@@ -83,7 +121,7 @@ note("landscape joined spread pages are skipped");
 }
 
 SKIP: {
-    skip "libvips is not installed", 3 unless LANraragi::Utils::Vips::is_vips_loaded();
+    skip "libvips is not installed", 7 unless LANraragi::Utils::Vips::is_vips_loaded();
 
     my $blob = make_image_blob( 100, 100, "#f8f8f8", [ 12, 10, 76, 82 ], "#222222" );
     my $cropped = LANraragi::Utils::ImageBorderCrop::crop_blank_borders_vips( $blob, "png" );
@@ -91,6 +129,13 @@ SKIP: {
     my ( $w, $h ) = blob_dimensions($cropped);
     is( $w, 80, "libvips crop keeps horizontal safety padding" );
     is( $h, 86, "libvips crop keeps vertical safety padding" );
+
+    my $left_strip = make_one_sided_noisy_left_strip_blob();
+    my $left_cropped = LANraragi::Utils::ImageBorderCrop::crop_blank_borders_vips( $left_strip, "png" );
+    ok( defined $left_cropped, "libvips crop path handles one-sided noisy light strips" );
+    ( $w, $h ) = blob_dimensions($left_cropped);
+    is( $w, 178, "libvips crop removes only the left light strip with safety padding" );
+    is( $h, 320, "libvips crop keeps full height for one-sided left strip" );
 }
 
 done_testing();

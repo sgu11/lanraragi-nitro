@@ -13,12 +13,18 @@ use LANraragi::Utils::Vips ();
 use Exporter 'import';
 our @EXPORT_OK = qw(CROP_ALGORITHM_VERSION crop_blank_borders crop_blank_borders_vips detect_crop_bounds);
 
-use constant CROP_ALGORITHM_VERSION => 3;
-use constant TRIM_FUZZ_PERCENT      => 8;
-use constant VIPS_TRIM_THRESHOLD    => int( 255 * TRIM_FUZZ_PERCENT / 100 );
+use constant CROP_ALGORITHM_VERSION => 4;
 use constant VIPS_LIGHT_BACKGROUND  => 224;
 use constant COLOR_CHANNEL_DELTA    => 32;
 use constant COLOR_SAMPLE_HITS      => 2;
+use constant EDGE_IGNORE_PIXELS     => 2;
+use constant EDGE_BACKGROUND_BAND   => 4;
+use constant EDGE_BACKGROUND_STEP   => 16;
+use constant EDGE_LINE_SAMPLE_STEP  => 4;
+use constant EDGE_BLANK_DELTA       => 40;
+use constant EDGE_ALLOWED_BAD_RATIO => 0.005;
+use constant EDGE_NONBLANK_RUN      => 3;
+use constant EDGE_SCAN_MAX_RATIO    => 0.30;
 use constant MIN_CROP_PIXELS        => 5;
 use constant MIN_RETAIN_RATIO       => 0.20;
 use constant SAFETY_PADDING_PIXELS  => 2;
@@ -43,31 +49,6 @@ sub _decode_first_frame ($content) {
         return;
     }
     return $img->[0] // $img;
-}
-
-sub _trimmed_bounds ( $image, $orig_width, $orig_height ) {
-    my $trimmed = $image->Clone;
-    my $err = $trimmed->Trim( fuzz => TRIM_FUZZ_PERCENT . "%" );
-    if ($err) {
-        _debug("Image trim failed while detecting crop bounds: $err");
-        return;
-    }
-
-    my ( $trim_width, $trim_height ) = $trimmed->Get( "width", "height" );
-    my $page = $trimmed->Get("page") // "";
-    return unless $page =~ /^\d+x\d+([+-]\d+)([+-]\d+)$/;
-
-    my ( $x, $y ) = ( int($1), int($2) );
-    return if $x < 0 || $y < 0;
-    return if $trim_width <= 0 || $trim_height <= 0;
-    return if $x + $trim_width > $orig_width || $y + $trim_height > $orig_height;
-
-    return {
-        x      => $x,
-        y      => $y,
-        width  => int($trim_width),
-        height => int($trim_height),
-    };
 }
 
 sub _with_safety_padding ( $bounds, $orig_width, $orig_height ) {
@@ -125,34 +106,35 @@ sub _channels_are_colorful (@channels) {
     return max(@visible) - min(@visible) >= COLOR_CHANNEL_DELTA;
 }
 
-sub _magick_pixel_channels ( $image, $x, $y ) {
-    my @channels = $image->GetPixel( x => $x, y => $y );
-    return if !@channels;
-
-    # Image::Magick returns normalized channel values by default.
-    return map { int( min( 1, max( 0, $_ ) ) * 255 + 0.5 ) } @channels;
+sub _median (@values) {
+    return unless @values;
+    @values = sort { $a <=> $b } @values;
+    return $values[ int( @values / 2 ) ];
 }
 
-sub _magick_background_looks_light ( $image, $orig_width, $orig_height ) {
-    my @points = (
-        [ 0,               0 ],
-        [ $orig_width - 1, 0 ],
-        [ 0,               $orig_height - 1 ],
-        [ $orig_width - 1, $orig_height - 1 ],
-    );
+sub _channel_luma (@channels) {
+    return 0 if !@channels;
+    return $channels[0] if @channels < 3;
+    return int( 0.299 * $channels[0] + 0.587 * $channels[1] + 0.114 * $channels[2] + 0.5 );
+}
 
-    for my $point (@points) {
-        my @channels = _magick_pixel_channels( $image, $point->[0], $point->[1] );
-        return 0 unless _channels_are_light(@channels);
+sub _channel_delta_from_background ( $channels, $background ) {
+    my $visible_bands = min( scalar @$channels, scalar @$background, 3 );
+    return 255 if $visible_bands <= 0;
+
+    my $delta = 0;
+    for my $index ( 0 .. $visible_bands - 1 ) {
+        $delta = max( $delta, abs( $channels->[$index] - $background->[$index] ) );
     }
-    return 1;
+    return $delta;
 }
 
-sub _magick_image_looks_colorful ( $image, $orig_width, $orig_height ) {
+sub _sampled_image_looks_colorful ( $pixel_at, $orig_width, $orig_height ) {
     my $hits = 0;
     for my $y ( _sample_positions($orig_height) ) {
         for my $x ( _sample_positions($orig_width) ) {
-            my @channels = _magick_pixel_channels( $image, $x, $y );
+            my @channels = $pixel_at->( $x, $y );
+            return undef if !@channels;
             if ( _channels_are_colorful(@channels) ) {
                 $hits++;
                 return 1 if $hits >= COLOR_SAMPLE_HITS;
@@ -162,11 +144,181 @@ sub _magick_image_looks_colorful ( $image, $orig_width, $orig_height ) {
     return 0;
 }
 
-sub _magick_image_is_crop_eligible ( $image, $orig_width, $orig_height ) {
-    return 0 if $orig_width > $orig_height;
-    return 0 unless _magick_background_looks_light( $image, $orig_width, $orig_height );
-    return 0 if _magick_image_looks_colorful( $image, $orig_width, $orig_height );
-    return 1;
+sub _edge_background_channels ( $pixel_at, $orig_width, $orig_height, $side ) {
+    my @samples;
+    my $ignore = EDGE_IGNORE_PIXELS;
+    return if $orig_width <= $ignore * 2 || $orig_height <= $ignore * 2;
+
+    if ( $side eq "left" || $side eq "right" ) {
+        my $start_x =
+          $side eq "left"
+          ? $ignore
+          : max( $ignore, $orig_width - $ignore - EDGE_BACKGROUND_BAND );
+        my $end_x =
+          $side eq "left"
+          ? min( $orig_width - $ignore - 1, $ignore + EDGE_BACKGROUND_BAND - 1 )
+          : $orig_width - $ignore - 1;
+
+        for my $x ( $start_x .. $end_x ) {
+            for ( my $y = $ignore ; $y <= $orig_height - $ignore - 1 ; $y += EDGE_BACKGROUND_STEP ) {
+                my @channels = $pixel_at->( $x, $y );
+                push @samples, \@channels if @channels;
+            }
+        }
+    } else {
+        my $start_y =
+          $side eq "top"
+          ? $ignore
+          : max( $ignore, $orig_height - $ignore - EDGE_BACKGROUND_BAND );
+        my $end_y =
+          $side eq "top"
+          ? min( $orig_height - $ignore - 1, $ignore + EDGE_BACKGROUND_BAND - 1 )
+          : $orig_height - $ignore - 1;
+
+        for my $y ( $start_y .. $end_y ) {
+            for ( my $x = $ignore ; $x <= $orig_width - $ignore - 1 ; $x += EDGE_BACKGROUND_STEP ) {
+                my @channels = $pixel_at->( $x, $y );
+                push @samples, \@channels if @channels;
+            }
+        }
+    }
+
+    return if !@samples;
+    my $visible_bands = min( 3, scalar @{ $samples[0] } );
+    return if $visible_bands <= 0;
+
+    my @background;
+    for my $index ( 0 .. $visible_bands - 1 ) {
+        push @background, _median( map { $_->[$index] } @samples );
+    }
+    return @background;
+}
+
+sub _edge_line_bad_ratio ( $pixel_at, $orig_width, $orig_height, $side, $position, $background ) {
+    my ( $bad, $total ) = ( 0, 0 );
+    my $ignore = EDGE_IGNORE_PIXELS;
+
+    if ( $side eq "left" || $side eq "right" ) {
+        for ( my $y = $ignore ; $y <= $orig_height - $ignore - 1 ; $y += EDGE_LINE_SAMPLE_STEP ) {
+            my @channels = $pixel_at->( $position, $y );
+            if ( !@channels ) {
+                $bad++;
+                $total++;
+                next;
+            }
+
+            my $delta = _channel_delta_from_background( \@channels, $background );
+            my $luma  = _channel_luma(@channels);
+            $bad++ if $delta > EDGE_BLANK_DELTA || $luma < VIPS_LIGHT_BACKGROUND;
+            $total++;
+        }
+    } else {
+        for ( my $x = $ignore ; $x <= $orig_width - $ignore - 1 ; $x += EDGE_LINE_SAMPLE_STEP ) {
+            my @channels = $pixel_at->( $x, $position );
+            if ( !@channels ) {
+                $bad++;
+                $total++;
+                next;
+            }
+
+            my $delta = _channel_delta_from_background( \@channels, $background );
+            my $luma  = _channel_luma(@channels);
+            $bad++ if $delta > EDGE_BLANK_DELTA || $luma < VIPS_LIGHT_BACKGROUND;
+            $total++;
+        }
+    }
+
+    return 1 if !$total;
+    return $bad / $total;
+}
+
+sub _edge_scan_positions ( $orig_width, $orig_height, $side ) {
+    my $ignore = EDGE_IGNORE_PIXELS;
+    if ( $side eq "left" ) {
+        my $max_x = min( $orig_width - $ignore - 1, max( $ignore, int( $orig_width * EDGE_SCAN_MAX_RATIO ) ) );
+        return ( $ignore .. $max_x );
+    }
+    if ( $side eq "right" ) {
+        my $min_x = max( $ignore, min( $orig_width - $ignore - 1, int( $orig_width * ( 1 - EDGE_SCAN_MAX_RATIO ) ) ) );
+        return reverse( $min_x .. $orig_width - $ignore - 1 );
+    }
+    if ( $side eq "top" ) {
+        my $max_y = min( $orig_height - $ignore - 1, max( $ignore, int( $orig_height * EDGE_SCAN_MAX_RATIO ) ) );
+        return ( $ignore .. $max_y );
+    }
+
+    my $min_y = max( $ignore, min( $orig_height - $ignore - 1, int( $orig_height * ( 1 - EDGE_SCAN_MAX_RATIO ) ) ) );
+    return reverse( $min_y .. $orig_height - $ignore - 1 );
+}
+
+sub _detect_edge_boundary ( $pixel_at, $orig_width, $orig_height, $side ) {
+    my @background = _edge_background_channels( $pixel_at, $orig_width, $orig_height, $side );
+    return unless @background;
+    return unless _channels_are_light(@background);
+
+    my $run = 0;
+    for my $position ( _edge_scan_positions( $orig_width, $orig_height, $side ) ) {
+        my $bad_ratio = _edge_line_bad_ratio( $pixel_at, $orig_width, $orig_height, $side, $position, \@background );
+        if ( $bad_ratio > EDGE_ALLOWED_BAD_RATIO ) {
+            $run++;
+            if ( $run >= EDGE_NONBLANK_RUN ) {
+                return $side eq "left" || $side eq "top"
+                  ? $position - $run + 1
+                  : $position + $run - 1;
+            }
+        } else {
+            $run = 0;
+        }
+    }
+
+    return;
+}
+
+sub _detect_crop_bounds_from_pixels ( $pixel_at, $orig_width, $orig_height ) {
+    return if !$orig_width || !$orig_height;
+    return if $orig_width < EDGE_IGNORE_PIXELS * 2 + 3 || $orig_height < EDGE_IGNORE_PIXELS * 2 + 3;
+    return if $orig_width > $orig_height;
+
+    my $colorful = _sampled_image_looks_colorful( $pixel_at, $orig_width, $orig_height );
+    return if !defined $colorful || $colorful;
+
+    my ( $left, $top, $right, $bottom ) = ( 0, 0, $orig_width, $orig_height );
+
+    my $left_boundary = _detect_edge_boundary( $pixel_at, $orig_width, $orig_height, "left" );
+    $left = $left_boundary if defined $left_boundary && $left_boundary >= MIN_CROP_PIXELS;
+
+    my $right_boundary = _detect_edge_boundary( $pixel_at, $orig_width, $orig_height, "right" );
+    if ( defined $right_boundary && $orig_width - ( $right_boundary + 1 ) >= MIN_CROP_PIXELS ) {
+        $right = $right_boundary + 1;
+    }
+
+    my $top_boundary = _detect_edge_boundary( $pixel_at, $orig_width, $orig_height, "top" );
+    $top = $top_boundary if defined $top_boundary && $top_boundary >= MIN_CROP_PIXELS;
+
+    my $bottom_boundary = _detect_edge_boundary( $pixel_at, $orig_width, $orig_height, "bottom" );
+    if ( defined $bottom_boundary && $orig_height - ( $bottom_boundary + 1 ) >= MIN_CROP_PIXELS ) {
+        $bottom = $bottom_boundary + 1;
+    }
+
+    return if $right <= $left || $bottom <= $top;
+
+    my $bounds = {
+        x      => int($left),
+        y      => int($top),
+        width  => int( $right - $left ),
+        height => int( $bottom - $top ),
+    };
+    return unless _valid_crop_bounds( $bounds, $orig_width, $orig_height );
+
+    return _with_safety_padding( $bounds, $orig_width, $orig_height );
+}
+
+sub _magick_pixel_channels ( $image, $x, $y ) {
+    my @channels = $image->GetPixel( x => $x, y => $y );
+    return if !@channels;
+
+    # Image::Magick returns normalized channel values by default.
+    return map { int( min( 1, max( 0, $_ ) ) * 255 + 0.5 ) } @channels;
 }
 
 sub detect_crop_bounds ($content) {
@@ -180,92 +332,63 @@ sub detect_crop_bounds ($content) {
 
     my ( $orig_width, $orig_height ) = $image->Get( "width", "height" );
     return if !$orig_width || !$orig_height;
-    return unless _magick_image_is_crop_eligible( $image, $orig_width, $orig_height );
-
-    my $bounds = _trimmed_bounds( $image, $orig_width, $orig_height );
-    return unless $bounds;
-
-    return unless _valid_crop_bounds( $bounds, $orig_width, $orig_height );
-
-    return _with_safety_padding( $bounds, $orig_width, $orig_height );
-}
-
-sub _vips_pixel_channels ( $image, $x, $y ) {
-    my $sample;
-    my $pixel = eval {
-        $sample = LANraragi::Utils::Vips::extract_area( $image, $x, $y, 1, 1 );
-        my ($bytes) = LANraragi::Utils::Vips::read_pixels($sample);
-        $bytes;
+    my $pixel_at = sub ( $x, $y ) {
+        return _magick_pixel_channels( $image, $x, $y );
     };
-    my $error = $@;
-    eval { LANraragi::Utils::Vips::unref_image($sample) if $sample; 1 };
-    return if $error || !defined $pixel || $pixel eq "";
 
-    return unpack( "C*", $pixel );
+    return _detect_crop_bounds_from_pixels( $pixel_at, $orig_width, $orig_height );
 }
 
-sub _vips_background_looks_light ( $image, $orig_width, $orig_height ) {
-    my @points = (
-        [ 0,               0 ],
-        [ $orig_width - 1, 0 ],
-        [ 0,               $orig_height - 1 ],
-        [ $orig_width - 1, $orig_height - 1 ],
-    );
+sub _vips_sample_to_uchar ( $pixels, $offset, $bytes_per_sample ) {
+    return ord( substr( $pixels, $offset, 1 ) ) if $bytes_per_sample == 1;
 
-    for my $point (@points) {
-        my @channels = _vips_pixel_channels( $image, $point->[0], $point->[1] );
-        return undef if !@channels;
-        return 0 unless _channels_are_light(@channels);
+    if ( $bytes_per_sample == 2 ) {
+        my $value = unpack( "S<", substr( $pixels, $offset, 2 ) );
+        return int( min( 255, max( 0, $value / 257 ) ) + 0.5 );
     }
-    return 1;
-}
 
-sub _vips_image_looks_colorful ( $image, $orig_width, $orig_height ) {
-    return 0 if LANraragi::Utils::Vips::bands($image) < 3;
-
-    my $hits = 0;
-    for my $y ( _sample_positions($orig_height) ) {
-        for my $x ( _sample_positions($orig_width) ) {
-            my @channels = _vips_pixel_channels( $image, $x, $y );
-            return undef if !@channels;
-            if ( _channels_are_colorful(@channels) ) {
-                $hits++;
-                return 1 if $hits >= COLOR_SAMPLE_HITS;
-            }
-        }
-    }
-    return 0;
+    return ord( substr( $pixels, $offset, 1 ) );
 }
 
 sub _detect_crop_bounds_vips_result ($image) {
     my $orig_width  = LANraragi::Utils::Vips::width($image);
     my $orig_height = LANraragi::Utils::Vips::height($image);
-    return ( "nocrop", undef ) if !$orig_width || !$orig_height;
-    return ( "nocrop", undef ) if $orig_width < 3 || $orig_height < 3;
-    return ( "nocrop", undef ) if $orig_width > $orig_height;
+    if ( !$orig_width || !$orig_height ) {
+        return ( "nocrop", undef );
+    }
+    if ( $orig_width < EDGE_IGNORE_PIXELS * 2 + 3 || $orig_height < EDGE_IGNORE_PIXELS * 2 + 3 ) {
+        return ( "nocrop", undef );
+    }
 
-    my $light_background = _vips_background_looks_light( $image, $orig_width, $orig_height );
-    return ( "fallback", undef ) if !defined $light_background;
-    return ( "nocrop", undef ) unless $light_background;
+    my $bands = LANraragi::Utils::Vips::bands($image);
+    if ( !$bands ) {
+        return ( "fallback", undef );
+    }
 
-    my $colorful = _vips_image_looks_colorful( $image, $orig_width, $orig_height );
-    return ( "fallback", undef ) if !defined $colorful;
-    return ( "nocrop", undef ) if $colorful;
-
-    my ( $x, $y, $width, $height ) = LANraragi::Utils::Vips::find_trim( $image, VIPS_TRIM_THRESHOLD );
-    return ( "nocrop", undef ) if $width <= 0 || $height <= 0;
-    return ( "fallback", undef ) if $x < 0 || $y < 0;
-    return ( "fallback", undef ) if $x + $width > $orig_width || $y + $height > $orig_height;
-
-    my $bounds = {
-        x      => int($x),
-        y      => int($y),
-        width  => int($width),
-        height => int($height),
+    my $pixels = eval {
+        my ($bytes) = LANraragi::Utils::Vips::read_pixels($image);
+        $bytes;
     };
-    return ( "nocrop", undef ) unless _valid_crop_bounds( $bounds, $orig_width, $orig_height );
+    if ( $@ || !defined $pixels || $pixels eq "" ) {
+        return ( "fallback", undef );
+    }
 
-    return ( "crop", _with_safety_padding( $bounds, $orig_width, $orig_height ) );
+    my $pixel_count = $orig_width * $orig_height * $bands;
+    return ( "fallback", undef ) if $pixel_count <= 0 || length($pixels) % $pixel_count != 0;
+    my $bytes_per_sample = int( length($pixels) / $pixel_count );
+    return ( "fallback", undef ) if $bytes_per_sample <= 0;
+
+    my $pixel_at = sub ( $x, $y ) {
+        return if $x < 0 || $y < 0 || $x >= $orig_width || $y >= $orig_height;
+        my $offset = ( ( ( $y * $orig_width ) + $x ) * $bands ) * $bytes_per_sample;
+        return if $offset < 0 || $offset + ( $bands * $bytes_per_sample ) > length($pixels);
+        return map { _vips_sample_to_uchar( $pixels, $offset + ( $_ * $bytes_per_sample ), $bytes_per_sample ) } ( 0 .. $bands - 1 );
+    };
+
+    my $bounds = _detect_crop_bounds_from_pixels( $pixel_at, $orig_width, $orig_height );
+    return ( "nocrop", undef ) unless $bounds;
+
+    return ( "crop", $bounds );
 }
 
 sub _crop_blank_borders_vips_result ( $content, $format = "jpg" ) {

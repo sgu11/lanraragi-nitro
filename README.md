@@ -25,8 +25,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - **Blank border crop redraws** preserve shifted double-page spreads instead of
   snapping them back to the canonical pairing.
 - **Blank border cropping** now uses libvips first, skips cover/color/landscape
-  spread pages, only crops light scan borders, records crop timing in metrics,
-  and bumps the crop cache version.
+  spread pages, and uses v4 per-edge light-strip detection that ignores the
+  outer 2px edge noise before cropping left/right/top/bottom blank strips.
+  Crop timing is recorded in metrics.
 - **Reading-progress resume** preserves shifted double-page spreads such as
   `5 + 6` instead of snapping reloads back to the canonical pairing.
 - **Infinite-scroll reader spacing** now uses zero vertical image margin in the
