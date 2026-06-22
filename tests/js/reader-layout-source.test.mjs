@@ -61,6 +61,14 @@ test("reader chrome exposes border crop toggle instead of help button", async ()
     assert.match(js, /\$\(cropBorders \? "#border-crop-on, #toggle-border-crop-button" : "#border-crop-off"\)\.addClass\("toggled"\);/);
 });
 
+test("reader border crop strings have English locale fallbacks", async () => {
+    const locale = await source("locales/template/en.po");
+
+    assert.match(locale, /msgid "Blank Border Cropping"\nmsgstr "Blank Border Cropping"/);
+    assert.match(locale, /msgid "Requests reader page variants with blank scan borders removed\. Press K to toggle\."\nmsgstr "Requests reader page variants with blank scan borders removed\. Press K to toggle\."/);
+    assert.match(locale, /msgid "K: toggle blank border cropping"\nmsgstr "K: toggle blank border cropping"/);
+});
+
 test("hidden-header paginated reader uses fullscreen wheel page navigation", async () => {
     const js = await source("public/js/reader.js");
     const wheelStart = js.indexOf("function handleWheel(e)");
