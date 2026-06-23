@@ -24,10 +24,12 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   Reader Options On/Off buttons show the active crop setting.
 - **Blank border crop redraws** preserve shifted double-page spreads instead of
   snapping them back to the canonical pairing.
-- **Blank border cropping** now uses libvips first, skips cover/color/landscape
-  spread pages, and uses v4 per-edge light-strip detection that ignores the
-  outer 2px edge noise before cropping left/right/top/bottom blank strips.
-  Crop timing is recorded in metrics.
+- **Blank border cropping** now uses libvips first, skips cover/landscape
+  spread pages, and uses v5 per-edge light/dark strip detection inspired by
+  Komikku while preserving the outer 2px edge-noise guard. Crop variants are
+  cached only when the encoded result saves at least 2% versus the original;
+  otherwise the original page is reused and marked no-crop. Crop timing is
+  recorded in metrics.
 - **Reading-progress resume** preserves shifted double-page spreads such as
   `5 + 6` instead of snapping reloads back to the canonical pairing.
 - **Infinite-scroll reader spacing** now uses zero vertical image margin in the
@@ -59,6 +61,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   navigation, so bookmark/fullscreen controls do not also turn the page.
 - **Reading-progress migration** no longer keeps resurfacing stale migration toasts for deleted archives/tankoubons or malformed local page values, and respects local/authenticated progress settings before attempting a server migration.
 - **Reading-progress migration startup** tolerates mixed cached JS modules after deploy, so index load no longer depends on a freshly fetched `common.js`.
+- **Fresh reader startup** resolves reader dependencies through deploy-specific
+  import-map URLs, so a newly cache-busted `reader.js` cannot pair with a stale
+  cached `reader-spread.js` and leave the reader stuck at `... / ...`.
 - **Progression Tracking disabled** now suppresses local/server progress writes during page turns instead of only ignoring saved progress on reader open.
 - **Reader session page** now stays in the URL while reading, so reloads and
   infinite-scroll fullscreen exits keep the visible page even when Progression

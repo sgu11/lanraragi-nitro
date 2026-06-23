@@ -32,3 +32,25 @@ test("versioned module paths also include deploy-specific asset cache busting", 
     assert.match(generic, /eval \{ \$self->LRR_ASSET_VERSION \}/);
     assert.match(generic, /\/themes\/\$css_file\?\$asset_version/);
 });
+
+test("reader dependencies resolve through asset-versioned import map entries", async () => {
+    const importmap = await source("templates/common/importmap.html.tt2");
+    const reader = await source("public/js/reader.js");
+    const server = await source("public/js/mod/server.js");
+
+    assert.match(importmap, /"lrr-common": "\[% c\.url_for\("\/js\/\$version\/mod\/common\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-server": "\[% c\.url_for\("\/js\/\$version\/mod\/server\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-perf": "\[% c\.url_for\("\/js\/\$version\/mod\/perf\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-reader-chrome": "\[% c\.url_for\("\/js\/\$version\/mod\/reader-chrome\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-reader-spread": "\[% c\.url_for\("\/js\/\$version\/mod\/reader-spread\.js\?\$asset_version"\) %\]"/);
+
+    assert.match(reader, /from "lrr-server"/);
+    assert.match(reader, /from "lrr-common"/);
+    assert.match(reader, /from "lrr-perf"/);
+    assert.match(reader, /from "lrr-reader-chrome"/);
+    assert.match(reader, /from "lrr-reader-spread"/);
+    assert.doesNotMatch(reader, /from "\.\/mod\/reader-spread\.js"/);
+
+    assert.match(server, /from "lrr-common"/);
+    assert.doesNotMatch(server, /from "\.\/common\.js"/);
+});

@@ -2,16 +2,16 @@
  * Functions to navigate in reader with the keyboard.
  * Also handles the thumbnail archive explorer.
  */
-import * as Server from "./mod/server.js";
-import * as LRR from "./mod/common.js";
-import * as Perf from "./mod/perf.js";
+import * as Server from "lrr-server";
+import * as LRR from "lrr-common";
+import * as Perf from "lrr-perf";
 import I18N from "i18n";
 import fscreen from "fscreen";
 import {
     getFitHeightViewportPercent,
     isReaderMinimalChrome,
     shouldWheelNavigatePages,
-} from "./mod/reader-chrome.js";
+} from "lrr-reader-chrome";
 import {
     beginReaderNavigation,
     cancelReaderNavigation,
@@ -31,7 +31,7 @@ import {
     selectReaderOpeningPage,
     setReaderDisplayPage,
     spreadStartFlags,
-} from "./mod/reader-spread.js";
+} from "lrr-reader-spread";
 
 let id = "";
 let force = false;

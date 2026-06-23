@@ -3,6 +3,11 @@
         "imports": {
             "i18n": "[% c.url_for("/js/i18n.js?$asset_version") %]",
             "progress-migration": "[% c.url_for("/js/$version/mod/progress-migration.js?$asset_version") %]",
+            "lrr-common": "[% c.url_for("/js/$version/mod/common.js?$asset_version") %]",
+            "lrr-server": "[% c.url_for("/js/$version/mod/server.js?$asset_version") %]",
+            "lrr-perf": "[% c.url_for("/js/$version/mod/perf.js?$asset_version") %]",
+            "lrr-reader-chrome": "[% c.url_for("/js/$version/mod/reader-chrome.js?$asset_version") %]",
+            "lrr-reader-spread": "[% c.url_for("/js/$version/mod/reader-spread.js?$asset_version") %]",
             "fscreen": "[% c.url_for("/js/$version/vendor/fscreen.esm.js?$asset_version") %]",
 
             "preact": "[% c.url_for("/js/$version/vendor/preact.module.js?$asset_version") %]",

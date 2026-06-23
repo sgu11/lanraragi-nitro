@@ -10,7 +10,7 @@ test("paginated reader can use minimal chrome without enabling infinite scroll",
     const baseCss = await source("public/css/lrr.css");
     const template = await source("templates/reader.html.tt2");
 
-    assert.match(js, /from "\.\/mod\/reader-chrome\.js";/);
+    assert.match(js, /from "lrr-reader-chrome";/);
     assert.match(js, /function applyReaderChromeLayout\(\) \{/);
     assert.match(js, /toggleClass\("infinite-scroll", infiniteScroll\)/);
     assert.match(js, /toggleClass\("reader-minimal-chrome", isReaderMinimalChrome\(infiniteScroll, localStorage\.hideHeader === "true"\)\)/);
