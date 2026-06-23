@@ -31,6 +31,7 @@ use LANraragi::Utils::Path       qw(unlink_path get_archive_path);
 use LANraragi::Model::Metrics;
 
 use constant CROP_MIN_BYTE_SAVINGS_RATIO => 0.02;
+use constant CROP_MIN_AREA_SAVINGS_RATIO => 0.05;
 
 # get_title(id)
 #   Returns the title for the archive matching the given id.
@@ -364,6 +365,31 @@ sub _crop_nocrop_cache_key ( $id, $path ) {
     return "crop_page_nocrop/v" . CROP_ALGORITHM_VERSION . "/$id/$path";
 }
 
+sub _image_dimensions_from_blob ($content) {
+    return unless defined $content && length($content);
+
+    require Image::Magick;
+    my $image = Image::Magick->new;
+    my $err = $image->BlobToImage($content);
+    return if $err;
+
+    my ( $width, $height ) = $image->Get( "width", "height" );
+    return unless $width && $height;
+    return ( $width, $height );
+}
+
+sub _crop_area_savings_ratio ( $content, $cropped ) {
+    my ( $original_width, $original_height ) = _image_dimensions_from_blob($content);
+    my ( $cropped_width,  $cropped_height )  = _image_dimensions_from_blob($cropped);
+    return 0 unless $original_width && $original_height && $cropped_width && $cropped_height;
+
+    my $original_area = $original_width * $original_height;
+    my $cropped_area  = $cropped_width * $cropped_height;
+    return 0 if $original_area <= 0 || $cropped_area >= $original_area;
+
+    return 1 - ( $cropped_area / $original_area );
+}
+
 sub _apply_border_crop ( $id, $path, $format, $content, $metrics = undef ) {
     my $nocrop_key = _crop_nocrop_cache_key( $id, $path );
     if ( defined fetch($nocrop_key) ) {
@@ -377,9 +403,12 @@ sub _apply_border_crop ( $id, $path, $format, $content, $metrics = undef ) {
 
     if ( defined $cropped && length($cropped) ) {
         if ( length($cropped) >= length($content) * ( 1 - CROP_MIN_BYTE_SAVINGS_RATIO ) ) {
-            put( $nocrop_key, "1" );
-            $metrics->{cache_status} = "nocrop_larger" if defined $metrics;
-            return ( $content, 0 );
+            my $area_savings = _crop_area_savings_ratio( $content, $cropped );
+            if ( $area_savings < CROP_MIN_AREA_SAVINGS_RATIO ) {
+                put( $nocrop_key, "1" );
+                $metrics->{cache_status} = "nocrop_larger" if defined $metrics;
+                return ( $content, 0 );
+            }
         }
         return ( $cropped, 1 );
     }

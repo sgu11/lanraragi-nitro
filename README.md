@@ -26,10 +26,10 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   snapping them back to the canonical pairing.
 - **Blank border cropping** now uses libvips first, skips cover/landscape
   spread pages, and uses v5 per-edge light/dark strip detection inspired by
-  Komikku while preserving the outer 2px edge-noise guard. Crop variants are
-  cached only when the encoded result saves at least 2% versus the original;
-  otherwise the original page is reused and marked no-crop. Crop timing is
-  recorded in metrics.
+  Komikku while preserving the outer 2px edge-noise guard. Byte-larger crop
+  variants are still rejected when they remove less than 5% of page area, but
+  meaningful border removals are served and cached even when re-encoding grows
+  the page bytes. Crop timing is recorded in metrics.
 - **Reading-progress resume** preserves shifted double-page spreads such as
   `5 + 6` instead of snapping reloads back to the canonical pairing.
 - **Infinite-scroll reader spacing** now uses zero vertical image margin in the

@@ -161,6 +161,24 @@ sub make_page_blob {
     return $img->ImageToBlob( magick => "png" );
 }
 
+sub make_noisy_blob {
+    my ( $width, $height ) = @_;
+    my $pixels = "";
+    for my $index ( 0 .. ( $width * $height - 1 ) ) {
+        $pixels .= pack(
+            "C3",
+            ( $index * 37 + 17 ) % 256,
+            ( $index * 73 + 41 ) % 256,
+            ( $index * 109 + 89 ) % 256
+        );
+    }
+
+    my $img = Image::Magick->new;
+    my $err = $img->BlobToImage( "P6\n$width $height\n255\n$pixels" );
+    die "$err\n" if $err;
+    return $img->ImageToBlob( magick => "png" );
+}
+
 sub image_dimensions {
     my ($blob) = @_;
     my $img = Image::Magick->new;
@@ -362,6 +380,54 @@ note("archive page crop=border rejects larger encoded crop variants");
     $t->get_ok("/archives/$id/page?path=$page_path&crop=border")->status_is(200);
     is( $crop_calls, 1, "second request reuses nocrop marker instead of retrying the larger crop" );
     is( $extracts, 2, "nocrop marker still serves the original page data on each request" );
+}
+
+note("archive page crop=border keeps meaningful crops even when encoded bytes grow");
+{
+    my $id = "3234567890abcdef1234567890abcdef12345678";
+    my $page_path = "page-003.png";
+    my $source = make_page_blob( 100, 100, "#f8f8f8", [ 10, 10, 80, 80 ], "#222222" );
+    my $cropped = make_noisy_blob( 80, 80 );
+    my %cache;
+    my $crop_calls = 0;
+
+    ok( length($cropped) > length($source), "fixture crop is byte-larger than the original page" );
+
+    no warnings 'redefine';
+    local *LANraragi::Model::Archive::get_page_data = sub {
+        my ( $id, $path, $metrics ) = @_;
+        $metrics->{cache_status} = "miss" if defined $metrics;
+        return $source;
+    };
+    local *LANraragi::Model::Archive::crop_blank_borders = sub {
+        $crop_calls++;
+        return $cropped;
+    };
+    local *LANraragi::Model::Archive::fetch = sub {
+        my ($key) = @_;
+        return $cache{$key};
+    };
+    local *LANraragi::Model::Archive::put = sub {
+        my ( $key, $value ) = @_;
+        $cache{$key} = $value;
+        return 1;
+    };
+    local *LANraragi::Model::Archive::get_logger = sub { return FakeImageLogger->new };
+    local *LANraragi::Model::Metrics::record_image_serving_metrics = sub { return 1 };
+
+    my $t = build_image_app();
+    $t->get_ok("/archives/$id/page?path=$page_path&crop=border")->status_is(200);
+    is( $t->tx->res->body, $cropped, "visually meaningful crop is served despite larger encoded bytes" );
+    is( $crop_calls, 1, "first request attempts crop detection once" );
+
+    my ( $w, $h ) = image_dimensions( $t->tx->res->body );
+    is( $w, 80, "meaningful byte-larger crop preserves cropped width" );
+    is( $h, 80, "meaningful byte-larger crop preserves cropped height" );
+
+    my $crop_key = "crop_page/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path/png";
+    my $nocrop_key = "crop_page_nocrop/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path";
+    ok( exists $cache{$crop_key}, "meaningful byte-larger crop is cached as a crop variant" );
+    ok( !exists $cache{$nocrop_key}, "meaningful byte-larger crop does not write a nocrop marker" );
 }
 
 done_testing();

@@ -32,6 +32,9 @@ IMPLEMENTATIONS = [
     "Suwayomi",
 ]
 
+LANRARAGI_MIN_BYTE_SAVINGS_RATIO = 0.02
+LANRARAGI_MIN_AREA_SAVINGS_RATIO = 0.05
+
 
 @dataclass(frozen=True)
 class Bounds:
@@ -394,6 +397,7 @@ def run_once(sample_path: Path, implementation: str, encode: bool = True) -> dic
     suffix = sample_path.suffix.lower().lstrip(".").replace("jpeg", "jpg")
     started = time.perf_counter()
     image = pil_image_from_bytes(data)
+    width, height = image.size
     rgb, gray = image_arrays(image)
     decode_ms = (time.perf_counter() - started) * 1000
 
@@ -408,13 +412,16 @@ def run_once(sample_path: Path, implementation: str, encode: bool = True) -> dic
         encode_started = time.perf_counter()
         encoded_bytes = encode_crop(image, bounds, suffix)
         encode_ms = (time.perf_counter() - encode_started) * 1000
-        if implementation == "LANraragi" and len(encoded_bytes) >= len(data) * 0.98:
+        if (
+            implementation == "LANraragi"
+            and len(encoded_bytes) >= len(data) * (1 - LANRARAGI_MIN_BYTE_SAVINGS_RATIO)
+            and (1 - bounds.area_ratio(width, height)) < LANRARAGI_MIN_AREA_SAVINGS_RATIO
+        ):
             crop_rejected_larger = True
             bounds = None
             encoded_bytes = None
 
     total_ms = (time.perf_counter() - started) * 1000
-    width, height = image.size
     area_ratio = bounds.area_ratio(width, height) if bounds is not None else 1.0
     return {
         "implementation": implementation,
@@ -697,7 +704,7 @@ def render_charts(records: list[dict], summary: dict, output_dir: Path) -> list[
             "section": "key-findings",
             "question": "How aggressive is each implementation?",
             "chart_type": "grouped bar",
-            "takeaway": "Komikku crops more samples, while LANraragi and Suwayomi save more area on the pages they do crop.",
+            "takeaway": "Komikku still crops the most samples, while LANraragi now lands between Komikku and Suwayomi.",
         }
     )
 
@@ -792,7 +799,7 @@ The benchmark used {summary['selected_sample_count']} selected image pages from 
 
 ## Architecture Summary
 
-- **LANraragi**: browser toggles `crop=border`; Mojolicious page serving applies `ImageBorderCrop` server-side, prefers libvips, falls back to ImageMagick, detects clean light or dark edge backgrounds, records crop metrics, caches positive crop variants, and writes no-crop cache entries when no crop or no byte savings are produced.
+- **LANraragi**: browser toggles `crop=border`; Mojolicious page serving applies `ImageBorderCrop` server-side, prefers libvips, falls back to ImageMagick, detects clean light or dark edge backgrounds, records crop metrics, caches positive crop variants, and writes no-crop cache entries when no crop is produced or when a byte-larger crop removes less than 5% of page area.
 - **Komikku**: Android reader stores crop preferences by reading mode; SSIV and Coil pass `cropBorders` into `tachiyomi.decoder.ImageDecoder`, whose native decoder adjusts image bounds and decodes cropped regions locally on-device.
 - **Suwayomi**: WebUI appends `crop=true` for non-webtoon pages; Server `PageServe` resolves raw page bytes, calls `CropBorderDetector`, persists transformed serve variants, and writes `.nocrop` markers when no crop is produced.
 
@@ -808,7 +815,7 @@ The benchmark used {summary['selected_sample_count']} selected image pages from 
 
 Samples were extracted from zip/cbz library archives into `/tmp`, renamed to anonymous sample IDs, and not committed. Each selected sample was run through three local algorithm models derived from inspected source:
 
-- LANraragi model mirrors the v5 edge-background checks from `ImageBorderCrop.pm`: portrait-only server crops, clean light or dark per-edge backgrounds, safety padding, and a post-encode byte-savings guard.
+- LANraragi model mirrors the v5 edge-background checks from `ImageBorderCrop.pm`: portrait-only server crops, clean light or dark per-edge backgrounds, safety padding, and a post-encode byte guard that still keeps crops with at least 5% page-area savings.
 - Komikku model mirrors the published Tachiyomi native decoder `findBorders` scanner from the `image-decoder` repository and the verified Komikku/SSIV call boundary.
 - Suwayomi model mirrors `CropBorderDetector.detectBounds`.
 
@@ -851,7 +858,7 @@ def write_html(output_dir: Path, summary: dict, chart_map: list[dict]) -> None:
     pros_cons = [
         [
             "<code>LANraragi</code>",
-            "서버가 crop variant와 nocrop cache를 공유한다. light/dark edge를 모두 처리하고, encode 후 byte savings가 없으면 원본을 재사용한다.",
+            "서버가 crop variant와 nocrop cache를 공유한다. light/dark edge를 모두 처리하고, byte savings가 없어도 5% 이상 면적을 줄이면 crop을 유지한다.",
             "첫 요청은 서버 CPU와 encode 비용을 낸다. landscape/spread 보호는 유지되어 Komikku보다 crop 후보가 좁다.",
         ],
         [
@@ -1058,7 +1065,7 @@ def write_html(output_dir: Path, summary: dict, chart_map: list[dict]) -> None:
 
   <section data-contract-section="key-findings">
     <h2>측정 결과는 속도보다 crop 정책 차이를 더 크게 보여준다</h2>
-    <p>세 구현은 모두 “빈 border 제거”라는 같은 UX를 제공하지만, 비용을 내는 위치와 false positive를 피하는 방식이 다르다. LANraragi v5는 Komikku처럼 밝은 edge와 어두운 edge를 모두 보되, 서버 cache 비용 때문에 landscape/spread 보호와 byte-size guard를 유지한다.</p>
+    <p>세 구현은 모두 “빈 border 제거”라는 같은 UX를 제공하지만, 비용을 내는 위치와 false positive를 피하는 방식이 다르다. LANraragi v5는 Komikku처럼 밝은 edge와 어두운 edge를 모두 보되, 서버 cache 비용 때문에 landscape/spread 보호와 작은 crop용 byte-size guard를 유지한다.</p>
     {chart_figures}
     {html_table(["구현", "Median", "P90", "Crop rate", "Cropped pages", "Cropped-only area saved", "Cropped-only byte saved"], table_rows)}
   </section>
@@ -1080,7 +1087,7 @@ def write_html(output_dir: Path, summary: dict, chart_map: list[dict]) -> None:
       <div class="panel">
         <span class="label">LANraragi</span>
         <h3>서버 변환 + variant cache</h3>
-        <p>Reader JS는 <code>?crop=border</code>를 붙인다. 서버는 <code>ImageBorderCrop</code>으로 light/dark edge background를 찾고, crop 성공 variant와 no-crop marker를 cache한다. Re-encode 결과가 원본보다 충분히 작지 않으면 원본을 쓴다.</p>
+        <p>Reader JS는 <code>?crop=border</code>를 붙인다. 서버는 <code>ImageBorderCrop</code>으로 light/dark edge background를 찾고, crop 성공 variant와 no-crop marker를 cache한다. Re-encode 결과가 원본보다 작지 않아도 면적 감소가 충분하면 crop variant를 유지한다.</p>
       </div>
       <div class="panel">
         <span class="label">Komikku</span>
@@ -1105,7 +1112,7 @@ def write_html(output_dir: Path, summary: dict, chart_map: list[dict]) -> None:
   <section data-contract-section="recommended-next-steps">
     <h2>권장 사항</h2>
     <ul>
-      <li>LANraragi는 v5 배포 후 production metrics의 <code>crop_seconds_total</code>, <code>nocrop_larger</code> cache status, reader toggle usage를 같이 보며 실제 hit rate를 확인한다.</li>
+      <li>LANraragi는 byte guard 완화 배포 후 production metrics의 <code>crop_seconds_total</code>, <code>nocrop_larger</code> cache status, reader toggle usage를 같이 보며 실제 hit rate를 확인한다.</li>
       <li>Suwayomi는 remote uncached crop preload cap이 타당하다. crop page tail latency가 높게 남으면 no-crop marker와 variant warmup hit rate를 먼저 본다.</li>
       <li>Komikku는 기기별 체감 차이가 클 수 있으므로 Android macrobenchmark나 representative device profile이 다음 측정 단계다.</li>
     </ul>
