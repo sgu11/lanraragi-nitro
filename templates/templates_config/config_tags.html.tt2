@@ -35,7 +35,7 @@
         <input id="avifthumbpages" name="avifthumbpages" class="fa" type="checkbox" checked> [% ELSE %]
         <input id="avifthumbpages" name="avifthumbpages" class="fa" type="checkbox"> [% END %]
         <label for="avifthumbpages">
-            <br>[% c.lh("Generate AVIF thumbnails instead of JPEG. ~30% smaller than JPEG with modern browser support.") %]
+            <br>[% c.lh("Generate AVIF thumbnails instead of JPEG. About 30% smaller than JPEG with modern browser support.") %]
             <br>[% c.lh("Requires libvips with HEIF support. Takes priority over JPEG XL.") %]
         </label>
     </td>

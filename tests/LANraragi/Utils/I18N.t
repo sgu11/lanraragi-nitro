@@ -13,6 +13,11 @@ my @reader_keys = (
     'Cover and wide pages stay single. Press J to toggle.',
     'On',
     'Off',
+    'Use AVIF for thumbnails',
+    'Generate AVIF thumbnails instead of JPEG. About 30% smaller than JPEG with modern browser support.',
+    'Requires libvips with HEIF support. Takes priority over JPEG XL.',
+    'Generate JPEG XL thumbnails instead of JPEG.',
+    'When AVIF is also enabled, AVIF takes priority.',
 );
 
 for my $key (@reader_keys) {

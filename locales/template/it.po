@@ -569,6 +569,15 @@ msgstr ""
 "se questa opzione è spuntata, genererà invece miniature delle pagine della "
 "stessa qualità delle miniature di copertina"
 
+msgid "Use AVIF for thumbnails"
+msgstr "Use AVIF for thumbnails"
+
+msgid "Generate AVIF thumbnails instead of JPEG. About 30% smaller than JPEG with modern browser support."
+msgstr "Generate AVIF thumbnails instead of JPEG. About 30% smaller than JPEG with modern browser support."
+
+msgid "Requires libvips with HEIF support. Takes priority over JPEG XL."
+msgstr "Requires libvips with HEIF support. Takes priority over JPEG XL."
+
 msgid "Use JPEG XL for thumbnails"
 msgstr "Usa JPEG XL per le miniature"
 
@@ -577,6 +586,12 @@ msgstr ""
 
 msgid "If this option is checked, it will instead generate thumbnails using JPEG XL."
 msgstr ""
+
+msgid "Generate JPEG XL thumbnails instead of JPEG."
+msgstr "Generate JPEG XL thumbnails instead of JPEG."
+
+msgid "When AVIF is also enabled, AVIF takes priority."
+msgstr "When AVIF is also enabled, AVIF takes priority."
 
 msgid "Generate Missing Thumbnails"
 msgstr ""

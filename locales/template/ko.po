@@ -528,6 +528,15 @@ msgstr ""
 msgid "If this option is checked, it will instead generate page thumbnails at the same quality as cover thumbnails."
 msgstr "이 옵션을 켜면 커버 섬네일과 동일한 품질로 페이지 섬네일을 생성합니다."
 
+msgid "Use AVIF for thumbnails"
+msgstr "섬네일에 AVIF 사용"
+
+msgid "Generate AVIF thumbnails instead of JPEG. About 30% smaller than JPEG with modern browser support."
+msgstr "JPEG 대신 AVIF 섬네일을 생성합니다. 최신 브라우저에서 JPEG보다 약 30% 작습니다."
+
+msgid "Requires libvips with HEIF support. Takes priority over JPEG XL."
+msgstr "HEIF 지원이 포함된 libvips가 필요합니다. JPEG XL보다 우선합니다."
+
 msgid "Use JPEG XL for thumbnails"
 msgstr "섬네일에 JPEG XL 사용"
 
@@ -536,6 +545,12 @@ msgstr "LANraragi는 호환성과 성능 이유로 JPEG 섬네일을 생성합�
 
 msgid "If this option is checked, it will instead generate thumbnails using JPEG XL."
 msgstr "이 옵션을 켜면 JPEG XL을 사용하여 썸네일을 생성합니다."
+
+msgid "Generate JPEG XL thumbnails instead of JPEG."
+msgstr "JPEG 대신 JPEG XL 섬네일을 생성합니다."
+
+msgid "When AVIF is also enabled, AVIF takes priority."
+msgstr "AVIF도 켜져 있으면 AVIF가 우선합니다."
 
 msgid "Generate Missing Thumbnails"
 msgstr "누락된 섬네일 생성"
