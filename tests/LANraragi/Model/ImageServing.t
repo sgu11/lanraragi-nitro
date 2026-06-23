@@ -335,7 +335,7 @@ note("archive page crop=border serves and reuses a cropped page variant");
     is( $extracts, 1, "second cropped page request reuses the cropped variant cache" );
 }
 
-note("archive page crop=border rejects larger encoded crop variants");
+note("archive page crop=border rejects zero area savings even when encoded bytes grow");
 {
     my $id = "2234567890abcdef1234567890abcdef12345678";
     my $page_path = "page-002.png";
@@ -369,17 +369,61 @@ note("archive page crop=border rejects larger encoded crop variants");
 
     my $t = build_image_app();
     $t->get_ok("/archives/$id/page?path=$page_path&crop=border")->status_is(200);
-    is( $t->tx->res->body, $source, "larger crop result falls back to the original page bytes" );
+    is( $t->tx->res->body, $source, "zero-area-savings crop falls back to the original page bytes" );
     is( $crop_calls, 1, "first request attempts crop detection once" );
 
     my $crop_key = "crop_page/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path/png";
     my $nocrop_key = "crop_page_nocrop/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path";
-    ok( !exists $cache{$crop_key}, "larger crop result is not cached as a crop variant" );
-    ok( exists $cache{$nocrop_key}, "larger crop result writes a nocrop marker" );
+    ok( !exists $cache{$crop_key}, "zero-area-savings crop is not cached as a crop variant" );
+    ok( exists $cache{$nocrop_key}, "zero-area-savings crop writes a nocrop marker" );
 
     $t->get_ok("/archives/$id/page?path=$page_path&crop=border")->status_is(200);
-    is( $crop_calls, 1, "second request reuses nocrop marker instead of retrying the larger crop" );
+    is( $crop_calls, 1, "second request reuses nocrop marker instead of retrying zero-area crop" );
     is( $extracts, 2, "nocrop marker still serves the original page data on each request" );
+}
+
+note("archive page crop=border rejects tiny area savings even when encoded bytes shrink");
+{
+    my $id = "2f34567890abcdef1234567890abcdef12345678";
+    my $page_path = "page-002-small-area.png";
+    my $source = make_noisy_blob( 100, 100 );
+    my $cropped = make_page_blob( 98, 98, "#f8f8f8", [ 8, 8, 82, 82 ], "#222222" );
+    my %cache;
+    my $crop_calls = 0;
+
+    ok( length($cropped) < length($source), "fixture crop is byte-smaller than the original page" );
+
+    no warnings 'redefine';
+    local *LANraragi::Model::Archive::get_page_data = sub {
+        my ( $id, $path, $metrics ) = @_;
+        $metrics->{cache_status} = "miss" if defined $metrics;
+        return $source;
+    };
+    local *LANraragi::Model::Archive::crop_blank_borders = sub {
+        $crop_calls++;
+        return $cropped;
+    };
+    local *LANraragi::Model::Archive::fetch = sub {
+        my ($key) = @_;
+        return $cache{$key};
+    };
+    local *LANraragi::Model::Archive::put = sub {
+        my ( $key, $value ) = @_;
+        $cache{$key} = $value;
+        return 1;
+    };
+    local *LANraragi::Model::Archive::get_logger = sub { return FakeImageLogger->new };
+    local *LANraragi::Model::Metrics::record_image_serving_metrics = sub { return 1 };
+
+    my $t = build_image_app();
+    $t->get_ok("/archives/$id/page?path=$page_path&crop=border")->status_is(200);
+    is( $t->tx->res->body, $source, "crop below minimum area savings falls back to original page bytes" );
+    is( $crop_calls, 1, "first request attempts crop detection once" );
+
+    my $crop_key = "crop_page/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path/png";
+    my $nocrop_key = "crop_page_nocrop/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path";
+    ok( !exists $cache{$crop_key}, "tiny-area crop result is not cached as a crop variant" );
+    ok( exists $cache{$nocrop_key}, "tiny-area crop result writes a nocrop marker" );
 }
 
 note("archive page crop=border keeps meaningful crops even when encoded bytes grow");

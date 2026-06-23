@@ -30,7 +30,6 @@ use LANraragi::Model::Dedup::CoverIndex;
 use LANraragi::Utils::Path       qw(unlink_path get_archive_path);
 use LANraragi::Model::Metrics;
 
-use constant CROP_MIN_BYTE_SAVINGS_RATIO => 0.02;
 use constant CROP_MIN_AREA_SAVINGS_RATIO => 0.05;
 
 # get_title(id)
@@ -402,13 +401,11 @@ sub _apply_border_crop ( $id, $path, $format, $content, $metrics = undef ) {
     $metrics->{crop_seconds} = tv_interval($crop_start) if defined $metrics;
 
     if ( defined $cropped && length($cropped) ) {
-        if ( length($cropped) >= length($content) * ( 1 - CROP_MIN_BYTE_SAVINGS_RATIO ) ) {
-            my $area_savings = _crop_area_savings_ratio( $content, $cropped );
-            if ( $area_savings < CROP_MIN_AREA_SAVINGS_RATIO ) {
-                put( $nocrop_key, "1" );
-                $metrics->{cache_status} = "nocrop_larger" if defined $metrics;
-                return ( $content, 0 );
-            }
+        my $area_savings = _crop_area_savings_ratio( $content, $cropped );
+        if ( $area_savings < CROP_MIN_AREA_SAVINGS_RATIO ) {
+            put( $nocrop_key, "1" );
+            $metrics->{cache_status} = "nocrop_area" if defined $metrics;
+            return ( $content, 0 );
         }
         return ( $cropped, 1 );
     }
