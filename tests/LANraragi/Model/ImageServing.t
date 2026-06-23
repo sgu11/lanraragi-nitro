@@ -474,4 +474,58 @@ note("archive page crop=border keeps meaningful crops even when encoded bytes gr
     ok( !exists $cache{$nocrop_key}, "meaningful byte-larger crop does not write a nocrop marker" );
 }
 
+SKIP: {
+    skip "libvips is not installed", 6 unless LANraragi::Utils::Vips::is_vips_loaded();
+
+    note("archive page crop=border does not require Image::Magick for area savings when Vips is available");
+    my $id = "4234567890abcdef1234567890abcdef12345678";
+    my $page_path = "page-004.png";
+    my $source = make_page_blob( 120, 160, "#f8f8f8", [ 14, 12, 92, 132 ], "#222222" );
+    my $cropped = make_page_blob( 96, 136, "#222222", [ 0, 0, 96, 136 ], "#222222" );
+    my %cache;
+    my $crop_calls = 0;
+
+    no warnings 'redefine';
+    local *LANraragi::Model::Archive::get_page_data = sub {
+        my ( $id, $path, $metrics ) = @_;
+        $metrics->{cache_status} = "miss" if defined $metrics;
+        return $source;
+    };
+    local *LANraragi::Model::Archive::crop_blank_borders = sub {
+        $crop_calls++;
+        return $cropped;
+    };
+    local *LANraragi::Model::Archive::fetch = sub {
+        my ($key) = @_;
+        return $cache{$key};
+    };
+    local *LANraragi::Model::Archive::put = sub {
+        my ( $key, $value ) = @_;
+        $cache{$key} = $value;
+        return 1;
+    };
+    local *LANraragi::Model::Archive::get_logger = sub { return FakeImageLogger->new };
+    local *LANraragi::Model::Metrics::record_image_serving_metrics = sub { return 1 };
+
+    local $INC{"Image/Magick.pm"};
+    delete $INC{"Image/Magick.pm"};
+    local @INC = (
+        sub {
+            die "Image::Magick deliberately unavailable\n" if $_[1] eq "Image/Magick.pm";
+            return;
+        },
+        @INC
+    );
+
+    my $t = build_image_app();
+    $t->get_ok("/archives/$id/page?path=$page_path&crop=border")->status_is(200);
+    is( $t->tx->res->body, $cropped, "Vips dimensions allow cropped page response without Image::Magick" );
+    is( $crop_calls, 1, "crop detection is attempted once" );
+
+    my $crop_key = "crop_page/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path/png";
+    my $nocrop_key = "crop_page_nocrop/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path";
+    ok( exists $cache{$crop_key}, "Vips-dimensioned crop is cached as a crop variant" );
+    ok( !exists $cache{$nocrop_key}, "Vips-dimensioned crop does not write a nocrop marker" );
+}
+
 done_testing();

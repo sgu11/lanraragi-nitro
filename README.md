@@ -33,6 +33,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   less than 5% of page area are treated as no-crop, while meaningful border
   removals are served and cached even when re-encoding grows the page bytes.
   Crop timing is recorded in metrics.
+- **Blank border crop area guard** reads original/cropped dimensions with
+  libvips first and treats ImageMagick as optional fallback, so deployments
+  without PerlMagick do not return 500 after a successful server crop.
 - **Reading-progress resume** preserves shifted double-page spreads such as
   `5 + 6` instead of snapping reloads back to the canonical pairing.
 - **Infinite-scroll reader spacing** now uses zero vertical image margin in the

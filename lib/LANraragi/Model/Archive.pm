@@ -26,6 +26,7 @@ use LANraragi::Utils::ImageBorderCrop qw(CROP_ALGORITHM_VERSION crop_blank_borde
 use LANraragi::Utils::ImageResponse qw(render_thumbnail_placeholder);
 use LANraragi::Utils::PageCache  qw(fetch put);
 use LANraragi::Utils::Redis      qw(redis_decode redis_encode);
+use LANraragi::Utils::Vips       ();
 use LANraragi::Model::Dedup::CoverIndex;
 use LANraragi::Utils::Path       qw(unlink_path get_archive_path);
 use LANraragi::Model::Metrics;
@@ -367,13 +368,38 @@ sub _crop_nocrop_cache_key ( $id, $path ) {
 sub _image_dimensions_from_blob ($content) {
     return unless defined $content && length($content);
 
-    require Image::Magick;
-    my $image = Image::Magick->new;
+    my ( $vips_width, $vips_height ) = _image_dimensions_from_blob_vips($content);
+    return ( $vips_width, $vips_height ) if $vips_width && $vips_height;
+
+    my $image = eval {
+        require Image::Magick;
+        Image::Magick->new;
+    };
+    return if $@ || !$image;
+
     my $err = $image->BlobToImage($content);
     return if $err;
 
     my ( $width, $height ) = $image->Get( "width", "height" );
     return unless $width && $height;
+    return ( $width, $height );
+}
+
+sub _image_dimensions_from_blob_vips ($content) {
+    return unless LANraragi::Utils::Vips::is_vips_loaded();
+
+    my ( $width, $height );
+    my $image;
+    my $ok = eval {
+        LANraragi::Utils::Vips::init("LANraragi");
+        $image  = LANraragi::Utils::Vips::new_from_buffer($content);
+        $width  = LANraragi::Utils::Vips::width($image);
+        $height = LANraragi::Utils::Vips::height($image);
+        1;
+    };
+
+    eval { LANraragi::Utils::Vips::unref_image($image) if $image; 1 };
+    return if !$ok || $@ || !$width || !$height;
     return ( $width, $height );
 }
 
