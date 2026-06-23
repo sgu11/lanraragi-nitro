@@ -45,6 +45,7 @@ let pageThumbnails = [];
 const MAX_PRELOADED_IMAGES = 8;
 const INFINITE_SCROLL_WINDOW_RADIUS = 4;
 const PROGRESS_PERSISTENCE_DELAY_MS = 200;
+const READER_CURSOR_IDLE_DELAY_MS = 5000;
 let preloadedImg = {};
 let preloadedPromises = {};
 let preloadedOrder = [];
@@ -102,6 +103,7 @@ let markers = [];
 let overlayFiltered = false;
 let pageNaviState = true;
 let wakeLock = null;
+let readerCursorIdleTimer = null;
 
 function isCurrentNavigation(navigationId) {
     return isCurrentReaderNavigation(readerCursor, navigationId);
@@ -309,6 +311,30 @@ function updateSyncedReadingProgress(page) {
     }
 }
 
+function setReaderCursorIdle(idle) {
+    document.body.classList.toggle("reader-cursor-idle", idle);
+}
+
+function handleReaderMouseMove() {
+    setReaderCursorIdle(false);
+    if (readerCursorIdleTimer !== null) {
+        window.clearTimeout(readerCursorIdleTimer);
+    }
+    readerCursorIdleTimer = window.setTimeout(() => setReaderCursorIdle(true), READER_CURSOR_IDLE_DELAY_MS);
+}
+
+function initializeReaderCursorAutoHide() {
+    handleReaderMouseMove();
+    window.addEventListener("mousemove", handleReaderMouseMove, { passive: true });
+    window.addEventListener("pagehide", () => {
+        if (readerCursorIdleTimer !== null) {
+            window.clearTimeout(readerCursorIdleTimer);
+            readerCursorIdleTimer = null;
+        }
+        setReaderCursorIdle(false);
+    }, { once: true });
+}
+
 function returnToLibrary() {
     document.location.href = "./";
 }
@@ -348,6 +374,7 @@ export function initializeAll(trackProgressLocally, authenticateProgress) {
     registerPreload();
     registerAutoNextPage();
     document.documentElement.style.scrollBehavior = "smooth";
+    initializeReaderCursorAutoHide();
 
     // Bind events to DOM
     $(document).on("keyup", (e) => handleShortcuts(e));

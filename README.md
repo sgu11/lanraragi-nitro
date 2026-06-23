@@ -15,6 +15,7 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 ### Reader
 
 - **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
+- **Reader cursor auto-hide** hides the mouse cursor over the page area after five seconds without mouse movement and restores it immediately on movement.
 - **Image quality** options exposed in settings, with a working mobile toggle.
 - **Blank border cropping** can be toggled from the reader chrome, Reader
   Options, or with `K`;

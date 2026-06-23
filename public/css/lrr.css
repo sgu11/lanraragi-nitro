@@ -910,6 +910,11 @@ div.fullscreen img {
   justify-content: center;
 }
 
+body.reader-cursor-idle #display,
+body.reader-cursor-idle #display * {
+  cursor: none !important;
+}
+
 .fullscreen #display {
   height: 100%;
 }

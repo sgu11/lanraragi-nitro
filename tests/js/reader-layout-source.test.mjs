@@ -44,6 +44,28 @@ test("paginated reader can use minimal chrome without enabling infinite scroll",
     assert.match(js, /getFitHeightViewportPercent\(infiniteScroll, localStorage\.hideHeader === "true"\)/);
 });
 
+test("reader hides the mouse cursor after inactivity", async () => {
+    const js = await source("public/js/reader.js");
+    const css = await source("public/css/lrr.css");
+    const initStart = js.indexOf("export function initializeAll");
+    const initEnd = js.indexOf("function initializeSettings", initStart);
+    const init = js.slice(initStart, initEnd);
+
+    assert.notEqual(initStart, -1);
+    assert.notEqual(initEnd, -1);
+    assert.match(js, /const READER_CURSOR_IDLE_DELAY_MS = 5000;/);
+    assert.match(js, /let readerCursorIdleTimer = null;/);
+    assert.match(js, /function setReaderCursorIdle\(idle\) \{/);
+    assert.match(js, /document\.body\.classList\.toggle\("reader-cursor-idle", idle\);/);
+    assert.match(js, /function handleReaderMouseMove\(\) \{/);
+    assert.match(js, /window\.clearTimeout\(readerCursorIdleTimer\);/);
+    assert.match(js, /readerCursorIdleTimer = window\.setTimeout\(\(\) => setReaderCursorIdle\(true\), READER_CURSOR_IDLE_DELAY_MS\);/);
+    assert.match(js, /window\.addEventListener\("mousemove", handleReaderMouseMove, \{ passive: true \}\);/);
+    assert.match(init, /initializeReaderCursorAutoHide\(\);/);
+    assert.match(css, /body\.reader-cursor-idle #display,/);
+    assert.match(css, /body\.reader-cursor-idle #display \*[\s\S]*cursor: none !important;/);
+});
+
 test("reader chrome exposes border crop toggle instead of help button", async () => {
     const js = await source("public/js/reader.js");
     const cropJs = await source("public/js/mod/reader-crop.js");
