@@ -13,10 +13,9 @@ use LANraragi::Utils::Vips ();
 use Exporter 'import';
 our @EXPORT_OK = qw(CROP_ALGORITHM_VERSION crop_blank_borders crop_blank_borders_vips detect_crop_bounds);
 
-use constant CROP_ALGORITHM_VERSION => 4;
-use constant VIPS_LIGHT_BACKGROUND  => 224;
-use constant COLOR_CHANNEL_DELTA    => 32;
-use constant COLOR_SAMPLE_HITS      => 2;
+use constant CROP_ALGORITHM_VERSION => 5;
+use constant EDGE_LIGHT_BACKGROUND_MIN => 191;
+use constant EDGE_DARK_BACKGROUND_MAX  => 64;
 use constant EDGE_IGNORE_PIXELS     => 2;
 use constant EDGE_BACKGROUND_BAND   => 4;
 use constant EDGE_BACKGROUND_STEP   => 16;
@@ -84,26 +83,11 @@ sub _valid_crop_bounds ( $bounds, $orig_width, $orig_height ) {
     return 1;
 }
 
-sub _sample_positions ($limit) {
-    return (0) if $limit <= 1;
-    return map { min( $limit - 1, max( 0, int( ( $limit - 1 ) * $_ ) ) ) } ( 0.10, 0.30, 0.50, 0.70, 0.90 );
-}
-
-sub _channels_are_light (@channels) {
-    my $visible_bands = min( 3, scalar @channels );
-    return 0 if $visible_bands <= 0;
-
-    for my $index ( 0 .. $visible_bands - 1 ) {
-        return 0 if $channels[$index] < VIPS_LIGHT_BACKGROUND;
-    }
-    return 1;
-}
-
-sub _channels_are_colorful (@channels) {
-    return 0 if @channels < 3;
-
-    my @visible = @channels[ 0 .. 2 ];
-    return max(@visible) - min(@visible) >= COLOR_CHANNEL_DELTA;
+sub _edge_background_mode (@channels) {
+    my $luma = _channel_luma(@channels);
+    return "light" if $luma >= EDGE_LIGHT_BACKGROUND_MIN;
+    return "dark"  if $luma <= EDGE_DARK_BACKGROUND_MAX;
+    return;
 }
 
 sub _median (@values) {
@@ -127,21 +111,6 @@ sub _channel_delta_from_background ( $channels, $background ) {
         $delta = max( $delta, abs( $channels->[$index] - $background->[$index] ) );
     }
     return $delta;
-}
-
-sub _sampled_image_looks_colorful ( $pixel_at, $orig_width, $orig_height ) {
-    my $hits = 0;
-    for my $y ( _sample_positions($orig_height) ) {
-        for my $x ( _sample_positions($orig_width) ) {
-            my @channels = $pixel_at->( $x, $y );
-            return undef if !@channels;
-            if ( _channels_are_colorful(@channels) ) {
-                $hits++;
-                return 1 if $hits >= COLOR_SAMPLE_HITS;
-            }
-        }
-    }
-    return 0;
 }
 
 sub _edge_background_channels ( $pixel_at, $orig_width, $orig_height, $side ) {
@@ -194,7 +163,7 @@ sub _edge_background_channels ( $pixel_at, $orig_width, $orig_height, $side ) {
     return @background;
 }
 
-sub _edge_line_bad_ratio ( $pixel_at, $orig_width, $orig_height, $side, $position, $background ) {
+sub _edge_line_bad_ratio ( $pixel_at, $orig_width, $orig_height, $side, $position, $background, $background_mode ) {
     my ( $bad, $total ) = ( 0, 0 );
     my $ignore = EDGE_IGNORE_PIXELS;
 
@@ -209,7 +178,11 @@ sub _edge_line_bad_ratio ( $pixel_at, $orig_width, $orig_height, $side, $positio
 
             my $delta = _channel_delta_from_background( \@channels, $background );
             my $luma  = _channel_luma(@channels);
-            $bad++ if $delta > EDGE_BLANK_DELTA || $luma < VIPS_LIGHT_BACKGROUND;
+            if ( $background_mode eq "dark" ) {
+                $bad++ if $delta > EDGE_BLANK_DELTA || $luma >= EDGE_LIGHT_BACKGROUND_MIN;
+            } else {
+                $bad++ if $delta > EDGE_BLANK_DELTA || $luma <= EDGE_DARK_BACKGROUND_MAX;
+            }
             $total++;
         }
     } else {
@@ -223,7 +196,11 @@ sub _edge_line_bad_ratio ( $pixel_at, $orig_width, $orig_height, $side, $positio
 
             my $delta = _channel_delta_from_background( \@channels, $background );
             my $luma  = _channel_luma(@channels);
-            $bad++ if $delta > EDGE_BLANK_DELTA || $luma < VIPS_LIGHT_BACKGROUND;
+            if ( $background_mode eq "dark" ) {
+                $bad++ if $delta > EDGE_BLANK_DELTA || $luma >= EDGE_LIGHT_BACKGROUND_MIN;
+            } else {
+                $bad++ if $delta > EDGE_BLANK_DELTA || $luma <= EDGE_DARK_BACKGROUND_MAX;
+            }
             $total++;
         }
     }
@@ -254,11 +231,13 @@ sub _edge_scan_positions ( $orig_width, $orig_height, $side ) {
 sub _detect_edge_boundary ( $pixel_at, $orig_width, $orig_height, $side ) {
     my @background = _edge_background_channels( $pixel_at, $orig_width, $orig_height, $side );
     return unless @background;
-    return unless _channels_are_light(@background);
+    my $background_mode = _edge_background_mode(@background);
+    return unless defined $background_mode;
 
     my $run = 0;
     for my $position ( _edge_scan_positions( $orig_width, $orig_height, $side ) ) {
-        my $bad_ratio = _edge_line_bad_ratio( $pixel_at, $orig_width, $orig_height, $side, $position, \@background );
+        my $bad_ratio =
+          _edge_line_bad_ratio( $pixel_at, $orig_width, $orig_height, $side, $position, \@background, $background_mode );
         if ( $bad_ratio > EDGE_ALLOWED_BAD_RATIO ) {
             $run++;
             if ( $run >= EDGE_NONBLANK_RUN ) {
@@ -278,9 +257,6 @@ sub _detect_crop_bounds_from_pixels ( $pixel_at, $orig_width, $orig_height ) {
     return if !$orig_width || !$orig_height;
     return if $orig_width < EDGE_IGNORE_PIXELS * 2 + 3 || $orig_height < EDGE_IGNORE_PIXELS * 2 + 3;
     return if $orig_width > $orig_height;
-
-    my $colorful = _sampled_image_looks_colorful( $pixel_at, $orig_width, $orig_height );
-    return if !defined $colorful || $colorful;
 
     my ( $left, $top, $right, $bottom ) = ( 0, 0, $orig_width, $orig_height );
 

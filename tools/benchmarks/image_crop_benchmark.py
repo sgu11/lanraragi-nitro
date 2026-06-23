@@ -229,9 +229,8 @@ def lanraragi_bounds(rgb: np.ndarray) -> Bounds | None:
     if width > height:
         return None
 
-    light_background = 224
-    color_channel_delta = 32
-    color_sample_hits = 2
+    light_background_min = 191
+    dark_background_max = 64
     edge_ignore_pixels = 2
     edge_background_band = 4
     edge_background_step = 16
@@ -244,21 +243,17 @@ def lanraragi_bounds(rgb: np.ndarray) -> Bounds | None:
     min_retain_ratio = 0.20
     safety_padding = 2
 
-    colorful_hits = 0
-    for y in sample_positions(height):
-        for x in sample_positions(width):
-            channels = rgb[y, x, :3].astype(int)
-            if int(channels.max()) - int(channels.min()) >= color_channel_delta:
-                colorful_hits += 1
-                if colorful_hits >= color_sample_hits:
-                    return None
-
-    def channels_are_light(channels: np.ndarray) -> bool:
-        return bool(np.all(channels[:3] >= light_background))
-
     def channel_luma(channels: np.ndarray) -> int:
         r, g, b = [int(v) for v in channels[:3]]
         return int(0.299 * r + 0.587 * g + 0.114 * b + 0.5)
+
+    def edge_background_mode(channels: np.ndarray) -> str | None:
+        luma = channel_luma(channels)
+        if luma >= light_background_min:
+            return "light"
+        if luma <= dark_background_max:
+            return "dark"
+        return None
 
     def edge_background(side: str) -> np.ndarray | None:
         samples: list[np.ndarray] = []
@@ -289,7 +284,7 @@ def lanraragi_bounds(rgb: np.ndarray) -> Bounds | None:
             return None
         return np.median(np.vstack(samples), axis=0)
 
-    def edge_line_bad_ratio(side: str, position: int, background: np.ndarray) -> float:
+    def edge_line_bad_ratio(side: str, position: int, background: np.ndarray, background_mode: str) -> float:
         bad = 0
         total = 0
         ignore = edge_ignore_pixels
@@ -298,7 +293,11 @@ def lanraragi_bounds(rgb: np.ndarray) -> Bounds | None:
                 channels = rgb[y, position, :3].astype(int)
                 delta = int(np.max(np.abs(channels - background)))
                 luma = channel_luma(channels)
-                if delta > edge_blank_delta or luma < light_background:
+                if background_mode == "dark":
+                    is_bad = delta > edge_blank_delta or luma >= light_background_min
+                else:
+                    is_bad = delta > edge_blank_delta or luma <= dark_background_max
+                if is_bad:
                     bad += 1
                 total += 1
         else:
@@ -306,7 +305,11 @@ def lanraragi_bounds(rgb: np.ndarray) -> Bounds | None:
                 channels = rgb[position, x, :3].astype(int)
                 delta = int(np.max(np.abs(channels - background)))
                 luma = channel_luma(channels)
-                if delta > edge_blank_delta or luma < light_background:
+                if background_mode == "dark":
+                    is_bad = delta > edge_blank_delta or luma >= light_background_min
+                else:
+                    is_bad = delta > edge_blank_delta or luma <= dark_background_max
+                if is_bad:
                     bad += 1
                 total += 1
         return 1.0 if total == 0 else bad / total
@@ -327,11 +330,14 @@ def lanraragi_bounds(rgb: np.ndarray) -> Bounds | None:
 
     def detect_edge(side: str) -> int | None:
         background = edge_background(side)
-        if background is None or not channels_are_light(background):
+        if background is None:
+            return None
+        background_mode = edge_background_mode(background)
+        if background_mode is None:
             return None
         run = 0
         for position in scan_positions(side):
-            if edge_line_bad_ratio(side, position, background) > edge_allowed_bad_ratio:
+            if edge_line_bad_ratio(side, position, background, background_mode) > edge_allowed_bad_ratio:
                 run += 1
                 if run >= edge_nonblank_run:
                     if side in {"left", "top"}:
@@ -397,10 +403,15 @@ def run_once(sample_path: Path, implementation: str, encode: bool = True) -> dic
 
     encoded_bytes = None
     encode_ms = 0.0
+    crop_rejected_larger = False
     if encode and bounds is not None:
         encode_started = time.perf_counter()
         encoded_bytes = encode_crop(image, bounds, suffix)
         encode_ms = (time.perf_counter() - encode_started) * 1000
+        if implementation == "LANraragi" and len(encoded_bytes) >= len(data) * 0.98:
+            crop_rejected_larger = True
+            bounds = None
+            encoded_bytes = None
 
     total_ms = (time.perf_counter() - started) * 1000
     width, height = image.size
@@ -412,6 +423,7 @@ def run_once(sample_path: Path, implementation: str, encode: bool = True) -> dic
         "format": suffix,
         "input_bytes": len(data),
         "cropped": bounds is not None,
+        "crop_rejected_larger": crop_rejected_larger,
         "bounds": None if bounds is None else bounds.__dict__,
         "area_ratio": area_ratio,
         "area_reduction_pct": (1 - area_ratio) * 100,
@@ -780,7 +792,7 @@ The benchmark used {summary['selected_sample_count']} selected image pages from 
 
 ## Architecture Summary
 
-- **LANraragi**: browser toggles `crop=border`; Mojolicious page serving applies `ImageBorderCrop` server-side, prefers libvips, falls back to ImageMagick, records crop metrics, caches positive crop variants, and writes no-crop cache entries.
+- **LANraragi**: browser toggles `crop=border`; Mojolicious page serving applies `ImageBorderCrop` server-side, prefers libvips, falls back to ImageMagick, detects clean light or dark edge backgrounds, records crop metrics, caches positive crop variants, and writes no-crop cache entries when no crop or no byte savings are produced.
 - **Komikku**: Android reader stores crop preferences by reading mode; SSIV and Coil pass `cropBorders` into `tachiyomi.decoder.ImageDecoder`, whose native decoder adjusts image bounds and decodes cropped regions locally on-device.
 - **Suwayomi**: WebUI appends `crop=true` for non-webtoon pages; Server `PageServe` resolves raw page bytes, calls `CropBorderDetector`, persists transformed serve variants, and writes `.nocrop` markers when no crop is produced.
 
@@ -796,7 +808,7 @@ The benchmark used {summary['selected_sample_count']} selected image pages from 
 
 Samples were extracted from zip/cbz library archives into `/tmp`, renamed to anonymous sample IDs, and not committed. Each selected sample was run through three local algorithm models derived from inspected source:
 
-- LANraragi model mirrors the edge-background, color-page, portrait-only, and light-border checks from `ImageBorderCrop.pm`.
+- LANraragi model mirrors the v5 edge-background checks from `ImageBorderCrop.pm`: portrait-only server crops, clean light or dark per-edge backgrounds, safety padding, and a post-encode byte-savings guard.
 - Komikku model mirrors the published Tachiyomi native decoder `findBorders` scanner from the `image-decoder` repository and the verified Komikku/SSIV call boundary.
 - Suwayomi model mirrors `CropBorderDetector.detectBounds`.
 
@@ -839,8 +851,8 @@ def write_html(output_dir: Path, summary: dict, chart_map: list[dict]) -> None:
     pros_cons = [
         [
             "<code>LANraragi</code>",
-            "서버가 crop variant와 nocrop cache를 공유한다. 여러 브라우저에서 같은 결과를 재사용하기 쉽고 Prometheus 지표가 있다.",
-            "첫 요청은 서버 CPU와 encode 비용을 낸다. light/monochrome/portrait 중심으로 보수적이라 검은 border나 컬러 페이지는 일부러 건너뛴다.",
+            "서버가 crop variant와 nocrop cache를 공유한다. light/dark edge를 모두 처리하고, encode 후 byte savings가 없으면 원본을 재사용한다.",
+            "첫 요청은 서버 CPU와 encode 비용을 낸다. landscape/spread 보호는 유지되어 Komikku보다 crop 후보가 좁다.",
         ],
         [
             "<code>Komikku</code>",
@@ -1046,7 +1058,7 @@ def write_html(output_dir: Path, summary: dict, chart_map: list[dict]) -> None:
 
   <section data-contract-section="key-findings">
     <h2>측정 결과는 속도보다 crop 정책 차이를 더 크게 보여준다</h2>
-    <p>세 구현은 모두 “빈 border 제거”라는 같은 UX를 제공하지만, 비용을 내는 위치와 false positive를 피하는 방식이 다르다. LANraragi는 밝은 단색 border와 흑백 portrait page에 보수적으로 반응한다. Komikku와 Suwayomi는 더 일반적인 edge fill scan에 가깝고 crop 후보를 더 넓게 잡는다.</p>
+    <p>세 구현은 모두 “빈 border 제거”라는 같은 UX를 제공하지만, 비용을 내는 위치와 false positive를 피하는 방식이 다르다. LANraragi v5는 Komikku처럼 밝은 edge와 어두운 edge를 모두 보되, 서버 cache 비용 때문에 landscape/spread 보호와 byte-size guard를 유지한다.</p>
     {chart_figures}
     {html_table(["구현", "Median", "P90", "Crop rate", "Cropped pages", "Cropped-only area saved", "Cropped-only byte saved"], table_rows)}
   </section>
@@ -1068,7 +1080,7 @@ def write_html(output_dir: Path, summary: dict, chart_map: list[dict]) -> None:
       <div class="panel">
         <span class="label">LANraragi</span>
         <h3>서버 변환 + variant cache</h3>
-        <p>Reader JS는 <code>?crop=border</code>를 붙인다. 서버는 <code>ImageBorderCrop</code>으로 light background edge를 찾고, crop 성공 variant와 no-crop marker를 cache한다.</p>
+        <p>Reader JS는 <code>?crop=border</code>를 붙인다. 서버는 <code>ImageBorderCrop</code>으로 light/dark edge background를 찾고, crop 성공 variant와 no-crop marker를 cache한다. Re-encode 결과가 원본보다 충분히 작지 않으면 원본을 쓴다.</p>
       </div>
       <div class="panel">
         <span class="label">Komikku</span>
@@ -1093,7 +1105,7 @@ def write_html(output_dir: Path, summary: dict, chart_map: list[dict]) -> None:
   <section data-contract-section="recommended-next-steps">
     <h2>권장 사항</h2>
     <ul>
-      <li>LANraragi는 현재 보수적 정책을 유지하되, production metrics의 <code>crop_seconds_total</code>과 cache status를 reader toggle usage와 같이 보며 실제 hit rate를 확인한다.</li>
+      <li>LANraragi는 v5 배포 후 production metrics의 <code>crop_seconds_total</code>, <code>nocrop_larger</code> cache status, reader toggle usage를 같이 보며 실제 hit rate를 확인한다.</li>
       <li>Suwayomi는 remote uncached crop preload cap이 타당하다. crop page tail latency가 높게 남으면 no-crop marker와 variant warmup hit rate를 먼저 본다.</li>
       <li>Komikku는 기기별 체감 차이가 클 수 있으므로 Android macrobenchmark나 representative device profile이 다음 측정 단계다.</li>
     </ul>

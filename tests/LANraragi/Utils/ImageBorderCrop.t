@@ -15,7 +15,7 @@ if ( !$loaded ) {
     exit;
 }
 
-is( LANraragi::Utils::ImageBorderCrop::CROP_ALGORITHM_VERSION(), 4, "crop cache version bumps for per-edge strip detection" );
+is( LANraragi::Utils::ImageBorderCrop::CROP_ALGORITHM_VERSION(), 5, "crop cache version bumps for Komikku-style edge detection" );
 
 sub make_image_blob ( $width, $height, $background, $rect = undef, $content = "black" ) {
     my $img = Image::Magick->new( size => "${width}x${height}" );
@@ -99,18 +99,24 @@ note("all-blank images are not cropped");
     is( $cropped, undef, "crop returns undef when no content is found" );
 }
 
-note("dark scan borders are skipped instead of cropped");
+note("dark scan borders are cropped like Komikku-style black edge detection");
 {
-    my $blob = make_image_blob( 120, 80, "#101010", [ 15, 8, 90, 64 ], "#e6e6e6" );
+    my $blob = make_image_blob( 120, 160, "#101010", [ 15, 12, 90, 132 ], "#e6e6e6" );
     my $cropped = LANraragi::Utils::ImageBorderCrop::crop_blank_borders( $blob, "png" );
-    is( $cropped, undef, "dark-border page returns nocrop" );
+    ok( defined $cropped, "dark-border page returns cropped bytes" );
+    my ( $w, $h ) = blob_dimensions($cropped);
+    is( $w, 94, "dark-border crop keeps horizontal safety padding" );
+    is( $h, 136, "dark-border crop keeps vertical safety padding" );
 }
 
-note("color pages are skipped even with light borders");
+note("color interiors with uniform light borders are cropped");
 {
     my $blob = make_image_blob( 120, 160, "#f8f8f8", [ 14, 12, 92, 132 ], "#bb4433" );
     my $cropped = LANraragi::Utils::ImageBorderCrop::crop_blank_borders( $blob, "png" );
-    is( $cropped, undef, "color page returns nocrop" );
+    ok( defined $cropped, "color interior page returns cropped bytes" );
+    my ( $w, $h ) = blob_dimensions($cropped);
+    is( $w, 96, "color page crop keeps horizontal safety padding" );
+    is( $h, 136, "color page crop keeps vertical safety padding" );
 }
 
 note("landscape joined spread pages are skipped");
