@@ -19,7 +19,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - **Blank border cropping** can be toggled from the reader chrome, Reader
   Options, or with `K`;
   reader page preloads request cached `/api/archives/{id}/page?crop=border`
-  variants while the full-image link keeps pointing at the original page.
+  variants with the crop algorithm version in the query string, so browser
+  caches are busted when crop policy changes. The full-image link keeps
+  pointing at the original page.
 - **Blank border crop toolbar icon** reflects the active crop setting with
   `fa-crop` for enabled and `fa-crop-alt` for disabled.
 - **Blank border crop redraws** preserve shifted double-page spreads instead of

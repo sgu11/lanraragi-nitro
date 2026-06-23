@@ -213,6 +213,8 @@ test("reader blank-border crop setting maps readahead URLs and exposes k shortcu
     const js = await source("public/js/reader.js");
     const template = await source("templates/reader.html.tt2");
     const openapi = await source("tools/openapi.yaml");
+    const cropModule = await source("lib/LANraragi/Utils/ImageBorderCrop.pm");
+    const [, cropAlgorithmVersion] = cropModule.match(/use constant CROP_ALGORITHM_VERSION => (\d+);/) || [];
 
     assert.match(js, /let cropBorders = false;/);
     assert.match(js, /localStorage\.cropBorders === "true"/);
@@ -221,6 +223,9 @@ test("reader blank-border crop setting maps readahead URLs and exposes k shortcu
     assert.match(js, /function getReaderImageSource\(index\)/);
     assert.match(js, /if \(!shouldRequestBorderCrop\(index\) \|\| !rawSrc\)/);
     assert.match(js, /url\.searchParams\.set\("crop", "border"\)/);
+    assert.ok(cropAlgorithmVersion, "crop algorithm version is declared server-side");
+    assert.match(js, new RegExp(`const BORDER_CROP_CACHE_VERSION = "${cropAlgorithmVersion}";`));
+    assert.match(js, /url\.searchParams\.set\("cropv", BORDER_CROP_CACHE_VERSION\)/);
     assert.match(js, /const src = getReaderImageSource\(index\);/);
     assert.match(js, /const rawSrc = pages\[index\];/);
     assert.match(js, /\$\(document\)\.on\("click\.toggle-border-crop", "#toggle-border-crop input", toggleBorderCrop\);/);

@@ -44,6 +44,7 @@ let pageThumbnails = [];
 const MAX_PRELOADED_IMAGES = 8;
 const INFINITE_SCROLL_WINDOW_RADIUS = 4;
 const PROGRESS_PERSISTENCE_DELAY_MS = 200;
+const BORDER_CROP_CACHE_VERSION = "6";
 let preloadedImg = {};
 let preloadedPromises = {};
 let preloadedOrder = [];
@@ -994,6 +995,7 @@ function getReaderImageSource(index) {
 
     const url = new URL(rawSrc, window.location.href);
     url.searchParams.set("crop", "border");
+    url.searchParams.set("cropv", BORDER_CROP_CACHE_VERSION);
     return `${url.pathname}${url.search}${url.hash}`;
 }
 
