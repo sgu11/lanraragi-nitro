@@ -25,7 +25,7 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - **Blank border crop redraws** preserve shifted double-page spreads instead of
   snapping them back to the canonical pairing.
 - **Blank border cropping** now uses libvips first, skips cover/landscape
-  spread pages, and uses v5 per-edge light/dark strip detection inspired by
+  spread pages, and uses per-edge light/dark strip detection inspired by
   Komikku while preserving the outer 2px edge-noise guard. Crop variants are
   accepted or rejected by cropped area percentage only: candidates that remove
   less than 5% of page area are treated as no-crop, while meaningful border

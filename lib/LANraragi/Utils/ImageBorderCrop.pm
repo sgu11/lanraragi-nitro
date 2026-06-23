@@ -13,7 +13,7 @@ use LANraragi::Utils::Vips ();
 use Exporter 'import';
 our @EXPORT_OK = qw(CROP_ALGORITHM_VERSION crop_blank_borders crop_blank_borders_vips detect_crop_bounds);
 
-use constant CROP_ALGORITHM_VERSION => 5;
+use constant CROP_ALGORITHM_VERSION => 6;
 use constant EDGE_LIGHT_BACKGROUND_MIN => 191;
 use constant EDGE_DARK_BACKGROUND_MAX  => 64;
 use constant EDGE_IGNORE_PIXELS     => 2;

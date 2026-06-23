@@ -15,7 +15,7 @@ if ( !$loaded ) {
     exit;
 }
 
-is( LANraragi::Utils::ImageBorderCrop::CROP_ALGORITHM_VERSION(), 5, "crop cache version bumps for Komikku-style edge detection" );
+is( LANraragi::Utils::ImageBorderCrop::CROP_ALGORITHM_VERSION(), 6, "crop cache version bumps after area-only crop policy change" );
 
 sub make_image_blob ( $width, $height, $background, $rect = undef, $content = "black" ) {
     my $img = Image::Magick->new( size => "${width}x${height}" );
