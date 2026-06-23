@@ -129,6 +129,20 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
     assert.match(init, /if \(\[32, 38, 40\]\.includes\(e\.which\)\) handleShortcuts\(e\);/);
 });
 
+test("explicit page reload restores double-spread navigation stride", async () => {
+    const js = await source("public/js/reader.js");
+    const selectStart = js.indexOf("function selectInitialPage()");
+    const selectEnd = js.indexOf("function shouldApplyInitialPageScroll", selectStart);
+    const selectInitialPage = js.slice(selectStart, selectEnd);
+
+    assert.notEqual(selectStart, -1);
+    assert.notEqual(selectEnd, -1);
+    assert.match(selectInitialPage, /reason === "explicit-page"/);
+    assert.match(selectInitialPage, /displayWindow: getSessionDisplayWindow\(initialPage\.page\),/);
+    assert.match(selectInitialPage, /displayWindowStride: 2,/);
+    assert.doesNotMatch(selectInitialPage, /displayWindowStride: 1,/);
+});
+
 test("border crop redraw preserves a shifted double-page spread", async () => {
     const js = await source("public/js/reader.js");
     const toggleStart = js.indexOf("function toggleBorderCrop()");

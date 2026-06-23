@@ -204,7 +204,7 @@ function selectInitialPage() {
             page: initialPage.page,
             reason: "explicit-page",
             displayWindow: getSessionDisplayWindow(initialPage.page),
-            displayWindowStride: 1,
+            displayWindowStride: 2,
         };
     }
 

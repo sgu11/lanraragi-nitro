@@ -71,7 +71,7 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   Tracking is disabled.
 - **Reader session URLs** preserve shifted double-page spreads, so reloading a
   shifted `?p=` page does not snap back to the canonical spread start, and
-  prev/next navigation keeps a one-page session stride.
+  prev/next navigation resumes the normal double-page stride.
 - **Reader early page-turn input** no longer advances invisible pending pages:
   rapid key/tap navigation while a page is still loading is coalesced through a
   reader cursor, so it resolves to the next rendered page instead of skipping
