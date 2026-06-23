@@ -46,6 +46,7 @@ test("paginated reader can use minimal chrome without enabling infinite scroll",
 
 test("reader chrome exposes border crop toggle instead of help button", async () => {
     const js = await source("public/js/reader.js");
+    const cropJs = await source("public/js/mod/reader-crop.js");
     const template = await source("templates/reader.html.tt2");
     const leftOptionsStart = template.indexOf("<div class=\"absolute-options absolute-left\">");
     const leftOptionsEnd = template.indexOf("<div class=\"absolute-options absolute-right\">", leftOptionsStart);
@@ -66,8 +67,9 @@ test("reader chrome exposes border crop toggle instead of help button", async ()
 
     assert.notEqual(updateStart, -1);
     assert.notEqual(updateEnd, -1);
-    assert.match(updateBorderCropToggle, /\$\(cropBorders \? "#border-crop-on" : "#border-crop-off"\)\.addClass\("toggled"\);/);
-    assert.match(updateBorderCropToggle, /\$\(("\[id='toggle-border-crop-button'\]"|'\[id="toggle-border-crop-button"\]')\)[\s\S]*\.removeClass\("fa-crop fa-crop-alt"\)[\s\S]*\.addClass\(cropBorders \? "fa-crop" : "fa-crop-alt"\)/);
+    assert.match(updateBorderCropToggle, /ReaderCrop\.applyBorderCropToggleState\(cropBorders\);/);
+    assert.match(cropJs, /\$\(enabled \? "#border-crop-on" : "#border-crop-off"\)\.addClass\("toggled"\);/);
+    assert.match(cropJs, /\$\(("\[id='toggle-border-crop-button'\]"|'\[id="toggle-border-crop-button"\]')\)[\s\S]*\.removeClass\("fa-crop fa-crop-alt"\)[\s\S]*\.addClass\(enabled \? "fa-crop" : "fa-crop-alt"\)/);
 });
 
 test("reader border crop strings have English locale fallbacks", async () => {

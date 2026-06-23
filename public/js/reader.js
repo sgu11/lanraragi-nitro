@@ -5,6 +5,7 @@
 import * as Server from "lrr-server";
 import * as LRR from "lrr-common";
 import * as Perf from "lrr-perf";
+import * as ReaderCrop from "lrr-reader-crop";
 import I18N from "i18n";
 import fscreen from "fscreen";
 import {
@@ -44,7 +45,6 @@ let pageThumbnails = [];
 const MAX_PRELOADED_IMAGES = 8;
 const INFINITE_SCROLL_WINDOW_RADIUS = 4;
 const PROGRESS_PERSISTENCE_DELAY_MS = 200;
-const BORDER_CROP_CACHE_VERSION = "6";
 let preloadedImg = {};
 let preloadedPromises = {};
 let preloadedOrder = [];
@@ -944,7 +944,7 @@ export function initializeSettings() {
     $(qualityMap[imageQuality] || "#quality-auto").addClass("toggled");
     applyImageQuality();
 
-    cropBorders = localStorage.cropBorders === "true";
+    cropBorders = ReaderCrop.readBorderCropPreference();
     updateBorderCropToggle();
 
     // fork: auto-fullscreen-on-first-click
@@ -973,35 +973,21 @@ function setImageQuality() {
 }
 
 function updateBorderCropToggle() {
-    $("#toggle-border-crop input").removeClass("toggled");
-    $(cropBorders ? "#border-crop-on" : "#border-crop-off").addClass("toggled");
-    $("[id='toggle-border-crop-button']")
-        .removeClass("fa-crop fa-crop-alt")
-        .addClass(cropBorders ? "fa-crop" : "fa-crop-alt");
-}
-
-function shouldRequestBorderCrop(index) {
-    if (!cropBorders) { return false; }
-    if (index === 0) { return false; }
-    if (isWidePage(preloadedDimensions[index])) { return false; }
-    return true;
+    ReaderCrop.applyBorderCropToggleState(cropBorders);
 }
 
 function getReaderImageSource(index) {
-    const rawSrc = pages[index];
-    if (!shouldRequestBorderCrop(index) || !rawSrc) {
-        return rawSrc;
-    }
-
-    const url = new URL(rawSrc, window.location.href);
-    url.searchParams.set("crop", "border");
-    url.searchParams.set("cropv", BORDER_CROP_CACHE_VERSION);
-    return `${url.pathname}${url.search}${url.hash}`;
+    return ReaderCrop.getReaderImageSource({
+        rawSrc: pages[index],
+        index,
+        enabled: cropBorders,
+        dimensions: preloadedDimensions[index],
+        isWidePage,
+    });
 }
 
 function toggleBorderCrop() {
-    cropBorders = !cropBorders;
-    localStorage.cropBorders = cropBorders;
+    cropBorders = ReaderCrop.toggleBorderCropPreference(cropBorders);
     updateBorderCropToggle();
     revokePreloadedImages();
     preloadedDimensions = {};

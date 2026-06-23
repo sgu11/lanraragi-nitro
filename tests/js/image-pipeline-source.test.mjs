@@ -211,25 +211,36 @@ test("reader Delete key confirms archive deletion before returning to library", 
 
 test("reader blank-border crop setting maps readahead URLs and exposes k shortcut", async () => {
     const js = await source("public/js/reader.js");
+    const cropJs = await source("public/js/mod/reader-crop.js");
     const template = await source("templates/reader.html.tt2");
+    const importmap = await source("templates/common/importmap.html.tt2");
     const openapi = await source("tools/openapi.yaml");
     const cropModule = await source("lib/LANraragi/Utils/ImageBorderCrop.pm");
     const [, cropAlgorithmVersion] = cropModule.match(/use constant CROP_ALGORITHM_VERSION => (\d+);/) || [];
 
+    assert.match(js, /import \* as ReaderCrop from "lrr-reader-crop";/);
     assert.match(js, /let cropBorders = false;/);
-    assert.match(js, /localStorage\.cropBorders === "true"/);
-    assert.match(js, /function shouldRequestBorderCrop\(index\)/);
-    assert.match(js, /if \(index === 0\) \{\s*return false;\s*\}/);
+    assert.match(js, /ReaderCrop\.readBorderCropPreference\(\)/);
+    assert.match(js, /ReaderCrop\.applyBorderCropToggleState\(cropBorders\)/);
     assert.match(js, /function getReaderImageSource\(index\)/);
-    assert.match(js, /if \(!shouldRequestBorderCrop\(index\) \|\| !rawSrc\)/);
-    assert.match(js, /url\.searchParams\.set\("crop", "border"\)/);
+    assert.match(js, /ReaderCrop\.getReaderImageSource\(\{/);
+    assert.match(js, /ReaderCrop\.toggleBorderCropPreference\(cropBorders\)/);
+
+    assert.match(cropJs, /export const BORDER_CROP_CACHE_VERSION = "\d+";/);
+    assert.match(cropJs, /export function readBorderCropPreference\(storage = localStorage\)/);
+    assert.match(cropJs, /export function applyBorderCropToggleState\(enabled\)/);
+    assert.match(cropJs, /export function shouldRequestBorderCrop\(\{ enabled, index, dimensions, isWidePage \}\)/);
+    assert.match(cropJs, /if \(index === 0\) \{ return false; \}/);
+    assert.match(cropJs, /export function getReaderImageSource\(\{/);
+    assert.match(cropJs, /url\.searchParams\.set\("crop", "border"\)/);
     assert.ok(cropAlgorithmVersion, "crop algorithm version is declared server-side");
-    assert.match(js, new RegExp(`const BORDER_CROP_CACHE_VERSION = "${cropAlgorithmVersion}";`));
-    assert.match(js, /url\.searchParams\.set\("cropv", BORDER_CROP_CACHE_VERSION\)/);
+    assert.match(cropJs, new RegExp(`export const BORDER_CROP_CACHE_VERSION = "${cropAlgorithmVersion}";`));
+    assert.match(cropJs, /url\.searchParams\.set\("cropv", BORDER_CROP_CACHE_VERSION\)/);
     assert.match(js, /const src = getReaderImageSource\(index\);/);
     assert.match(js, /const rawSrc = pages\[index\];/);
     assert.match(js, /\$\(document\)\.on\("click\.toggle-border-crop", "#toggle-border-crop input", toggleBorderCrop\);/);
     assert.match(js, /case 75:\s*\/\/ k[\s\S]*toggleBorderCrop\(\);[\s\S]*break;/);
+    assert.match(importmap, /"lrr-reader-crop": "\[% c\.url_for\("\/js\/\$version\/mod\/reader-crop\.js\?\$asset_version"\) %\]"/);
 
     assert.match(template, /id="toggle-border-crop"/);
     assert.match(template, /id="border-crop-on"/);
