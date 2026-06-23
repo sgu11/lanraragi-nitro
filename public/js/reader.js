@@ -101,6 +101,7 @@ let markersVisible = false;
 let markers = [];
 let overlayFiltered = false;
 let pageNaviState = true;
+let wakeLock = null;
 
 function isCurrentNavigation(navigationId) {
     return isCurrentReaderNavigation(readerCursor, navigationId);
@@ -722,7 +723,7 @@ export function addCategoryBadge(categoryId) {
     const url = new LRR.ApiURL(`/?c=${categoryId}`);
     const html = `<div class="gt" style="font-size:14px; padding:4px">
         <a href="${url}">
-        <span class="label">${categoryName}</span>
+        <span class="label">${LRR.encodeHTML(categoryName)}</span>
         <a href="#" class="remove-category" data-id="${categoryId}"
             style="margin-left:4px; margin-right:2px">×</a>
     </a>`;
@@ -2256,6 +2257,8 @@ function startAutoNextPage() {
         autoNextPageCountdown -= 1;
         aEls.text(autoNextPageCountdown);
     }, 1000);
+
+    requestWakeLock();
 }
 
 function stopAutoNextPage() {
@@ -2263,6 +2266,8 @@ function stopAutoNextPage() {
     clearInterval(autoNextPageCountdownTaskId);
     $(".toggle-auto-next-page").addClass("fa-stopwatch");
     $(".toggle-auto-next-page").text("");
+
+    releaseWakeLock();
 }
 
 function toggleAutoNextPage() {
@@ -2369,7 +2374,7 @@ function updateArchiveOverlay(forceUpdate = false) {
     let firstPage = currentChapter ? currentChapter.startPage : 1;
     let lastPage = currentChapter ? currentChapter.endPage : pages.length;
 
-    $("#overlay-section").html(currentChapter ? currentChapter.name : I18N.ReaderPages);
+    $("#overlay-section").text(currentChapter ? currentChapter.name : I18N.ReaderPages);
 
     if (currentChapter !== null) {
         // Create <select> options for jumping to other chapters
@@ -2377,12 +2382,12 @@ function updateArchiveOverlay(forceUpdate = false) {
         if (content.chapters) {
             content.chapters.forEach((chapter) => {
                 const selected = (currentChapter && chapter.startPage === currentChapter.startPage) ? "selected" : "";
-                chapterOptions += `<option value="${chapter.startPage}" ${selected}>${chapter.name}</option>`;
+                chapterOptions += `<option value="${chapter.startPage}" ${selected}>${LRR.encodeHTML(chapter.name)}</option>`;
 
                 if (chapter.chapters && chapter.chapters.length > 0) {
                     chapter.chapters.forEach((subChapter) => {
                         const subSelected = (currentChapter && subChapter.startPage === currentChapter.startPage) ? "selected" : "";
-                        chapterOptions += `<option value="${subChapter.startPage}" ${subSelected}>&nbsp;&nbsp;&nbsp;${subChapter.name}</option>`;
+                        chapterOptions += `<option value="${subChapter.startPage}" ${subSelected}>&nbsp;&nbsp;&nbsp;${LRR.encodeHTML(subChapter.name)}</option>`;
                     });
                 }
             });
@@ -2651,3 +2656,30 @@ jQuery(() => {
         }
     });
 });
+
+async function requestWakeLock() {
+    if (wakeLock !== null) {
+        return;
+    }
+    if (!("wakeLock" in navigator)) {
+        console.warn("Wake Lock API is not available. You're likely running in an outdated browser or without HTTPS.");
+        return;
+    }
+
+    try {
+        wakeLock = await navigator.wakeLock.request();
+
+        wakeLock.addEventListener("release", () => {
+            wakeLock = null;
+        });
+    } catch (err) {
+        console.warn("Error acquiring wake lock:", err);
+    }
+}
+
+function releaseWakeLock() {
+    if (wakeLock !== null) {
+        wakeLock.release();
+    }
+}
+

@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use utf8;
 
-use Fcntl qw(:flock O_CREAT O_RDWR);
+use Fcntl qw(:flock);
 use Compress::Zlib;
 use Config;
 
@@ -53,7 +53,7 @@ has lockpath => sub {
 has lockfh => sub {
     my $self = shift;
     my $lockpath = $self->lockpath;
-    open( my $fh, '>>', $lockpath ) or die "Could not open lockfile '$lockpath': $!";
+    open( my $fh, '+>>', $lockpath ) or die "Could not open lockfile '$lockpath': $!";
     $self->lockpid($$);
     return $fh;
 };
@@ -268,7 +268,7 @@ sub ensure_lock {
     if ( !defined $self->{lockfh} || !defined $self->{lockpid} || $self->{lockpid} != $$ ) {
         eval { close $self->{lockfh} } if defined $self->{lockfh};
         my $lockpath = $self->lockpath;
-        open( my $fh, '>>', $lockpath ) or die "Could not open lockfile '$lockpath': $!";
+        open( my $fh, '+>>', $lockpath ) or die "Could not open lockfile '$lockpath': $!";
         $self->lockfh($fh);
         $self->lockpid($$);
     }
@@ -327,8 +327,8 @@ sub is_supported {
     my $probe_path  = "$lockdir/.lrr-flock-probe.$$";
 
     # do a flock hit
-    if ( open( my $fh, '>', $probe_path ) ) {
-        $supported = flock( $fh, LOCK_EX | LOCK_NB ) ? 1 : 0;
+    if ( open( my $fh, '+>>', $probe_path ) ) {
+        $supported = flock( $fh, LOCK_SH | LOCK_NB ) ? 1 : 0;
         close $fh;
         unlink $probe_path;
     }

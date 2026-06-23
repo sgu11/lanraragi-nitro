@@ -94,7 +94,7 @@
             <br>
             <div style="margin-bottom:16px;">
                 <div class="id3 nocrop reader-thumbnail">
-                    <img id="reader-overview-thumbnail" src="[% c.url_for("/api/archives/$id/thumbnail") %]" />
+                    <img id="reader-overview-thumbnail" src="[% IF is_tank %][% c.url_for("/api/tankoubons/$id/thumbnail") %][% ELSE %][% c.url_for("/api/archives/$id/thumbnail") %][% END %]" />
                 </div>
 
                 [% IF userlogged %]
@@ -111,7 +111,7 @@
                         [% FOREACH arc_categories %]
                         <div class="gt" style="font-size:14px; padding:4px">
                             <a href="[% c.url_for("/").query("c=$id") %]">
-                                <span class="label">[% name %]</span>
+                                <span class="label">[% name | html %]</span>
                             </a>
                             <a href="#" class="remove-category" data-id="[% id %]"
                                 style="margin-left:4px; margin-right:2px">×</a>
@@ -125,7 +125,7 @@
                     <select id="category" class="favtag-btn" style="width:200px">
                         <option selected value="">[% c.lh(" -- No Category -- ") %]</option>
                         [% FOREACH categories %]
-                        <option value="[% id %]">[% name %]</option>
+                        <option value="[% id %]">[% name | html %]</option>
                         [% END %]
                     </select>
                     <a class="fas fa-plus" id="add-category" href="#" style="padding:12px" title="[% c.lh('Add Archive to Category') %]"></a>

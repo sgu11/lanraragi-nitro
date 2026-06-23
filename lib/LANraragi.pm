@@ -6,6 +6,7 @@ use open ':std', ':encoding(UTF-8)';
 
 use Mojo::Base 'Mojolicious';
 use Mojo::File;
+use Mojo::JSON;
 use Storable;
 use Sys::Hostname;
 use Config;
@@ -152,6 +153,9 @@ sub startup {
     $self->helper( LRR_VERNAME => sub { return $vername; } );
     $self->helper( LRR_DESC    => sub { return $descstr; } );
     $self->defaults( asset_version => $asset_version );
+
+    #Helper to JSON-encode a value for safe embedding in templates
+    $self->helper( json_esc => sub { shift; return Mojo::JSON::encode_json(shift); } );
 
     #Helper to build logger objects quickly
     $self->helper(
