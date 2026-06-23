@@ -3650,6 +3650,10 @@ paths:
       description: >-
         Get the details of the specified tankoubon ID with paginated archive metadata.
 
+        This endpoint always includes `full_data` archive metadata for the returned
+        archive page. `include_full_data=false` is not supported here; use
+        `GET /api/tankoubons/{id}` when only Tankoubon metadata and archive IDs are needed.
+
         The amount of archives per page depends on the server `archives_per_page` setting.
       tags:
         - tankoubons
@@ -3700,6 +3704,7 @@ paths:
                         uniqueItems: true
                       full_data:
                         type: array
+                        description: Full archive metadata for the same archive IDs returned in `archives`.
                         items:
                           $ref: '#/components/schemas/ArchiveMetadataJson'
                   total:
