@@ -36,7 +36,7 @@ English version: [`README.md`](README.md).
 - **Fresh reader startup**: deploy-specific import-map URL로 reader dependency를 resolve해 cache-busted `reader.js`가 stale `reader-spread.js`와 섞여 reader가 `... / ...` 상태에 멈추지 않음.
 - **Progression Tracking disabled**: reader open 시 saved progress 무시뿐 아니라 page turn 중 local/server progress write도 억제.
 - **Reader session page**: 읽는 동안 현재 page가 URL에 유지됨. reload나 infinite-scroll fullscreen exit 시에도 Progression Tracking 비활성 상태에서 visible page 유지.
-- **Reader session URL의 shifted spread 보존**: shifted `?p=` page를 reload해도 canonical spread start으로 snap back하지 않고, prev/next navigation이 one-page session stride를 유지.
+- **Reader session URL의 shifted spread 보존**: shifted `?p=` page를 reload해도 canonical spread start으로 snap back하지 않고, prev/next navigation은 일반 double-page stride로 돌아감.
 - **Early page-turn input 방지**: page loading 중 빠른 key/tap navigation은 reader cursor를 통해 coalesce됨. pending page를 건너뛰지 않고 다음 render된 page로 이동.
 - **Cold double-page navigation**: background readahead 전에 requested page를 먼저 render해 cold cover page가 neighbor probe 때문에 막히지 않음.
 - **Session state와 synced progress 분리**: 활성 page는 render/scroll 시 reading-session URL에 commit되고, synced progress는 명시적 `?p=` session page가 없을 때 opening hint로만 사용됨.
