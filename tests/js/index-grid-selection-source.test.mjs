@@ -38,3 +38,14 @@ test("upstream MSM implementation remains present but is no longer the fork user
     assert.match(template, /id='msm-toggle'/);
     assert.doesNotMatch(common, /card-select/);
 });
+
+test("bulk selection banner exposes direct delete without an actions dropdown", async () => {
+    const gridSelection = await source("public/js/mod/index_grid_selection.js");
+
+    assert.match(gridSelection, /id="grid-selection-select-page"[\s\S]*?>Select all<\/button>/);
+    assert.match(gridSelection, /id="grid-selection-delete"[\s\S]*?>Delete<\/button>/);
+    assert.match(gridSelection, /click\.grid-selection-delete/);
+    assert.doesNotMatch(gridSelection, /grid-selection-actions-toggle/);
+    assert.doesNotMatch(gridSelection, /grid-selection-actions-menu/);
+    assert.doesNotMatch(gridSelection, />Actions<\/button>/);
+});

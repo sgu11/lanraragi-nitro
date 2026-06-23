@@ -104,25 +104,9 @@ function bindEvents() {
         clear();
     });
 
-    $(document).on("click.grid-selection-actions-toggle", "#grid-selection-actions-toggle", (event) => {
+    $(document).on("click.grid-selection-delete", "#grid-selection-delete", (event) => {
         event.preventDefault();
-        event.stopPropagation();
-        const menu = document.getElementById("grid-selection-actions-menu");
-        if (menu) menu.hidden = !menu.hidden;
-    });
-
-    $(document).on("click.grid-selection-actions-item", "#grid-selection-actions-menu [data-action]", function (event) {
-        event.preventDefault();
-        const menu = document.getElementById("grid-selection-actions-menu");
-        if (menu) menu.hidden = true;
-        handleBulkAction(this.getAttribute("data-action"), null, latestCatList);
-    });
-
-    $(document).on("click.grid-selection-actions-outside", (event) => {
-        const menu = document.getElementById("grid-selection-actions-menu");
-        if (!menu || menu.hidden) return;
-        if (event.target.closest("#grid-selection-actions-menu") || event.target.closest("#grid-selection-actions-toggle")) return;
-        menu.hidden = true;
+        confirmBulkDelete();
     });
 
     $(document).on("draw.dt.grid-selection", ".datatables", queueApplySelectionHighlights);
@@ -404,16 +388,9 @@ function injectBanner() {
     banner.hidden = true;
     banner.innerHTML = `
         <span class="grid-selection-count">0 selected</span>
-        <button type="button" id="grid-selection-select-page" class="grid-selection-btn">Select page</button>
+        <button type="button" id="grid-selection-select-page" class="grid-selection-btn">Select all</button>
         <button type="button" id="grid-selection-clear" class="grid-selection-btn">Clear</button>
-        <span class="grid-selection-actions">
-            <button type="button" id="grid-selection-actions-toggle" class="grid-selection-btn">Actions</button>
-            <ul id="grid-selection-actions-menu" hidden>
-                <li data-action="batch"><i class="fas fa-hammer"></i> Run Batch Operations</li>
-                <li data-action="addcat"><i class="fas fa-search-plus"></i> Add to category</li>
-                <li data-action="delete"><i class="fas fa-trash-alt"></i> Delete from library</li>
-            </ul>
-        </span>`;
+        <button type="button" id="grid-selection-delete" class="grid-selection-btn">Delete</button>`;
 
     const anchor = document.querySelector(".thumbnail-options") || document.querySelector(".table-options");
     if (anchor) {
@@ -489,33 +466,6 @@ function injectStyles() {
             font-size: 12px;
         }
 
-        .grid-selection-actions {
-            position: relative;
-        }
-
-        #grid-selection-actions-menu {
-            position: absolute;
-            top: 100%;
-            right: 0;
-            z-index: 30;
-            min-width: 220px;
-            margin: 4px 0 0 0;
-            padding: 4px 0;
-            list-style: none;
-            background: #2a2a2a;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 4px;
-        }
-
-        #grid-selection-actions-menu li {
-            padding: 8px 14px;
-            color: #fff;
-            cursor: pointer;
-        }
-
-        #grid-selection-actions-menu li:hover {
-            background: rgba(33, 150, 243, 0.3);
-        }
     `;
     document.head.appendChild(style);
 }
