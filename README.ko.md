@@ -17,7 +17,7 @@ English version: [`README.md`](README.md).
 - **Auto-fullscreen**: archive open 시 자동 fullscreen 진입, reader 종료 시 정상 해제. 구형 browser 대응을 위해 `fscreen` polyfill 사용.
 - **Image quality**: reader settings에 image quality 선택지 노출 및 mobile toggle 동작 구현.
 - **Blank border crop**: reader chrome, Reader Options, 또는 `K` key로 공백 border crop toggle 가능. reader page preload는 cached `/api/archives/{id}/page?crop=border` variant를 요청하고, full-image link는 원본 page를 유지함.
-- **Blank border crop toolbar icon**: 시각적 state를 갖지 않으며, Reader Options On/Off button이 활성 crop 상태를 표시함.
+- **Blank border crop toolbar icon**: crop 활성 상태를 반영함. 활성화 시 `fa-crop`, 비활성화 시 `fa-crop-alt`를 표시함.
 - **Blank border crop redraw**: crop toggle 시 shifted double-page spread를 보존함. canonical pairing으로 snap back하지 않음.
 - **Blank border crop policy**: libvips를 우선 사용하고 cover/landscape spread page는 crop하지 않음. Komikku를 참고한 v5 per-edge light/dark strip detection과 outer 2px edge-noise guard를 사용함. Byte-larger crop은 page 면적을 5% 미만으로 줄일 때만 no-crop 처리하고, 의미 있는 border 제거는 re-encode byte가 커져도 crop variant로 cache함. Crop timing은 metrics에 기록함.
 - **Shifted spread progress resume**: `5 + 6` 같은 shifted double-page spread 상태로 reload해도 canonical pairing으로 snap back하지 않음.

@@ -56,6 +56,7 @@ test("reader chrome exposes border crop toggle instead of help button", async ()
     assert.match(leftOptions, /id="toggle-settings-overlay"/);
     assert.match(leftOptions, /id="toggle-border-crop-button"/);
     assert.match(leftOptions, /fa-crop-alt/);
+    assert.doesNotMatch(leftOptions, /fa-crop(?!-alt)/);
     assert.doesNotMatch(leftOptions, /id="toggle-help"/);
     assert.match(js, /\$\(document\)\.on\("click\.toggle-border-crop-button", "#toggle-border-crop-button", toggleBorderCrop\);/);
 
@@ -66,7 +67,7 @@ test("reader chrome exposes border crop toggle instead of help button", async ()
     assert.notEqual(updateStart, -1);
     assert.notEqual(updateEnd, -1);
     assert.match(updateBorderCropToggle, /\$\(cropBorders \? "#border-crop-on" : "#border-crop-off"\)\.addClass\("toggled"\);/);
-    assert.doesNotMatch(updateBorderCropToggle, /toggle-border-crop-button/);
+    assert.match(updateBorderCropToggle, /\$\(("#toggle-border-crop-button"|'#toggle-border-crop-button')\)[\s\S]*\.removeClass\("fa-crop fa-crop-alt"\)[\s\S]*\.addClass\(cropBorders \? "fa-crop" : "fa-crop-alt"\)/);
 });
 
 test("reader border crop strings have English locale fallbacks", async () => {

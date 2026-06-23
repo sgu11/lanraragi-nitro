@@ -20,8 +20,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   Options, or with `K`;
   reader page preloads request cached `/api/archives/{id}/page?crop=border`
   variants while the full-image link keeps pointing at the original page.
-- **Blank border crop toolbar icon** remains visually stateless while the
-  Reader Options On/Off buttons show the active crop setting.
+- **Blank border crop toolbar icon** reflects the active crop setting with
+  `fa-crop` for enabled and `fa-crop-alt` for disabled.
 - **Blank border crop redraws** preserve shifted double-page spreads instead of
   snapping them back to the canonical pairing.
 - **Blank border cropping** now uses libvips first, skips cover/landscape
