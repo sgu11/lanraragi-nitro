@@ -14,20 +14,33 @@ English version: [`README.md`](README.md).
 
 ### Reader
 
-- **Auto-fullscreen**: archive open 후 첫 reading click/tap에서 fullscreen 진입, reader 종료 시 정상 해제 기능임. 구형 browser 대응을 위해 `fscreen` polyfill 사용함.
-- **Image quality**: reader settings에 image quality 선택지 노출 및 mobile toggle 동작 구현임.
-- **Fit-height fullscreen fix**: fullscreen 진입/해제 시 height 재계산으로 stale layout 방지함.
-- **Double-page rendering**: page transition 중 double-page flicker 제거함.
-- **Adaptive offset**: cover와 wide page는 항상 single 표시, archive별 server-detected `Pair 2-3` / `Pair 3-4` hint 저장, reader option은 on/off 단순화함.
-- **Reader Delete key**: `Delete` 키가 표준 archive/tankoubon deletion confirmation modal을 열고, confirm 후 library로 복귀함.
-- **Header hidden reader layout**: hidden-header mode에서 infinite-scroll과 동일한 minimal chrome 사용. 일반 paginated rendering, double-page mode, stamps, tap/keyboard navigation은 유지함. Bottom utility link를 숨기고 image viewport를 full-height no-scroll로 사용함. Mouse wheel up/down은 fullscreen과 동일하게 page navigation으로 동작하며, Reader Options가 열려 있으면 멈춤. Side utility icon은 vertical stack임.
-- **Single-page spread sliding**: double-page fullscreen/hidden-header mode에서 `Up`은 visible spread를 한 page 이전으로, `Down`은 한 page 다음으로 이동함. One-page slide 이후 일반 prev/next navigation은 direct page jump 또는 display-mode 변경 전까지 shifted double-page stride 유지함.
-- **Middle-click fullscreen**: reader 어디서든 middle-click으로 fullscreen toggle 가능함. `F` key와 동일한 의미임.
+- **Auto-fullscreen**: archive open 시 자동 fullscreen 진입, reader 종료 시 정상 해제. 구형 browser 대응을 위해 `fscreen` polyfill 사용.
+- **Image quality**: reader settings에 image quality 선택지 노출 및 mobile toggle 동작 구현.
+- **Blank border crop**: reader chrome, Reader Options, 또는 `K` key로 공백 border crop toggle 가능. reader page preload는 cached `/api/archives/{id}/page?crop=border` variant를 요청하고, full-image link는 원본 page를 유지함.
+- **Blank border crop toolbar icon**: 시각적 state를 갖지 않으며, Reader Options On/Off button이 활성 crop 상태를 표시함.
+- **Blank border crop redraw**: crop toggle 시 shifted double-page spread를 보존함. canonical pairing으로 snap back하지 않음.
+- **Blank border crop policy**: libvips를 우선 사용하고 cover/landscape spread page는 crop하지 않음. Komikku를 참고한 v5 per-edge light/dark strip detection과 outer 2px edge-noise guard를 사용함. Encoded result가 원본보다 최소 2% 작을 때만 crop variant를 cache하고, 아니면 원본 page를 no-crop으로 재사용함. Crop timing은 metrics에 기록함.
+- **Shifted spread progress resume**: `5 + 6` 같은 shifted double-page spread 상태로 reload해도 canonical pairing으로 snap back하지 않음.
+- **Infinite-scroll reader spacing**: 일반 infinite-scroll layout에서 수직 image margin 0 적용.
+- **Fit-mode upscale**: blank-border-cropped image와 원래 작은 image가 선택한 height, width, default/custom container, fullscreen viewport를 채우도록 확대됨. 작은 natural size로 고정되지 않음.
+- **Fit-height fullscreen fix**: fullscreen 진입/해제 시 height 재계산으로 stale layout 방지.
+- **Double-page rendering**: page transition 중 double-page flicker 제거.
+- **Adaptive offset**: cover와 wide page는 항상 single 표시, archive별 server-detected `Pair 2-3` / `Pair 3-4` hint 저장, reader option은 on/off.
+- **Reader Delete key**: `Delete` 키가 표준 archive/tankoubon deletion confirmation modal을 열고, confirm 후 library로 복귀.
+- **Header hidden reader layout**: hidden-header mode에서 infinite-scroll과 동일한 minimal chrome 사용. 일반 paginated rendering, double-page mode, stamps, tap/keyboard navigation 유지. Bottom utility link를 숨기고 image viewport를 full-height no-scroll로 사용. Mouse wheel up/down은 fullscreen과 동일하게 page navigation으로 동작하며, Reader Options가 열려 있으면 멈춤. Side utility icon은 vertical stack.
+- **Single-page spread sliding**: double-page fullscreen/hidden-header mode에서 `Up`은 visible spread를 한 page 이전으로, `Down`은 한 page 다음으로 이동. One-page slide 이후 일반 prev/next navigation은 direct page jump 또는 display-mode 변경 전까지 shifted double-page stride 유지.
+- **Middle-click fullscreen**: reader 어디서든 middle-click으로 fullscreen toggle 가능. `F` key와 동일.
 - **Reader chrome button click**: bookmark/fullscreen control click이 tap-zone page navigation으로 전파되어 page가 같이 넘어가지 않음.
-- **Reading-progress migration**: 삭제된 archive/tankoubon 또는 잘못된 local page 값 때문에 stale migration toast가 반복 표시되지 않음. local/authenticated progress 설정 확인 후 server migration 시도함.
+- **Reading-progress migration**: 삭제된 archive/tankoubon 또는 잘못된 local page 값 때문에 stale migration toast가 반복 표시되지 않음. local/authenticated progress 설정 확인 후 server migration 시도.
 - **Reading-progress migration startup**: deploy 후 cached JS module이 섞여도 index load가 새 `common.js` fetch에 의존하지 않음.
-- **Progression Tracking disabled**: reader open 시 saved progress 무시뿐 아니라 page turn 중 local/server progress write도 억제함.
-- **Reading-progress resume**: async page load가 늦게 끝나도 최신 user navigation/scroll을 덮어쓰지 않음. Progress tracking off 상태에서는 saved progress로 자동 이동하지 않고, tracking on 상태에서는 빠른 page turn write를 최신 page 기준으로 coalesce함.
+- **Fresh reader startup**: deploy-specific import-map URL로 reader dependency를 resolve해 cache-busted `reader.js`가 stale `reader-spread.js`와 섞여 reader가 `... / ...` 상태에 멈추지 않음.
+- **Progression Tracking disabled**: reader open 시 saved progress 무시뿐 아니라 page turn 중 local/server progress write도 억제.
+- **Reader session page**: 읽는 동안 현재 page가 URL에 유지됨. reload나 infinite-scroll fullscreen exit 시에도 Progression Tracking 비활성 상태에서 visible page 유지.
+- **Reader session URL의 shifted spread 보존**: shifted `?p=` page를 reload해도 canonical spread start으로 snap back하지 않고, prev/next navigation이 one-page session stride를 유지.
+- **Early page-turn input 방지**: page loading 중 빠른 key/tap navigation은 reader cursor를 통해 coalesce됨. pending page를 건너뛰지 않고 다음 render된 page로 이동.
+- **Cold double-page navigation**: background readahead 전에 requested page를 먼저 render해 cold cover page가 neighbor probe 때문에 막히지 않음.
+- **Session state와 synced progress 분리**: 활성 page는 render/scroll 시 reading-session URL에 commit되고, synced progress는 명시적 `?p=` session page가 없을 때 opening hint로만 사용됨.
+- **Reading-progress resume 취소 가능**: stale async page load가 최신 user navigation을 덮어쓰지 않음. Progress tracking off 시 saved progress로 자동 이동하지 않음. Tracking on 시 빠른 page turn write를 coalesce하여 최신 page 기준으로 저장.
 - Technical baseline: [`docs/local-features/reader.md`](docs/local-features/reader.md).
 
 #### Adaptive Offset Detection 상세
@@ -72,7 +85,7 @@ Reader behavior:
 - **Image-serving pipeline hardening**: compact-table tooltip thumbnail은 hover 시에만 fetch, thumbnail-card image는 browser lazy loading 사용, single-thumbnail miss는 Redis-backed Minion job lock으로 coalesce, thumbnail response는 download가 아닌 inline cacheable image response임.
 - **Library default sort**: index 기본 URL은 `sort=1&sortdir=desc`로 열려 Date column newest-first 기준임. Explicit URL sort parameter와 저장된 non-default sort 선택은 유지함.
 - **Stale `arcsize` and `pagecount` recovery**: 동일 path 아래 archive가 교체된 경우 Shinobu가 cached value와 실제 file size를 reconcile함.
-- **Bulk archive actions**: 기존 fork hover-checkbox / bulk-selection-banner 설계는 ES-module sync 중 upstream MSM으로 대체됨. Index page의 `Select Archives` button으로 thumbnail carousel selection panel 사용, thumbnail click 또는 right-click `Add to selection`으로 `localStorage` selection 구성, 이후 `Select page`, `Clear`, `Run Batch Operations`, `Merge into Tankoubon` 사용함. 기존 fork spec은 history only 문서임.
+- **Grid bulk archive actions**: fork bulk-selection path를 일반 index grid로 복원함. Archive card에 short right-click으로 선택/해제 toggle, 이미 선택된 card에 right-long-click으로 `Run Batch Operations`, category add, delete, remove, clear 등 bulk action dropdown 표시. Left-click은 일반 card 동작 유지. Upstream MSM/carousel/Tankoubon selection code는 merge 호환성을 위해 보존하되, fork user path에서는 해당 control을 숨기고 grid selection에서 Tankoubon merge를 노출하지 않음. Upstream-friendly 구조는 [`docs/local-features/library-ux-plugins-themes.md`](docs/local-features/library-ux-plugins-themes.md) 참고.
 - **Quick filter button 수정**: library page의 category/tag filter button이 동작하지 않던 문제 수정. ES module에서 `selectedCategory` 변수가 export되지 않아 DataTables column filter에 category ID가 전달되지 않았음.
 - **Mobile portrait card sizing fix**: portrait phone/tablet에서 desktop-sized card가 표시되던 문제 수정함. 모든 template에 `initial-scale=1`, `.id3 img` cap 완화, 561-900px portrait breakpoint, <=560px `min-height` override 적용함.
 - **Inline library deletion refresh**: library에서 archive/tankoubon 삭제 시 search reset 또는 전체 page reload 없이 현재 DataTables page를 제자리 redraw함. Stale multi-select 상태 정리, 필요한 경우에만 carousel dirty 처리, server redraw 후 shifted-in row/card highlight 포함함.
@@ -80,9 +93,15 @@ Reader behavior:
 
 ### Duplicates
 
-- **Relation-aware duplicate finder**: lead-page pHash와 normalized title/source heuristic으로 duplicate, translation variant, subset, review-only pair 분류함. Suggested delete/keep side와 risk flag 포함함.
-- **Cover pHash luminance fix**: cover hash가 clipped GREY16 output 대신 8-bit grayscale luminance를 사용함. 밝은 무관 cover들이 Hamming 0으로 붕괴하던 문제 방지함. Cover-hash algorithm version bump로 `Find cover matches` 실행 시 stale v1 hash 재계산함.
-- **Duplicate review training log**: `/duplicates_custom` status decision이 pair snapshot, derived feature, UI context, label을 sanitize한 review event로 `LRR_COVER_DUPLICATE_REVIEW_EVENTS`에 append됨. `GET /api/duplicates/cover/review-events`로 export 가능함.
+- **Cover-focused duplicate finder**: duplicate review가 cover-image pHash similarity에 집중하고, custom UI에서 relation/title/source 비교 요소를 숨김.
+- **Cover pHash luminance fix**: cover hash가 clipped GREY16 output 대신 8-bit grayscale luminance를 사용. 밝은 무관 cover들이 Hamming 0으로 붕괴하던 문제 방지. Cover-hash algorithm version bump로 `Find cover matches` 실행 시 stale v1 hash 재계산.
+- **One-click cover rebuild**: `Find cover matches`가 누락된 cover hash를 enqueue하고 자동으로 cover sweep을 재실행함. 새 library에서 hash job 완료 후 두 번째 수동 click 불필요.
+- **Cover rebuild idempotence**: 반복 rebuild 시 in-flight cover hash job을 추적하여 중복 queue spam 방지. 동일 ID archive 교체 시 versioned cover fingerprint 갱신.
+- **Focused duplicate review queue**: `/duplicates_custom`이 한 번에 하나의 큰 side-by-side cover comparison을 열고, compact upcoming-pair rail을 유지, delete/status 결정 후 전체 deck 교체 없이 in-place로 다음 pair로 전환.
+- **Comparison evidence chips**: 각 duplicate 쌍에 page count, archive size, tag count, 한국어 여부, cover resolution, 최신 날짜 등의 keep signal을 chip으로 강조 표시. resolution은 기존 `cover_fp` dimension에서 읽음.
+- **Duplicate review training log**: `/duplicates_custom` status decision이 pair snapshot, derived feature, UI context, label을 sanitize한 review event로 `LRR_COVER_DUPLICATE_REVIEW_EVENTS`에 append. `GET /api/duplicates/cover/review-events`로 export 가능.
+- **No-confirm duplicate deletes**: `/duplicates_custom`의 keep/delete action이 confirmation modal 없이 즉시 삭제하고 focused queue를 진행.
+- Fork duplicate finder는 `/duplicates_custom`에 있으며, `/duplicates`는 upstream duplicate-group page에 가깝게 유지해 upstream sync conflict를 줄임.
 - Technical baseline: [`docs/local-features/duplicate-detection.md`](docs/local-features/duplicate-detection.md).
 - Explainer: [`docs/deduplication-advancement-explainer-2026-06-19.md`](docs/deduplication-advancement-explainer-2026-06-19.md) 및 illustrated Korean HTML view 문서임.
 
@@ -106,11 +125,13 @@ Request hot path 중심의 지속적 성능 개선임. 상세 추적 문서는 [
 - Async page-size lookup (`LRR.getImgSizeAsync`)으로 sync HEAD 제거.
 - Redis bulk fetch pipeline 적용.
 - `/api/archives/{id}/page` private immutable cache header.
+- Image-sized PageCache entry 기본값 32 MB 적용. 원본, resized, cropped page blob이 FastMmap entry ceiling 때문에 조용히 miss되지 않음. 필요 시 `LRR_PAGECACHE_PAGE_SIZE_MB`로 조정.
 - `LRR_MCE_WORKERS` runtime knob.
-- Fresh-install `archives_per_page = 30`.
+- Fresh-install `archives_per_page = 30`. 기존 instance 설정은 유지.
 - Thumbnail-job race guard 및 single thumbnail miss coalescing.
 - Image serving Prometheus metrics.
 - Bounded reader preload cache 및 Blob URL eviction.
+- Deploy-specific JS/CSS cache busting: template이 static asset query string에 deployment token을 추가하여, fork-only hot deploy 후 browser가 stale ES module을 새 template과 섞지 않음.
 - `Server.callAPI` GET inflight-promise dedup.
 - `pagefiles` filelist cache 및 warm-cache reader open 단축.
 - Warm-cache inline first-page `src=`.
@@ -135,6 +156,7 @@ Request hot path 중심의 지속적 성능 개선임. 상세 추적 문서는 [
 - Search와 Shinobu path의 undef handling 강화.
 - `/edit` missing archive ID request는 Redis 접근 전 redirect 처리.
 - `/archives/upload` optional SHA1 checksum 검증은 upload asset을 chunk 단위로 읽음. 2 GiB 초과 archive도 checksum verification 유지 가능함.
+- Unicode upload filename lock fix: 비ASCII filename upload 시 Redis lock key를 인코딩 후 digest/store하여 lock-token 생성 실패 방지.
 
 ### Themes
 
