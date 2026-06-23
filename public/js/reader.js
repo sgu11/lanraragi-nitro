@@ -974,7 +974,7 @@ function setImageQuality() {
 function updateBorderCropToggle() {
     $("#toggle-border-crop input").removeClass("toggled");
     $(cropBorders ? "#border-crop-on" : "#border-crop-off").addClass("toggled");
-    $("#toggle-border-crop-button")
+    $("[id='toggle-border-crop-button']")
         .removeClass("fa-crop fa-crop-alt")
         .addClass(cropBorders ? "fa-crop" : "fa-crop-alt");
 }
