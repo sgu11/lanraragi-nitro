@@ -2057,11 +2057,20 @@ async function loadImage(index) {
         return src;
     }
 
-    if (getReaderPreloadStrategy() === "browser") {
-        return preloadImageWithBrowserCache(index, src);
+    try {
+        if (getReaderPreloadStrategy() === "browser") {
+            return await preloadImageWithBrowserCache(index, src);
+        }
+        return await preloadImageWithBlobUrl(index, src);
+    } catch (e) {
+        if (src !== rawSrc) {
+            const fallback = await preloadImageWithBlobUrl(index, rawSrc);
+            preloadedImg[src] = fallback;
+            touchPreloadedImage(src);
+            return fallback;
+        }
+        throw e;
     }
-
-    return preloadImageWithBlobUrl(index, src);
 }
 
 async function preloadImageWithBlobUrl(index, src) {
@@ -2069,6 +2078,9 @@ async function preloadImageWithBlobUrl(index, src) {
         if (!preloadedPromises[src]) {
             preloadedPromises[src] = fetch(src)
                 .then(async (res) => {
+                    if (!res.ok) {
+                        throw new Error(`HTTP ${res.status}`);
+                    }
                     preloadedSizes[index] = parseInt(res.headers.get("Content-Length") / 1024, 10);
                     const blob = await res.blob();
                     return URL.createObjectURL(blob);
@@ -2709,4 +2721,3 @@ function releaseWakeLock() {
         wakeLock.release();
     }
 }
-

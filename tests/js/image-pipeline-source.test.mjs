@@ -26,6 +26,27 @@ test("reader Blob URL preloading dedupes in-flight fetches and revokes evicted U
     assert.match(js, /URL\.revokeObjectURL/);
 });
 
+test("reader crop preload falls back to the original page when the crop response fails", async () => {
+    const js = await source("public/js/reader.js");
+    const loadStart = js.indexOf("async function loadImage(index)");
+    const loadEnd = js.indexOf("async function preloadImageWithBlobUrl", loadStart);
+    const loadImage = js.slice(loadStart, loadEnd);
+    const preloadStart = js.indexOf("async function preloadImageWithBlobUrl(index, src)");
+    const preloadEnd = js.indexOf("async function preloadImageWithBrowserCache", preloadStart);
+    const preloadImageWithBlobUrl = js.slice(preloadStart, preloadEnd);
+
+    assert.notEqual(loadStart, -1);
+    assert.notEqual(loadEnd, -1);
+    assert.notEqual(preloadStart, -1);
+    assert.notEqual(preloadEnd, -1);
+    assert.match(loadImage, /const rawSrc = pages\[index\];/);
+    assert.match(loadImage, /const src = getReaderImageSource\(index\);/);
+    assert.match(loadImage, /try \{[\s\S]*preloadImageWithBlobUrl\(index, src\);[\s\S]*\} catch \(e\) \{/);
+    assert.match(loadImage, /if \(src !== rawSrc\) \{[\s\S]*const fallback = await preloadImageWithBlobUrl\(index, rawSrc\);[\s\S]*preloadedImg\[src\] = fallback;[\s\S]*touchPreloadedImage\(src\);[\s\S]*return fallback;/);
+    assert.match(loadImage, /throw e;/);
+    assert.match(preloadImageWithBlobUrl, /if \(!res\.ok\) \{[\s\S]*throw new Error\(`HTTP \$\{res\.status\}`\);[\s\S]*\}[\s\S]*const blob = await res\.blob\(\);/);
+});
+
 test("reader disabled progress tracking suppresses persistence while preserving stamps", async () => {
     const js = await source("public/js/reader.js");
     const start = js.indexOf("function updateProgress()");
