@@ -341,9 +341,7 @@ sub get_page_data ( $id, $path, $metrics = undef ) {
 
         # Extract the file from the parent archive if it doesn't exist
         my $extract_start = [gettimeofday];
-        my $redis   = LANraragi::Model::Config->get_redis;
-        my $archive = get_archive_path( $redis, $id );
-        $redis->quit();
+        my $archive = _resolve_archive_path($id);
         $content = extract_single_file( $archive, $path );
         $metrics->{extract_seconds} = tv_interval($extract_start) if defined $metrics;
         put( $cachekey, $content );
@@ -351,6 +349,45 @@ sub get_page_data ( $id, $path, $metrics = undef ) {
         $metrics->{cache_status} = "hit" if defined $metrics;
     }
     return $content;
+}
+
+# Per-worker memo of id -> on-disk archive path.
+#
+# The archive path for a given id is content-hash-stable: it only changes when
+# the archive is replaced, re-id'd, or cleaned up. Resolving it on every
+# PageCache miss used to open a fresh Redis connection (`get_redis` + AUTH +
+# SELECT + HGET `file` + `quit`) per page. With reader preload firing several
+# page requests in parallel, cold-reading a new archive paid this round-trip
+# multiple times for a value that is invariant across the whole session.
+#
+# The memo is invalidated by invalidate_archive_path_cache(), which the
+# archive-content mutation paths call (change_archive_id, delete_archive,
+# clean_database, Shinobu filename-discrepancy rewrite). Per-worker is safe:
+# a stale entry here only risks pointing at an old path, and the extraction
+# call sites already handle missing files.
+my %ARCHIVE_PATH_CACHE;
+
+sub _resolve_archive_path ($id) {
+    return $ARCHIVE_PATH_CACHE{$id} if exists $ARCHIVE_PATH_CACHE{$id};
+
+    my $redis   = LANraragi::Model::Config->get_redis;
+    my $archive = get_archive_path( $redis, $id );
+    $redis->quit();
+
+    $ARCHIVE_PATH_CACHE{$id} = $archive;
+    return $archive;
+}
+
+# Clear the per-worker archive-path memo. Call after any mutation that can
+# change an archive's on-disk path or id mapping: change_archive_id,
+# delete_archive, clean_database, and Shinobu's filename-discrepancy rewrite.
+sub invalidate_archive_path_cache {
+    my ($id) = @_;
+    if ( defined $id ) {
+        delete $ARCHIVE_PATH_CACHE{$id};
+    } else {
+        %ARCHIVE_PATH_CACHE = ();
+    }
 }
 
 sub _crop_cache_key ( $id, $path, $format ) {
@@ -662,6 +699,10 @@ sub delete_archive ($id) {
     }
     $redis->del($id);
     $redis->quit();
+
+    # Drop the per-worker id->path memo so a future re-added archive at the
+    # same id resolves fresh.
+    invalidate_archive_path_cache($id);
 
     # Clean up cover duplicate pairs for the deleted archive.
     eval {

@@ -139,6 +139,12 @@ sub change_archive_id ( $old_id, $new_id ) {
         )
     );
 
+    # The on-disk path for old_id is gone and new_id may resolve to a different
+    # path; clear the per-worker id->path memo for both. Deferred call avoids a
+    # compile-time circular use with Model::Archive (which uses this module).
+    LANraragi::Model::Archive::invalidate_archive_path_cache($old_id);
+    LANraragi::Model::Archive::invalidate_archive_path_cache($new_id);
+
     # Update archive size
     my $file = get_archive_path( $redis, $new_id );
     $redis->hset( $new_id, "arcsize", -s $file );
@@ -508,6 +514,11 @@ sub clean_database {
 
     $redis->quit;
     $redis_config->quit;
+
+    # clean_database may blank/remove the file path for any number of ids, so
+    # drop the whole per-worker id->path memo rather than tracking per-id.
+    LANraragi::Model::Archive::invalidate_archive_path_cache();
+
     return ( $deleted_arcs, $unlinked_arcs );
 }
 

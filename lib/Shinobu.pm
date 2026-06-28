@@ -410,6 +410,12 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
             $redis_arc->hset( $id, "file", $file );
             $redis_arc->hset( $id, "name", redis_encode($name) );
             $redis_arc->wait_all_responses;
+
+            # The on-disk path for $id changed; clear the per-worker id->path
+            # memo so the next page extraction resolves the new filename.
+            # Deferred fully-qualified call avoids a compile-time circular use.
+            LANraragi::Model::Archive::invalidate_archive_path_cache($id);
+
             invalidate_cache();
         }
 
