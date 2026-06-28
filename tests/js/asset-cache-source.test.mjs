@@ -33,6 +33,50 @@ test("versioned module paths also include deploy-specific asset cache busting", 
     assert.match(generic, /\/themes\/\$css_file\?\$asset_version/);
 });
 
+test("classic vendor scripts in index and reader are deferred and cache-busted", async () => {
+    const index = await source("templates/index.html.tt2");
+    const reader = await source("templates/reader.html.tt2");
+
+    // Every classic vendor <script src> must be deferred (non-blocking) and
+    // carry the deploy-specific cache-bust query, since after_static serves
+    // /js/* with a 1-day Cache-Control and no ?$asset_version would let a
+    // stale vendored copy survive a deploy for up to 24h.
+    const extractVendorScriptAttrs = (html) => {
+        const out = [];
+        // Capture the attributes portion of each <script ...> tag whose src
+        // points at /js/vendor/.
+        const re = /<script\s+([^>]*?)>/g;
+        let m;
+        while ((m = re.exec(html)) !== null) {
+            const attrs = m[1];
+            if (attrs.includes("/js/vendor/")) {
+                out.push(attrs);
+            }
+        }
+        return out;
+    };
+
+    for (const attrs of extractVendorScriptAttrs(index)) {
+        assert.match(attrs, /defer/, `index vendor script missing defer: ${attrs}`);
+        assert.match(attrs, /\?\$asset_version/, `index vendor script missing ?$asset_version: ${attrs}`);
+    }
+    // Sanity: the index actually has the heavy vendor set we expect deferred.
+    // The src URL is wrapped in [% c.url_for("...?$asset_version") %], so the
+    // cache-bust query sits inside the template helper and defer follows the
+    // closing %].
+    assert.match(index, /swiper-bundle\.min\.js\?\$asset_version"\) %\]"\s+defer/);
+    assert.match(index, /jquery\.min\.js\?\$asset_version"\) %\]"\s+defer/);
+
+    for (const attrs of extractVendorScriptAttrs(reader)) {
+        assert.match(attrs, /defer/, `reader vendor script missing defer: ${attrs}`);
+        assert.match(attrs, /\?\$asset_version/, `reader vendor script missing ?$asset_version: ${attrs}`);
+    }
+    // raty is only loaded for logged-in readers (the rating widget is gated
+    // behind IF userlogged); jquery + contextMenu always load.
+    assert.match(reader, /jquery\.min\.js\?\$asset_version"\) %\]"\s+defer/);
+    assert.match(reader, /\[% IF userlogged %\][\s\S]*?raty\.min\.js\?\$asset_version"\) %\]"\s+defer/);
+});
+
 test("reader dependencies resolve through asset-versioned import map entries", async () => {
     const importmap = await source("templates/common/importmap.html.tt2");
     const reader = await source("public/js/reader.js");

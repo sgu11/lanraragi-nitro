@@ -15,17 +15,24 @@
     <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/config.css?$asset_version") %]" />
     <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/reader-chrome.css?$asset_version") %]" />
 
-    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/fontawesome-all.min.css") %]" />
-    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/ReactToastify.min.css") %]" />
-    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/sweetalert2.min.css") %]" />
-    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/jquery.contextMenu.min.css") %]" />
+    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/fontawesome-all.min.css?$asset_version") %]" />
+    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/ReactToastify.min.css?$asset_version") %]" />
+    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/sweetalert2.min.css?$asset_version") %]" />
+    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/jquery.contextMenu.min.css?$asset_version") %]" />
     [% csshead %]
 
     [% INCLUDE common/importmap %]
 
-    <script src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/javascript"></script>
-    <script src="[% c.url_for("/js/vendor/raty.min.js") %]" type="text/JAVASCRIPT"></script>
-    <script src="[% c.url_for("/js/vendor/jquery.contextMenu.min.js") %]" type="text/JAVASCRIPT"></script>
+    <!-- Vendor scripts are deferred so they no longer block HTML parsing. The
+         reader module entry calls Reader.initializeAll on DOMContentLoaded,
+         which fires after deferred scripts execute, so defer is safe. raty is
+         only needed for the logged-in rating widget (rendered under IF
+         userlogged); jquery + contextMenu are needed for the stamp menu. -->
+    <script src="[% c.url_for("/js/vendor/jquery.min.js?$asset_version") %]" defer></script>
+    <script src="[% c.url_for("/js/vendor/jquery.contextMenu.min.js?$asset_version") %]" defer></script>
+    [% IF userlogged %]
+    <script src="[% c.url_for("/js/vendor/raty.min.js?$asset_version") %]" defer></script>
+    [% END %]
 
     <script type="module">
         import * as Reader from "[% c.url_for("/js/reader.js?$asset_version") %]";

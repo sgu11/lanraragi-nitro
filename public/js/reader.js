@@ -1877,10 +1877,15 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
             if (!commitCurrentNavigation(navigationId, targetPage)) { return; }
         } else {
             if (doublePageMode) {
-                for (const probePage of getDoublePageInitialProbePages(targetPage, maxPage)) {
-                    await loadImage(probePage);
-                    if (!isCurrentNavigation(navigationId)) { return; }
-                }
+                // The probe pages (target, target-1, target+1) only populate
+                // preloadedDimensions for wide-page detection; they don't depend
+                // on each other, so load them concurrently instead of serially.
+                // Each writes to distinct preloadedDimensions/preloadedPromises
+                // keys, so concurrent loadImage calls don't clobber shared state.
+                await Promise.all(
+                    getDoublePageInitialProbePages(targetPage, maxPage).map((probePage) => loadImage(probePage))
+                );
+                if (!isCurrentNavigation(navigationId)) { return; }
 
                 const displayWindow = displayWindowOverride || getDisplayWindow(targetPage, getSpreadState({
                     currentPage: targetPage,

@@ -108,6 +108,28 @@ test("double-page cover navigation only probes the cover before rendering", () =
     assert.deepEqual(getDoublePageInitialProbePages(20, 20), [20, 19]);
 });
 
+test("double-page probe pages are loaded concurrently, not serially awaited", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const readerSrc = await readFile(new URL("../../public/js/reader.js", import.meta.url), "utf8");
+
+    // The probe pages don't depend on each other (they only populate
+    // preloadedDimensions for wide-page detection), so they must be loaded
+    // via Promise.all rather than a serial await loop. Each probe writes to
+    // distinct preloadedDimensions/preloadedPromises keys, so concurrent
+    // loadImage calls are safe.
+    assert.match(
+        readerSrc,
+        /await Promise\.all\(\s*getDoublePageInitialProbePages\([\s\S]*?\.map\([\s\S]*?loadImage/,
+        "double-page probe should use Promise.all over getDoublePageInitialProbePages().map(loadImage)"
+    );
+    // The old serial form must be gone.
+    assert.doesNotMatch(
+        readerSrc,
+        /for \(const probePage of getDoublePageInitialProbePages[^)]*\)\s*\{\s*await loadImage\(probePage\)/,
+        "serial double-page probe loop should be replaced with Promise.all"
+    );
+});
+
 test("single-page spread sliding allows overlapping double-page windows", () => {
     const state = {
         maxPage: 8,

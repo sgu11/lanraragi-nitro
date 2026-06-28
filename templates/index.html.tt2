@@ -13,28 +13,32 @@
 	<link rel="manifest" href="app.webappmanifest" />
 	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$asset_version") %]" />
 
-	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/fontawesome-all.min.css") %]" />
-	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/jquery.contextMenu.min.css") %]" />
-	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/awesomplete.css") %]" />
-	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/tippy.css") %]" />
-	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/allcollapsible.min.css") %]" />
-	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/swiper-bundle.min.css") %]" />
-	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/ReactToastify.min.css") %]" />
-	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/sweetalert2.min.css") %]" />
+	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/fontawesome-all.min.css?$asset_version") %]" />
+	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/jquery.contextMenu.min.css?$asset_version") %]" />
+	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/awesomplete.css?$asset_version") %]" />
+	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/tippy.css?$asset_version") %]" />
+	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/allcollapsible.min.css?$asset_version") %]" />
+	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/swiper-bundle.min.css?$asset_version") %]" />
+	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/ReactToastify.min.css?$asset_version") %]" />
+	<link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/sweetalert2.min.css?$asset_version") %]" />
 	[% csshead %]
 
 	[% INCLUDE common/importmap %]
 
-	<script src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script src="[% c.url_for("/js/vendor/jquery.dataTables.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script src="[% c.url_for("/js/vendor/jquery.ui.position.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script src="[% c.url_for("/js/vendor/jquery.contextMenu.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script src="[% c.url_for("/js/vendor/awesomplete.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script src="[% c.url_for("/js/vendor/popper.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script src="[% c.url_for("/js/vendor/tippy-bundle.umd.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script src="[% c.url_for("/js/vendor/allcollapsible.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script src="[% c.url_for("/js/vendor/swiper-bundle.min.js") %]" type="text/JAVASCRIPT"></script>
-	<script src="[% c.url_for("/js/vendor/clipboard.min.js") %]" type="text/JAVASCRIPT"></script>
+	<!-- Vendor scripts are deferred so they no longer block HTML parsing. The
+	     module entry below uses jQuery(() => {...}), which waits for jQuery to
+	     be available, so defer is safe. Cache-busting ?$asset_version is
+	     mandatory because after_static serves /js/* with a 1-day Cache-Control. -->
+	<script src="[% c.url_for("/js/vendor/jquery.min.js?$asset_version") %]" defer></script>
+	<script src="[% c.url_for("/js/vendor/jquery.dataTables.min.js?$asset_version") %]" defer></script>
+	<script src="[% c.url_for("/js/vendor/jquery.ui.position.min.js?$asset_version") %]" defer></script>
+	<script src="[% c.url_for("/js/vendor/jquery.contextMenu.min.js?$asset_version") %]" defer></script>
+	<script src="[% c.url_for("/js/vendor/awesomplete.min.js?$asset_version") %]" defer></script>
+	<script src="[% c.url_for("/js/vendor/popper.min.js?$asset_version") %]" defer></script>
+	<script src="[% c.url_for("/js/vendor/tippy-bundle.umd.min.js?$asset_version") %]" defer></script>
+	<script src="[% c.url_for("/js/vendor/allcollapsible.min.js?$asset_version") %]" defer></script>
+	<script src="[% c.url_for("/js/vendor/swiper-bundle.min.js?$asset_version") %]" defer></script>
+	<script src="[% c.url_for("/js/vendor/clipboard.min.js?$asset_version") %]" defer></script>
 
 	<script type="module">
 		import * as Index from "[% c.url_for("/js/$version/mod/index.js?$asset_version") %]";
