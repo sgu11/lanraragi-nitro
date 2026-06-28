@@ -36,7 +36,10 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   Crop timing is recorded in metrics.
 - **Blank border crop area guard** reads original/cropped dimensions with
   libvips first and treats ImageMagick as optional fallback, so deployments
-  without PerlMagick do not return 500 after a successful server crop.
+  without PerlMagick do not return 500 after a successful server crop. The
+  entire PerlMagick probe (`new`, `BlobToImage`, `Get`) is wrapped in `eval`,
+  so a partially-broken Image::Magick install (e.g. missing dylib at runtime)
+  also degrades gracefully instead of crashing the request.
 - **Blank border crop fallback** retries the original page when a crop-variant
   preload returns a non-2xx response, so a crop-serving failure does not leave
   the reader on a broken image.

@@ -371,16 +371,16 @@ sub _image_dimensions_from_blob ($content) {
     my ( $vips_width, $vips_height ) = _image_dimensions_from_blob_vips($content);
     return ( $vips_width, $vips_height ) if $vips_width && $vips_height;
 
-    my $image = eval {
+    # Wrap the entire PerlMagick probe: a broken Image::Magick install can
+    # die at ->new, BlobToImage, or Get (e.g. missing dylib), not only at
+    # require. Any of those failures must fall through to "no dimensions".
+    my ( $width, $height ) = eval {
         require Image::Magick;
-        Image::Magick->new;
+        my $image = Image::Magick->new;
+        return unless $image;
+        return if $image->BlobToImage($content);
+        $image->Get( "width", "height" );
     };
-    return if $@ || !$image;
-
-    my $err = $image->BlobToImage($content);
-    return if $err;
-
-    my ( $width, $height ) = $image->Get( "width", "height" );
     return unless $width && $height;
     return ( $width, $height );
 }

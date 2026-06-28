@@ -7,7 +7,25 @@ use Test::Mojo;
 use Mojolicious;
 use File::Path qw(make_path);
 use File::Temp qw(tempdir);
-use Image::Magick;
+
+# Most fixtures in this file (make_page_blob, make_noisy_blob, image_dimensions)
+# call Image::Magick directly, so the whole file requires a working install.
+# A broken dylib (require succeeds at compile time but later calls die) used
+# to abort compilation here, which also made the no-PerlMagick SKIP block
+# below unreachable. Guard the load so the file skips cleanly instead.
+#
+# When Image::Magick's bundle is missing, its compiled .pm still registers
+# an END block that dies ("Image::Magick::constant not defined") during
+# interpreter cleanup, clobbering the skip exit code. We register our own
+# END first (so it runs last, LIFO) and restore $? on the skip path.
+our $IM_LOAD_OK;
+END { $? = 0 if !$IM_LOAD_OK }
+
+BEGIN {
+    eval { require Image::Magick; 1 }
+        or plan skip_all => "Image::Magick is not available: $@";
+    $IM_LOAD_OK = 1;
+}
 
 use LANraragi::Model::Archive;
 use LANraragi::Model::Tankoubon;
@@ -472,6 +490,28 @@ note("archive page crop=border keeps meaningful crops even when encoded bytes gr
     my $nocrop_key = "crop_page_nocrop/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path";
     ok( exists $cache{$crop_key}, "meaningful byte-larger crop is cached as a crop variant" );
     ok( !exists $cache{$nocrop_key}, "meaningful byte-larger crop does not write a nocrop marker" );
+}
+
+note("image dimension probe tolerates a broken Image::Magick runtime");
+{
+    # Force the Image::Magick fallback path by stubbing out the Vips probe.
+    no warnings 'redefine';
+    local *LANraragi::Model::Archive::_image_dimensions_from_blob_vips = sub { return };
+
+    # Simulate a broken PerlMagick install (dylib load fails at ->new or
+    # BlobToImage dies). The probe must return empty, never propagate the die.
+    local *Image::Magick::new = sub { die "Image::Magick runtime broken\n" };
+
+    my @dims = LANraragi::Model::Archive::_image_dimensions_from_blob("\x89PNG\r\n\x1a\n");
+    ok( !@dims, "_image_dimensions_from_blob returns empty list when Image::Magick dies" );
+    is( scalar(@dims), 0, "broken Image::Magick probe does not propagate a die" );
+
+    # Sanity check: when Image::Magick->new succeeds but BlobToImage dies on
+    # malformed content, the probe still returns empty rather than dying.
+    local *Image::Magick::new = sub { bless {}, "Image::Magick" };
+    local *Image::Magick::BlobToImage = sub { die "BlobToImage runtime broken\n" };
+    my @dims2 = LANraragi::Model::Archive::_image_dimensions_from_blob("not an image");
+    ok( !@dims2, "_image_dimensions_from_blob returns empty list when BlobToImage dies" );
 }
 
 SKIP: {

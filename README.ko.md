@@ -20,7 +20,7 @@ English version: [`README.md`](README.md).
 - **Blank border crop toolbar icon**: crop 활성 상태를 반영함. 활성화 시 `fa-crop`, 비활성화 시 `fa-crop-alt`를 표시함.
 - **Blank border crop redraw**: crop toggle 시 shifted double-page spread를 보존함. canonical pairing으로 snap back하지 않음.
 - **Blank border crop policy**: libvips를 우선 사용하고 cover/landscape spread page는 crop하지 않음. Komikku를 참고한 per-edge light/dark strip detection과 outer 2px edge-noise guard를 사용함. Crop 후보는 byte 크기와 무관하게 cropped area percentage로만 판단함. Page 면적을 5% 미만으로 줄이면 no-crop 처리하고, 의미 있는 border 제거는 re-encode byte가 커져도 crop variant로 cache함. Crop timing은 metrics에 기록함.
-- **Blank border crop area guard**: 원본/crop 결과 dimension 확인에 libvips를 먼저 사용하고 ImageMagick은 있을 때만 fallback함. PerlMagick 없는 deploy에서도 성공한 server crop 뒤 500으로 실패하지 않음.
+- **Blank border crop area guard**: 원본/crop 결과 dimension 확인에 libvips를 먼저 사용하고 ImageMagick은 있을 때만 fallback함. PerlMagick 없는 deploy에서도 성공한 server crop 뒤 500으로 실패하지 않음. PerlMagick probe 전체(`new`, `BlobToImage`, `Get`)를 `eval`로 감싸서, dylib만 깨진 부분적 Image::Magick 설치에서도 요청이 crash 대신 graceful하게 degradation됨.
 - **Blank border crop fallback**: crop variant preload가 non-2xx response를 받으면 원본 page로 재시도함. Crop serving failure가 reader의 broken image로 이어지지 않음.
 - **Shifted spread progress resume**: `5 + 6` 같은 shifted double-page spread 상태로 reload해도 canonical pairing으로 snap back하지 않음.
 - **Infinite-scroll reader spacing**: 일반 infinite-scroll layout에서 수직 image margin 0 적용.
