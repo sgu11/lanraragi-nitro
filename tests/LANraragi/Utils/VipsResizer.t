@@ -14,11 +14,17 @@ $module->redefine('get_logger', get_logger_mock());
 
 use LANraragi::Utils::Vips;
 
+our $IM_LOAD_OK;
+END { $? = 0 if !$IM_LOAD_OK }
+BEGIN {
+    eval { require Image::Magick; 1 }
+        or plan skip_all => "Image::Magick is not available: $@";
+    $IM_LOAD_OK = 1;
+}
+
 if (!LANraragi::Utils::Vips::is_vips_loaded) {
     plan skip_all => "libvips is not installed";
 };
-
-use Image::Magick;
 
 setup_redis_mock();
 

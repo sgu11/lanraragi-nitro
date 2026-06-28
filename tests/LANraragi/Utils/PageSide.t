@@ -6,6 +6,13 @@ use File::Temp qw(tempdir);
 use Test::More;
 use Test::MockObject;
 
+# The IM-dependent subtest below eval-guards `require Image::Magick`, but a
+# failed require still registers Image::Magick's compiled END block, which
+# dies during interpreter cleanup and clobbers the exit code. Track whether
+# IM loaded successfully and neutralize that clobbering on the skip path.
+our $IM_LOAD_OK;
+END { $? = 0 if !$IM_LOAD_OK }
+
 use LANraragi::Utils::PageSide qw(
   choose_first_spread_start
   clear_first_spread_start_detection
@@ -56,7 +63,8 @@ subtest "projects interior samples to first spread anchored on page 4" => sub {
 };
 
 subtest "detects page side from the lower-complexity blank strip" => sub {
-    eval { require Image::Magick; 1 } or plan skip_all => "Image::Magick not available";
+    $IM_LOAD_OK = eval { require Image::Magick; 1 };
+    plan skip_all => "Image::Magick not available" unless $IM_LOAD_OK;
 
     my $left_page = Image::Magick->new( size => "200x300" );
     $left_page->ReadImage("xc:white");

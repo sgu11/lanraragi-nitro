@@ -4,7 +4,13 @@ use utf8;
 use v5.36;
 
 use Test::More;
-use Image::Magick;
+our $IM_LOAD_OK;
+END { $? = 0 if !$IM_LOAD_OK }
+BEGIN {
+    eval { require Image::Magick; 1 }
+        or plan skip_all => "Image::Magick is not available: $@";
+    $IM_LOAD_OK = 1;
+}
 use LANraragi::Utils::Vips;
 
 my $loaded = eval { require LANraragi::Utils::ImageBorderCrop; 1 };
