@@ -55,7 +55,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - **Double-page rendering** no longer flickers between page transitions.
 - **Adaptive offset** keeps covers and wide pages single, stores server-detected
   `Pair 2-3` / `Pair 3-4` hints per archive, and exposes a simple on/off reader
-  setting.
+  setting. The detector uses libvips first and ImageMagick only as fallback, so
+  libvips-only deployments can still classify early interior pages.
 - **Delete key in reader** opens the standard archive/tankoubon deletion
   confirmation modal and returns to the library after confirmed deletion.
 - **Header hidden reader layout** now uses the same minimal chrome as infinite
@@ -134,7 +135,8 @@ Detection heuristic:
   evidence.
 - It samples pages 3-10, skips pages that cannot decode, and treats wide pages
   (`width >= height * 1.20`) as `UNKNOWN`.
-- Each sampled page is downscaled to fit within `320x320`. The detector compares
+- Each sampled page is decoded with libvips first and ImageMagick only as
+  fallback, then downscaled to fit within `320x320`. The detector compares
   vertical strips on the left and right edges. The strip width is 10% of the
   sampled width, clamped to at least 4 px and at most half the image width.
 - Edge complexity is based on luminance gradients plus darkness. In RTL manga,

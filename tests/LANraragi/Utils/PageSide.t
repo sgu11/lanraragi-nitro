@@ -1,7 +1,9 @@
 use strict;
 use warnings;
 use utf8;
+use File::Spec;
 use File::Temp qw(tempdir);
+use POSIX      qw(_exit);
 
 use Test::More;
 use Test::MockObject;
@@ -18,6 +20,40 @@ use LANraragi::Utils::PageSide qw(
   clear_first_spread_start_detection
   recent_archive_ids
 );
+
+sub make_grayscale_test_page {
+    my ( $width, $height, $dark_side ) = @_;
+    my $strip = 25;
+    my $body  = "";
+    for my $y ( 0 .. $height - 1 ) {
+        for my $x ( 0 .. $width - 1 ) {
+            my $is_dark =
+                 ( $dark_side eq "left"  && $x < $strip )
+              || ( $dark_side eq "right" && $x >= $width - $strip );
+            $body .= pack( "C", $is_dark ? 0 : 255 );
+        }
+    }
+    return "P5\n$width $height\n255\n" . $body;
+}
+
+sub imagemagick_available {
+    my $pid = fork();
+    return 0 unless defined $pid;
+
+    if ( $pid == 0 ) {
+        open STDOUT, ">", File::Spec->devnull;
+        open STDERR, ">", File::Spec->devnull;
+        my $ok = eval {
+            require Image::Magick;
+            Image::Magick->new;
+            1;
+        };
+        _exit( $ok ? 0 : 1 );
+    }
+
+    waitpid( $pid, 0 );
+    return $? == 0;
+}
 
 subtest "projects interior samples to first spread starting at page 2" => sub {
     my $result = choose_first_spread_start(
@@ -62,7 +98,34 @@ subtest "projects interior samples to first spread anchored on page 4" => sub {
     is( $result->{first_spread_start}, 4, "page 3 RIGHT / page 4 LEFT implies Pair 3-4" );
 };
 
+subtest "detects page side through libvips when ImageMagick is unavailable" => sub {
+    my $vips_ok = eval {
+        require LANraragi::Utils::Vips;
+        LANraragi::Utils::Vips::init("pageside-vips-test");
+        LANraragi::Utils::Vips::is_vips_loaded();
+    };
+    plan skip_all => "libvips not available" unless $vips_ok;
+
+    my $left_blob = make_grayscale_test_page( 200, 300, "left" );
+
+    local @INC = (
+        sub {
+            my ( $coderef, $filename ) = @_;
+            die "ImageMagick deliberately unavailable\n" if $filename eq "Image/Magick.pm";
+            return;
+        },
+        @INC
+    );
+
+    my $left_sample = LANraragi::Utils::PageSide::detect_page_side( $left_blob, 3 );
+
+    is( $left_sample->{side}, "LEFT", "libvips fallback detects the page as LEFT" );
+    isnt( $left_sample->{reason}, "decode_failed", "decode succeeds without ImageMagick" );
+};
+
 subtest "detects page side from the lower-complexity blank strip" => sub {
+    plan skip_all => "Image::Magick not available" unless imagemagick_available();
+
     $IM_LOAD_OK = eval { require Image::Magick; 1 };
     plan skip_all => "Image::Magick not available" unless $IM_LOAD_OK;
 

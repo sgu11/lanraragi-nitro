@@ -31,7 +31,7 @@ our @EXPORT_OK = qw(
 );
 
 use constant FIRST_PAGE_SIDE_VERSION   => 1;
-use constant FIRST_SPREAD_START_VERSION => 2;
+use constant FIRST_SPREAD_START_VERSION => 3;
 use constant MIN_SAMPLE_CONFIDENCE     => 0.55;
 use constant MIN_VOTE_GAP              => 0.35;
 use constant MIN_CONFIDENT_SAMPLES     => 2;
@@ -320,20 +320,9 @@ sub _store_first_spread_start ( $redis, $id, $result ) {
 }
 
 sub detect_page_side ( $contents, $page_index ) {
-    my $img;
-    my $frame;
+    my $decoded = _decode_page_luminance_with_vips($contents) // _decode_page_luminance_with_imagemagick($contents);
 
-    eval {
-        require Image::Magick;
-        $img = Image::Magick->new;
-        $img->Set( option => "jpeg:size=320x320" );
-        my $err = $img->BlobToImage($contents);
-        die "$err\n" if $err;
-        $frame = $img->[0] // $img;
-        $frame->Sample( geometry => "320x320>" );
-    };
-
-    if ($@ || !$frame) {
+    if (!$decoded) {
         return {
             page_index => $page_index,
             side       => "UNKNOWN",
@@ -342,7 +331,7 @@ sub detect_page_side ( $contents, $page_index ) {
         };
     }
 
-    my ( $width, $height ) = $frame->Get( "width", "height" );
+    my ( $width, $height, $pixel_at ) = @{$decoded}{qw(width height pixel_at)};
     return {
         page_index => $page_index,
         side       => "UNKNOWN",
@@ -362,8 +351,8 @@ sub detect_page_side ( $contents, $page_index ) {
     my $strip = max( 4, int( $width * 0.10 ) );
     $strip = min( $strip, int( $width / 2 ) );
 
-    my $left_score  = _edge_score( $frame, 0, $strip - 1, $height );
-    my $right_score = _edge_score( $frame, $width - $strip, $width - 1, $height );
+    my $left_score  = _edge_score( $pixel_at, 0, $strip - 1, $height );
+    my $right_score = _edge_score( $pixel_at, $width - $strip, $width - 1, $height );
     my $delta       = $right_score - $left_score;
     my $magnitude   = abs($delta);
 
@@ -384,7 +373,83 @@ sub detect_page_side ( $contents, $page_index ) {
     };
 }
 
-sub _edge_score ( $frame, $x_start, $x_end, $height ) {
+sub _decode_page_luminance_with_vips ($contents) {
+    my ( $width, $height, $bands, @raw );
+    eval {
+        require LANraragi::Utils::Vips;
+        die "libvips is not loaded\n" unless LANraragi::Utils::Vips::is_vips_loaded();
+        LANraragi::Utils::Vips::init("LANraragi");
+
+        my $resized = LANraragi::Utils::Vips::fit_resize( $contents, 320, 320 );
+
+        my $grey;
+        my $cs_ret = LANraragi::Utils::Vips::vips_colourspace(
+            $resized, \$grey, LANraragi::Utils::Vips::VIPS_INTERPRETATION_B_W, undef
+        );
+        LANraragi::Utils::Vips::unref_image($resized);
+        die "Error converting to greyscale: " . LANraragi::Utils::Vips::fetch_and_clear_error() . "\n"
+          if $cs_ret != 0;
+
+        my $gray;
+        my $cast_ret = LANraragi::Utils::Vips::vips_cast(
+            $grey, \$gray, LANraragi::Utils::Vips::VIPS_FORMAT_UCHAR, undef
+        );
+        LANraragi::Utils::Vips::unref_image($grey);
+        die "Error casting to uchar: " . LANraragi::Utils::Vips::fetch_and_clear_error() . "\n"
+          if $cast_ret != 0;
+
+        ( $width, $height, $bands ) = (
+            LANraragi::Utils::Vips::width($gray),
+            LANraragi::Utils::Vips::height($gray),
+            LANraragi::Utils::Vips::bands($gray)
+        );
+        $bands = max( 1, $bands || 1 );
+
+        my ( $bytes, $size ) = LANraragi::Utils::Vips::read_pixels($gray);
+        LANraragi::Utils::Vips::unref_image($gray);
+        @raw = unpack( "C*", $bytes );
+
+        my $expected = $width * $height * $bands;
+        die "Unexpected pixel buffer size: $size (expected >= $expected)\n" if @raw < $expected;
+    };
+    return if $@ || !$width || !$height || !@raw;
+
+    return {
+        width    => $width,
+        height   => $height,
+        pixel_at => sub ( $x, $y ) {
+            my $offset = ( ( $y * $width ) + $x ) * $bands;
+            return ( $raw[$offset] // 255 ) / 255;
+        }
+    };
+}
+
+sub _decode_page_luminance_with_imagemagick ($contents) {
+    my $img;
+    my $frame;
+
+    eval {
+        require Image::Magick;
+        $img = Image::Magick->new;
+        $img->Set( option => "jpeg:size=320x320" );
+        my $err = $img->BlobToImage($contents);
+        die "$err\n" if $err;
+        $frame = $img->[0] // $img;
+        $frame->Sample( geometry => "320x320>" );
+    };
+    return if $@ || !$frame;
+
+    my ( $width, $height ) = $frame->Get( "width", "height" );
+    return unless $width && $height;
+
+    return {
+        width    => $width,
+        height   => $height,
+        pixel_at => sub ( $x, $y ) { _pixel_luminance( $frame, $x, $y ) }
+    };
+}
+
+sub _edge_score ( $pixel_at, $x_start, $x_end, $height ) {
     my $x_step = max( 1, int( ( $x_end - $x_start + 1 ) / 5 ) );
     my $y_step = max( 1, int( $height / 64 ) );
     my ( $luminance_sum, $gradient_sum, $count ) = ( 0, 0, 0 );
@@ -392,7 +457,7 @@ sub _edge_score ( $frame, $x_start, $x_end, $height ) {
     for ( my $x = $x_start; $x <= $x_end; $x += $x_step ) {
         my $previous;
         for ( my $y = 0; $y < $height; $y += $y_step ) {
-            my $lum = _pixel_luminance( $frame, $x, $y );
+            my $lum = $pixel_at->( $x, $y );
             $luminance_sum += $lum;
             $gradient_sum += abs( $lum - $previous ) if defined $previous;
             $previous = $lum;
