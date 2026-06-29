@@ -35,6 +35,19 @@ package FakeArchiveReq {
     }
 }
 
+# Minimal response mock so controllers under test can set Cache-Control/Vary
+# headers (filelist, metadata) the same way the real Mojo controller does.
+package FakeArchiveResHeaders {
+    sub new { return bless { set => [] }, shift }
+    sub cache_control { push @{ shift->{set} }, [ cache_control => $_[1] ] }
+    sub vary          { push @{ shift->{set} }, [ vary          => $_[1] ] }
+}
+
+package FakeArchiveRes {
+    sub new { return bless { headers => FakeArchiveResHeaders->new }, shift }
+    sub headers { return shift->{headers} }
+}
+
 package FakeArchiveRedis {
     sub new { return bless {}, shift }
     sub quit { return 1 }
@@ -75,6 +88,7 @@ package FakeArchiveController {
         );
         return bless {
             req     => $req,
+            res     => FakeArchiveRes->new,
             stash   => $args{stash} || {},
             minion  => $args{minion} || FakeArchiveMinion->new,
             renders => [],
@@ -83,6 +97,7 @@ package FakeArchiveController {
 
     sub openapi   { return FakeArchiveOpenAPI->new(shift) }
     sub req       { return shift->{req} }
+    sub res       { return shift->{res} }
     sub minion    { return shift->{minion} }
     sub LRR_CONF  { return FakeArchiveConfig->new }
 

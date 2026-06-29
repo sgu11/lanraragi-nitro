@@ -464,7 +464,13 @@ sub _apply_border_crop ( $id, $path, $format, $content, $metrics = undef ) {
     $metrics->{crop_seconds} = tv_interval($crop_start) if defined $metrics;
 
     if ( defined $cropped && length($cropped) ) {
+        # Time the dimension-probe separately from the detector so the Phase 0
+        # metrics can tell detector cost (crop_blank_borders) from the
+        # _crop_area_savings_ratio double-decode cost (CROP-3). Today this is
+        # two full-resolution libvips decodes just to read width/height.
+        my $dims_start = [gettimeofday];
         my $area_savings = _crop_area_savings_ratio( $content, $cropped );
+        $metrics->{crop_dims_seconds} = tv_interval($dims_start) if defined $metrics;
         if ( $area_savings < CROP_MIN_AREA_SAVINGS_RATIO ) {
             put( $nocrop_key, "1" );
             $metrics->{cache_status} = "nocrop_area" if defined $metrics;
@@ -493,6 +499,7 @@ sub serve_page {
         extract_seconds  => 0,
         resize_seconds   => 0,
         crop_seconds     => 0,
+        crop_dims_seconds => 0,
     );
     my $crop_borders = ( $self->req->param('crop') // "" ) eq "border";
 
