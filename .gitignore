@@ -25,4 +25,5 @@ smoke-*.png
 
 # Agent artifact files
 .sisyphus/
+.claude/
 *.original.md
