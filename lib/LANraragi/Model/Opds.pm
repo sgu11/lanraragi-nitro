@@ -10,7 +10,7 @@ use Mojo::Util qw(xml_escape);
 
 use LANraragi::Utils::Generic  qw(get_tag_with_namespace);
 use LANraragi::Utils::Archive  qw(get_filelist);
-use LANraragi::Utils::Database qw(get_archive_json);
+use LANraragi::Utils::Database qw(get_archive_json get_archive_json_multi);
 use LANraragi::Utils::Path     qw(get_archive_path);
 
 use LANraragi::Model::Category;
@@ -32,9 +32,22 @@ sub generate_opds_catalog {
 
     my @list = ();
 
+    # Fetch all archive JSON in one MULTI/EXEC batch instead of one Redis
+    # connection + HMGET per row. For a 30-entry catalog page this collapses
+    # ~30 serialized (connect + AUTH + SELECT + exists + HGET + HMGET + quit)
+    # cycles into one transaction. OPDS feeds are polled frequently by reader
+    # apps, so this is on a real hot path.
+    #
+    # build_json (called inside get_archive_json_multi) already returns undef
+    # for archives whose file is missing on disk, so missing-file rows are
+    # filtered for free by the grep.
+    my %base_json = map { $_->{arcid} => $_ } grep { defined } get_archive_json_multi(@keys);
+
     foreach my $id (@keys) {
-        my $arcdata = get_opds_data($id);
-        push @list, $arcdata if $arcdata;
+        my $arcdata = $base_json{$id};
+        next unless $arcdata;
+        _derive_opds_fields($arcdata);
+        push @list, $arcdata;
     }
 
     foreach my $cat (@cats) {
@@ -99,7 +112,20 @@ sub get_opds_data {
     unless ( -e $file ) { return; }
 
     my $arcdata = get_archive_json( $redis, $id );
-    unless ($arcdata) { return; }
+    $redis->quit();
+    return unless $arcdata;
+
+    _derive_opds_fields($arcdata);
+    return $arcdata;
+}
+
+# Derive OPDS-specific fields onto an already-fetched archive JSON hashref.
+# Pure (no Redis): dateadded/author/language/circle/event are parsed from the
+# tags string, lastreaddate from lastreadtime, and mimetype from the extension
+# that build_json already populated. Kept separate so generate_opds_catalog
+# can batch the Redis fetch and only do this per-row derivation.
+sub _derive_opds_fields {
+    my ($arcdata) = @_;
 
     my $tags = $arcdata->{tags};
 
@@ -114,11 +140,13 @@ sub get_opds_data {
     $arcdata->{event}    = get_tag_with_namespace( "event",    $tags, "" );
 
     # Application/zip is universally hated by all readers so it's better to use x-cbz and x-cbr here.
-    if ( $file =~ /^(.*\/)*.+\.(pdf)$/ ) {
+    # Derive from the extension build_json already populated (no extra Redis read).
+    my $ext = $arcdata->{extension} // "";
+    if ( $ext eq "pdf" ) {
         $arcdata->{mimetype} = "application/pdf";
-    } elsif ( $file =~ /^(.*\/)*.+\.(rar|cbr)$/ ) {
+    } elsif ( $ext eq "rar" || $ext eq "cbr" ) {
         $arcdata->{mimetype} = "application/x-cbr";
-    } elsif ( $file =~ /^(.*\/)*.+\.(epub)$/ ) {
+    } elsif ( $ext eq "epub" ) {
         $arcdata->{mimetype} = "application/epub+zip";
     } else {
         $arcdata->{mimetype} = "application/x-cbz";
@@ -130,7 +158,7 @@ sub get_opds_data {
 
     for ( values %{$arcdata} ) { $_ = xml_escape($_); }
 
-    return $arcdata;
+    return;
 }
 
 sub render_archive_page {

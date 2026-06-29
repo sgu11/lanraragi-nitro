@@ -143,6 +143,9 @@ sub record_image_serving_metrics {
         $redis->hincrbyfloat( $key, "crop_duration_sum",    $args{crop_seconds}     // 0 );
         $redis->hincrbyfloat( $key, "resize_duration_sum",  $args{resize_seconds}   // 0 );
         $redis->hincrby( $key, "bytes_sum", $args{bytes} // 0 );
+        # Pipeline the six increments into one round-trip (REDIS-3) instead of
+        # six serialized hincrby/hincrbyfloat calls per page-flip.
+        $redis->wait_all_responses;
     };
     $error = $@;
     $redis->quit();
@@ -176,6 +179,7 @@ sub record_search_metrics {
         $redis->hincrbyfloat( $key, "cacheget_sum", $args{cacheget_seconds} // 0 );
         $redis->hincrbyfloat( $key, "filter_sum",   $args{filter_seconds}   // 0 );
         $redis->hincrbyfloat( $key, "sort_sum",     $args{sort_seconds}     // 0 );
+        $redis->wait_all_responses;
     };
     $error = $@;
     $redis->quit();
@@ -202,6 +206,7 @@ sub record_search_rowbuild_metrics {
         $redis->hincrby( $key, "count", 1 );
         $redis->hincrbyfloat( $key, "duration_sum", $args{duration_seconds} // 0 );
         $redis->hincrby( $key, "rows_sum", $args{rows} // 0 );
+        $redis->wait_all_responses;
     };
     $error = $@;
     $redis->quit();
