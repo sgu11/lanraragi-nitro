@@ -233,3 +233,36 @@ test("reader fit-container and fullscreen modes upscale small pages", async () =
     assert.doesNotMatch(applyContainerWidth, /if \(fscreen\.inFullscreen\(\)\)\s*return;/);
     assert.match(applyContainerWidth, /"width: 1200px; max-width: 100%"[\s\S]*"width: 100%"/);
 });
+
+test("reader container layout skips unchanged style and marker rewrites", async () => {
+    const js = await source("public/js/reader.js");
+    const signatureStart = js.indexOf("function getContainerLayoutSignature(");
+    const signatureEnd = js.indexOf("function applyContainerWidth()", signatureStart);
+    const applyStart = js.indexOf("function applyContainerWidth()");
+    const applyEnd = js.indexOf("function registerPreload()", applyStart);
+    const signature = js.slice(signatureStart, signatureEnd);
+    const applyContainerWidth = js.slice(applyStart, applyEnd);
+    const guardIndex = applyContainerWidth.indexOf("if (appliedContainerLayoutSignature === nextLayoutSignature)");
+    const clearStyleIndex = applyContainerWidth.indexOf("$(\".reader-image, .sni\").attr(\"style\", \"\");");
+    const storeIndex = applyContainerWidth.indexOf("appliedContainerLayoutSignature = nextLayoutSignature;");
+
+    assert.notEqual(signatureStart, -1);
+    assert.notEqual(signatureEnd, -1);
+    assert.notEqual(applyStart, -1);
+    assert.notEqual(applyEnd, -1);
+    assert.match(js, /let appliedContainerLayoutSignature = null;/);
+    assert.match(signature, /fitMode,/);
+    assert.match(signature, /fullscreen,/);
+    assert.match(signature, /infiniteScroll,/);
+    assert.match(signature, /localStorage\.hideHeader === "true",/);
+    assert.match(signature, /state\.containerWidth \|\| "",/);
+    assert.match(signature, /showingSinglePage \? "single" : "double",/);
+    assert.match(applyContainerWidth, /const fullscreen = fscreen\.inFullscreen\(\);/);
+    assert.match(applyContainerWidth, /const nextLayoutSignature = getContainerLayoutSignature\(fullscreen\);/);
+    assert.notEqual(guardIndex, -1);
+    assert.notEqual(clearStyleIndex, -1);
+    assert.notEqual(storeIndex, -1);
+    assert.ok(guardIndex < clearStyleIndex, "unchanged layout returns before clearing inline styles");
+    assert.ok(storeIndex < clearStyleIndex, "new signature is stored before style rewrites");
+    assert.match(applyContainerWidth, /renderMarkers\(\);/);
+});

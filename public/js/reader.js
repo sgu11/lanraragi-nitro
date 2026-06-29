@@ -104,6 +104,7 @@ let overlayFiltered = false;
 let pageNaviState = true;
 let wakeLock = null;
 let readerCursorIdleTimer = null;
+let appliedContainerLayoutSignature = null;
 
 function isCurrentNavigation(navigationId) {
     return isCurrentReaderNavigation(readerCursor, navigationId);
@@ -2173,9 +2174,26 @@ function registerContainerWidth() {
     applyContainerWidth();
 }
 
+function getContainerLayoutSignature(fullscreen) {
+    return [
+        fitMode,
+        fullscreen,
+        infiniteScroll,
+        localStorage.hideHeader === "true",
+        state.containerWidth || "",
+        showingSinglePage ? "single" : "double",
+    ].join("|");
+}
+
 function applyContainerWidth() {
-    $(".reader-image, .sni").attr("style", "");
     const fullscreen = fscreen.inFullscreen();
+    const nextLayoutSignature = getContainerLayoutSignature(fullscreen);
+    if (appliedContainerLayoutSignature === nextLayoutSignature) {
+        return;
+    }
+    appliedContainerLayoutSignature = nextLayoutSignature;
+
+    $(".reader-image, .sni").attr("style", "");
 
     if (fitMode === "fit-height") {
         // Fit to height forces the image to 90% of visible screen height.
