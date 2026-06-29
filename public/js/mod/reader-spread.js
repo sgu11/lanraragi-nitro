@@ -183,7 +183,30 @@ export function spreadStartFlags(mode, firstSpreadStart) {
     };
 }
 
-export function buildSpreadWindows(maxPage, state) {
+// buildSpreadWindows is O(maxPage) and is called from getDisplayWindow,
+// getPageNavigationDestination, and getSpreadState on every double-page turn.
+// It is a pure function of (maxPage, doublePageMode, firstSpreadStart,
+// widePages), so memoize it on a signature of those inputs and only rebuild
+// when one of them changes. widePages is a Set; join its (sorted) members so
+// two Sets with the same contents produce the same signature.
+let spreadWindowsCache = null;
+let spreadWindowsSignature = null;
+
+function buildSpreadWindowsMemoized(maxPage, state) {
+    const widePages = state.widePages || new Set();
+    const wideKey = [...widePages].sort((a, b) => a - b).join(",");
+    const signature = `${Number(maxPage) || 0}|${state.doublePageMode ? 1 : 0}|${state.firstSpreadStart}|${wideKey}`;
+
+    if (spreadWindowsCache && spreadWindowsSignature === signature) {
+        return spreadWindowsCache;
+    }
+
+    spreadWindowsSignature = signature;
+    spreadWindowsCache = buildSpreadWindowsUncached(maxPage, state);
+    return spreadWindowsCache;
+}
+
+function buildSpreadWindowsUncached(maxPage, state) {
     const windows = [];
     const lastPage = Math.max(0, Number(maxPage) || 0);
     const widePages = state.widePages || new Set();
@@ -215,6 +238,12 @@ export function buildSpreadWindows(maxPage, state) {
     }
 
     return windows;
+}
+
+// Public, memoized entry point. Existing callers pass (maxPage, state); keep
+// the signature stable and memoize internally.
+export function buildSpreadWindows(maxPage, state) {
+    return buildSpreadWindowsMemoized(maxPage, state);
 }
 
 export function getDisplayWindow(page, state) {

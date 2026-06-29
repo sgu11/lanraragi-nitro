@@ -70,6 +70,12 @@ sub serve_metadata {
             set_tachiyomi_metadata_cache( $id, $arcdata );
             enqueue_tachiyomi_filelist_warm( $self, $id );
         }
+        # Metadata is stable per archive (content-hash id) until a tag/title
+        # edit bumps the search-gen via invalidate_cache. A short private TTL
+        # lets the browser reuse it within a session (reader re-open, repeated
+        # metadata fetches) without a revalidation round-trip.
+        $self->res->headers->cache_control('private, max-age=300');
+        $self->res->headers->vary('Accept-Encoding');
         $self->render( openapi => $arcdata );
     } else {
         render_api_response( $self, "metadata", "This ID doesn't exist on the server." );
@@ -298,6 +304,15 @@ sub get_file_list {
     if ($err) {
         render_api_response( $self, "get_file_list", $err );
     } else {
+        # The filelist is stable for a given archive (ids are content-hashed)
+        # until force_reload or a metadata change that bumps the search-gen via
+        # invalidate_cache. Allow the browser to reuse it within a short window
+        # to skip a revalidation round-trip on reader re-open. Skip when force
+        # is requested (the caller explicitly wants a fresh fetch).
+        unless ($force) {
+            $self->res->headers->cache_control('private, max-age=300');
+            $self->res->headers->vary('Accept-Encoding');
+        }
         $self->render( openapi => $reader_json );
     }
 }

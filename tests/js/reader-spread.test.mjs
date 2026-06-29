@@ -79,6 +79,36 @@ test("wide pages are single and following pages resume pairing", () => {
     ]);
 });
 
+test("buildSpreadWindows is memoized on its inputs and rebuilds only on change", () => {
+    const state = {
+        doublePageMode: true,
+        firstSpreadStart: 2,
+        widePages: new Set(),
+    };
+
+    // Repeated calls with identical inputs must return the cached array
+    // reference (no O(maxPage) rebuild) — the optimization that makes the
+    // double-page turn path scale with the changing viewport, not pagecount.
+    const first = buildSpreadWindows(50, state);
+    const second = buildSpreadWindows(50, state);
+    assert.equal(second, first, "identical inputs return the cached array reference");
+
+    // Any of the four signature inputs changing must rebuild.
+    const afterMaxPage = buildSpreadWindows(60, state);
+    assert.notEqual(afterMaxPage, first, "changed maxPage rebuilds");
+
+    const afterDoubleModeOff = buildSpreadWindows(60, { ...state, doublePageMode: false });
+    assert.notEqual(afterDoubleModeOff, afterMaxPage, "changed doublePageMode rebuilds");
+
+    const afterWidePages = buildSpreadWindows(60, { ...state, widePages: new Set([3]) });
+    assert.notEqual(afterWidePages, afterDoubleModeOff, "changed widePages rebuilds");
+
+    // widePages equality is by content, not identity: a new Set with the same
+    // members must still hit the cache.
+    const sameWidePages = buildSpreadWindows(60, { ...state, widePages: new Set([3]) });
+    assert.equal(sameWidePages, afterWidePages, "new Set with same members hits the cache");
+});
+
 test("display lookup normalizes a page inside a spread to the spread start", () => {
     assert.deepEqual(getDisplayWindow(2, {
         maxPage: 6,
