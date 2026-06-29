@@ -32,6 +32,9 @@ use LANraragi::Utils::Path       qw(unlink_path get_archive_path);
 use LANraragi::Model::Metrics;
 
 use constant CROP_MIN_AREA_SAVINGS_RATIO => 0.05;
+use constant CROP_SINGLEFLIGHT_LOCK_TTL_SECONDS => 30;
+use constant CROP_SINGLEFLIGHT_WAIT_ATTEMPTS    => 10;
+use constant CROP_SINGLEFLIGHT_WAIT_USEC        => 50_000;
 
 # get_title(id)
 #   Returns the title for the archive matching the given id.
@@ -445,6 +448,98 @@ sub _crop_nocrop_cache_key ( $id, $path ) {
     return "crop_page_nocrop/v" . CROP_ALGORITHM_VERSION . "/$id/$path";
 }
 
+sub _crop_singleflight_lock_key ( $id, $path, $format ) {
+    return "LRR_PAGECROPJOB:v" . CROP_ALGORITHM_VERSION . ":$id:$path:$format";
+}
+
+sub _claim_crop_singleflight_lock ($lock_key) {
+    my $redis = eval { LANraragi::Model::Config->get_redis_config };
+    return if $@ || !$redis;
+
+    my ( $sec, $usec ) = gettimeofday;
+    my $token = "$$:$sec:$usec";
+    my $claimed = eval { $redis->set( $lock_key, $token, "NX", "EX", CROP_SINGLEFLIGHT_LOCK_TTL_SECONDS ) };
+    return ( $redis, $token ) if $claimed;
+    return ( $redis, undef );
+}
+
+sub _release_crop_singleflight_lock ( $redis, $lock_key, $token ) {
+    return if !$redis;
+    eval {
+        if ( defined $token ) {
+            my $stored = $redis->get($lock_key);
+            $redis->del($lock_key) if defined $stored && $stored eq $token;
+        }
+        1;
+    };
+    $redis->quit();
+}
+
+sub _cached_border_crop_result ( $crop_key, $nocrop_key, $content, $metrics = undef ) {
+    my $cached = fetch($crop_key);
+    if ( defined $cached ) {
+        $metrics->{cache_status} = "hit" if defined $metrics;
+        return ( $cached, 1, 1 );
+    }
+
+    if ( defined fetch($nocrop_key) ) {
+        $metrics->{cache_status} = "nocrop" if defined $metrics;
+        return ( $content, 0, 1 );
+    }
+
+    return;
+}
+
+sub _wait_for_border_crop_result ( $crop_key, $nocrop_key, $content, $metrics = undef ) {
+    for ( 1 .. CROP_SINGLEFLIGHT_WAIT_ATTEMPTS ) {
+        usleep(CROP_SINGLEFLIGHT_WAIT_USEC);
+        my @result = _cached_border_crop_result( $crop_key, $nocrop_key, $content, $metrics );
+        return @result if @result;
+    }
+    return;
+}
+
+sub _compute_and_cache_border_crop ( $id, $path, $format, $content, $metrics, $crop_key ) {
+    my ( $result, $was_cropped ) = _apply_border_crop( $id, $path, $format, $content, $metrics );
+    put( $crop_key, $result ) if $was_cropped;
+    return ( $result, $was_cropped );
+}
+
+sub _apply_border_crop_singleflight ( $id, $path, $format, $content, $metrics, $crop_key ) {
+    my $nocrop_key = _crop_nocrop_cache_key( $id, $path );
+    my @cached = _cached_border_crop_result( $crop_key, $nocrop_key, $content, $metrics );
+    return @cached[ 0, 1 ] if @cached;
+
+    my $lock_key = _crop_singleflight_lock_key( $id, $path, $format );
+    my ( $redis, $token ) = _claim_crop_singleflight_lock($lock_key);
+
+    if ( $redis && !defined $token ) {
+        my @waited = _wait_for_border_crop_result( $crop_key, $nocrop_key, $content, $metrics );
+        _release_crop_singleflight_lock( $redis, $lock_key, undef );
+        return @waited[ 0, 1 ] if @waited;
+        return _compute_and_cache_border_crop( $id, $path, $format, $content, $metrics, $crop_key );
+    }
+
+    return _compute_and_cache_border_crop( $id, $path, $format, $content, $metrics, $crop_key ) if !$redis;
+
+    my ( $result, $was_cropped );
+    my $error;
+    eval {
+        my @winner_cached = _cached_border_crop_result( $crop_key, $nocrop_key, $content, $metrics );
+        if (@winner_cached) {
+            ( $result, $was_cropped ) = @winner_cached[ 0, 1 ];
+        } else {
+            ( $result, $was_cropped ) =
+              _compute_and_cache_border_crop( $id, $path, $format, $content, $metrics, $crop_key );
+        }
+        1;
+    } or $error = $@;
+
+    _release_crop_singleflight_lock( $redis, $lock_key, $token );
+    die $error if $error;
+    return ( $result, $was_cropped );
+}
+
 sub _image_dimensions_from_blob ($content) {
     return unless defined $content && length($content);
 
@@ -606,8 +701,8 @@ sub serve_page {
                 $image_metrics{variant}      = "cropped";
                 $image_metrics{cache_status} = "miss";
                 my $was_cropped;
-                ( $content, $was_cropped ) = _apply_border_crop( $id, $path, $format, $content, \%image_metrics );
-                put( $cachekey, $content ) if $was_cropped;
+                ( $content, $was_cropped ) =
+                  _apply_border_crop_singleflight( $id, $path, $format, $content, \%image_metrics, $cachekey );
             }
         }
         $logger->debug( "Data size:" . length($content) );

@@ -353,6 +353,57 @@ note("archive page crop=border serves and reuses a cropped page variant");
     is( $extracts, 1, "second cropped page request reuses the cropped variant cache" );
 }
 
+note("archive page crop=border waits briefly for an in-flight crop result");
+{
+    my $id = "1234567890abcdef1234567890abcdef12345679";
+    my $page_path = "page-inflight.png";
+    my $source = make_page_blob( 100, 100, "#f8f8f8", [ 12, 10, 76, 82 ], "#222222" );
+    my $cropped = make_page_blob( 80, 86, "#222222", [ 0, 0, 80, 86 ], "#222222" );
+    my $crop_key = "crop_page/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path/png";
+    my $lock_key = "LRR_PAGECROPJOB:v" . CROP_ALGORITHM_VERSION . ":$id:$page_path:png";
+    my %cache;
+    my $extracts = 0;
+    my $crop_calls = 0;
+    my $sleeps = 0;
+
+    $lock_redis = FakeImageLockRedis->new;
+    $lock_redis->{values}{$lock_key} = "other-worker";
+
+    no warnings 'redefine';
+    local *LANraragi::Model::Archive::get_page_data = sub {
+        my ( $id, $path, $metrics ) = @_;
+        $extracts++;
+        $metrics->{cache_status} = "miss" if defined $metrics;
+        return $source;
+    };
+    local *LANraragi::Model::Archive::crop_blank_borders = sub {
+        $crop_calls++;
+        return $cropped;
+    };
+    local *LANraragi::Model::Archive::fetch = sub {
+        my ($key) = @_;
+        return $cache{$key};
+    };
+    local *LANraragi::Model::Archive::put = sub {
+        my ( $key, $value ) = @_;
+        $cache{$key} = $value;
+        return 1;
+    };
+    local *LANraragi::Model::Archive::usleep = sub {
+        $sleeps++;
+        $cache{$crop_key} = $cropped;
+    };
+    local *LANraragi::Model::Archive::get_logger = sub { return FakeImageLogger->new };
+    local *LANraragi::Model::Metrics::record_image_serving_metrics = sub { return 1 };
+
+    my $t = build_image_app();
+    $t->get_ok("/archives/$id/page?path=$page_path&crop=border")->status_is(200);
+    is( $t->tx->res->body, $cropped, "loser request serves the crop written by the in-flight winner" );
+    is( $crop_calls, 0, "loser request does not duplicate crop detection after the winner writes the crop" );
+    is( $extracts, 1, "loser request still extracts the original page needed for bounded fallback" );
+    cmp_ok( $sleeps, ">=", 1, "loser request waits before re-checking the crop cache" );
+}
+
 note("archive page crop=border rejects zero area savings even when encoded bytes grow");
 {
     my $id = "2234567890abcdef1234567890abcdef12345678";
