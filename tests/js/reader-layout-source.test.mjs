@@ -266,3 +266,30 @@ test("reader container layout skips unchanged style and marker rewrites", async 
     assert.ok(storeIndex < clearStyleIndex, "new signature is stored before style rewrites");
     assert.match(applyContainerWidth, /renderMarkers\(\);/);
 });
+
+test("explicit double-page reload revalidates restored windows after wide-page probe", async () => {
+    const js = await source("public/js/reader.js");
+    const helperStart = js.indexOf("function displayWindowHasWidePage(");
+    const helperEnd = js.indexOf("async function goToPage", helperStart);
+    const goToStart = js.indexOf("async function goToPage");
+    const goToEnd = js.indexOf("function updateProgress()", goToStart);
+    const helper = js.slice(helperStart, helperEnd);
+    const goToPage = js.slice(goToStart, goToEnd);
+    const probeIndex = goToPage.indexOf("await Promise.all(");
+    const probedWindowIndex = goToPage.indexOf("const probedDisplayWindow = getDisplayWindow(targetPage, getSpreadState({");
+    const displayWindowIndex = goToPage.indexOf("const displayWindow = displayWindowOverride && !displayWindowHasWidePage(displayWindowOverride)");
+
+    assert.notEqual(helperStart, -1);
+    assert.notEqual(helperEnd, -1);
+    assert.notEqual(goToStart, -1);
+    assert.notEqual(goToEnd, -1);
+    assert.match(helper, /const widePages = getWidePages\(\);/);
+    assert.match(helper, /for \(let page = displayWindow\.start; page <= displayWindow\.end; page \+= 1\)/);
+    assert.match(helper, /if \(widePages\.has\(page\)\) \{/);
+    assert.notEqual(probeIndex, -1);
+    assert.notEqual(probedWindowIndex, -1);
+    assert.notEqual(displayWindowIndex, -1);
+    assert.ok(probeIndex < probedWindowIndex, "wide-page probe happens before recomputing the display window");
+    assert.ok(probedWindowIndex < displayWindowIndex, "restored display window is checked after the probe recomputes current wide pages");
+    assert.match(goToPage, /: probedDisplayWindow;/);
+});

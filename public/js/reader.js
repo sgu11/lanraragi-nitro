@@ -133,6 +133,17 @@ function runQueuedReaderNavigation() {
     return false;
 }
 
+function displayWindowHasWidePage(displayWindow) {
+    if (!displayWindow) { return false; }
+    const widePages = getWidePages();
+    for (let page = displayWindow.start; page <= displayWindow.end; page += 1) {
+        if (widePages.has(page)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function markUserInteractionBeforeInitialPageScroll(e) {
     if (!initialPageScrollPending || hasExplicitPageParameter) { return; }
     if (e?.target?.tagName === "INPUT") { return; }
@@ -1888,9 +1899,12 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
                 );
                 if (!isCurrentNavigation(navigationId)) { return; }
 
-                const displayWindow = displayWindowOverride || getDisplayWindow(targetPage, getSpreadState({
+                const probedDisplayWindow = getDisplayWindow(targetPage, getSpreadState({
                     currentPage: targetPage,
                 }));
+                const displayWindow = displayWindowOverride && !displayWindowHasWidePage(displayWindowOverride)
+                    ? displayWindowOverride
+                    : probedDisplayWindow;
                 const displayStart = displayWindow.start;
 
                 if (displayWindow.end > displayWindow.start) {
