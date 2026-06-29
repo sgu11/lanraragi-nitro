@@ -28,6 +28,42 @@ if ( $ENV{LRR_REDIS_ADDRESS} ) {
     $config->{redis_address} = $ENV{LRR_REDIS_ADDRESS};
 }
 
+{
+    package LANraragi::Model::Config::RedisHandle;
+
+    use strict;
+    use warnings;
+
+    our $AUTOLOAD;
+
+    sub new {
+        my ( $class, $redis, $db, $pid ) = @_;
+        return bless { redis => $redis, db => $db, pid => $pid }, $class;
+    }
+
+    sub _lrr_redis_handle { return shift->{redis} }
+    sub _lrr_redis_pid    { return shift->{pid} }
+
+    sub _lrr_close {
+        my ($self) = @_;
+        return $self->{redis}->quit();
+    }
+
+    # Shared handles are owned by Config.pm. Existing callers still call quit()
+    # in many places; keeping this as a no-op preserves those call sites while
+    # letting the per-process handle stay warm until reset_redis_handles().
+    sub quit { return 1 }
+
+    sub AUTOLOAD {
+        my $self = shift;
+        ( my $method = $AUTOLOAD ) =~ s/^.*:://;
+        return if $method eq 'DESTROY';
+        return $self->{redis}->$method(@_);
+    }
+
+    sub DESTROY { }
+}
+
 # Address and port of your redis instance.
 sub get_redisad { return $config->{redis_address} }
 
@@ -86,9 +122,30 @@ sub get_redis_metrics {
     return get_redis_internal(&get_metricsdb);
 }
 
+my %REDIS_HANDLES;
+
+sub reset_redis_handles {
+    foreach my $handle ( values %REDIS_HANDLES ) {
+        next unless $handle->_lrr_redis_pid == $$;
+        eval { $handle->_lrr_close(); 1 };
+    }
+    %REDIS_HANDLES = ();
+    return 1;
+}
+
 sub get_redis_internal {
 
     my $db      = $_[0];
+    my $handle  = $REDIS_HANDLES{$db};
+
+    if ($handle) {
+        return $handle if $handle->_lrr_redis_pid == $$;
+
+        # Fork safety: child processes inherit the Perl hash and the parent's
+        # file descriptor, but must not reuse or QUIT the parent's socket.
+        delete $REDIS_HANDLES{$db};
+    }
+
     my $redisad = &get_redisad;
 
     # Default redis server location is localhost:6379.
@@ -103,15 +160,17 @@ sub get_redis_internal {
 
     # Switch to specced database
     $redis->select($db);
-    return $redis;
+
+    $REDIS_HANDLES{$db} = LANraragi::Model::Config::RedisHandle->new( $redis, $db, $$ );
+    return $REDIS_HANDLES{$db};
 }
 
 #get_redis_conf(parameter, default)
 #Gets a parameter from the Redis database. If it doesn't exist, we return the default given as a second parameter.
 #
-# Values are cached per-worker with a 30s TTL. The dominant cost here is not the Redis op itself
-# but the fresh Redis connection (`get_redis_config` → `Redis->new` + AUTH + SELECT + quit) on
-# every hit — a single index render fires 6–8 of these. At 10 RPS that's 60–80 TCP cycles/sec.
+# Values are cached per-worker with a 30s TTL. `get_redis_config` returns the
+# process-local shared handle, so cache misses still avoid Redis connection
+# setup after the first config DB access in that worker.
 # Worker config writes (see Controller/Config.pm) explicitly call invalidate_config_cache();
 # other workers pick up changes within 30s via TTL expiry.
 my %CONFIG_CACHE;
