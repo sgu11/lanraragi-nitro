@@ -38,6 +38,34 @@ package ShinobuCoverDedupMinion {
 
 package main;
 
+package ShinobuPageCacheLogger {
+    sub new { bless {}, shift }
+    sub debug { 1 }
+    sub info  { 1 }
+    sub warn  { 1 }
+}
+
+package ShinobuPageCacheRedisCfg {
+    sub new { bless { file => $_[1], id => $_[2] }, $_[0] }
+    sub hexists { 1 }
+    sub hget { return $_[0]->{id} }
+    sub hset { 1 }
+}
+
+package ShinobuPageCacheRedisArc {
+    sub new { bless { arcsize => $_[1] }, $_[0] }
+    sub exists { 1 }
+    sub hget {
+        my ( $self, $id, $field ) = @_;
+        return $self->{arcsize} if $field eq "arcsize";
+        return 1 if $field eq "pagecount";
+        return;
+    }
+    sub hdel { 1 }
+}
+
+package main;
+
 note('wait_for_stable_size returns once a writer stops appending');
 {
     my ( $fh, $filename ) = tempfile( UNLINK => 1 );
@@ -105,6 +133,34 @@ note('same-ID replacement cover dedup refresh enqueues legacy and v2 cover work'
         [ 'compute_coverhash', 'compute_cover_fingerprint' ],
         "replacement path enqueues both coverhash and v2 fingerprint computation"
     );
+}
+
+note('same-ID arcsize mismatch clears stale page-cache variants');
+{
+    my ( $fh, $filename ) = tempfile( UNLINK => 1 );
+    print {$fh} "new archive bytes";
+    close $fh;
+
+    my $id = "1234567890abcdef1234567890abcdef12345678";
+    my @page_cache_clears;
+
+    my $shinobu_mod = Test::MockModule->new('Shinobu');
+    $shinobu_mod->redefine('clear_first_spread_start_detection', sub { return 1 });
+    $shinobu_mod->redefine('add_arcsize', sub { return 1 });
+    $shinobu_mod->redefine('add_pagecount', sub { return 1 });
+    $shinobu_mod->redefine('_invalidate_and_enqueue_cover_dedup_signals', sub { return 1 });
+    $shinobu_mod->redefine('enqueue_first_spread_start_detection', sub { return 1 });
+    $shinobu_mod->redefine('clear_by_id', sub { push @page_cache_clears, @_ });
+
+    Shinobu::update_filemap_entry(
+        ShinobuPageCacheLogger->new,
+        $id,
+        $filename,
+        ShinobuPageCacheRedisCfg->new( $filename, $id ),
+        ShinobuPageCacheRedisArc->new(1),
+    );
+
+    is_deeply( \@page_cache_clears, [$id], "same-ID arcsize mismatch clears page-cache variants" );
 }
 
 done_testing();

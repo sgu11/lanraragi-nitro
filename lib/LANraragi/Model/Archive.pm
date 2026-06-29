@@ -24,7 +24,7 @@ use LANraragi::Utils::Archive    qw(extract_single_file extract_single_file extr
 use LANraragi::Utils::Database   qw(invalidate_cache set_title set_tags set_summary get_archive_json get_archive_json_multi);
 use LANraragi::Utils::ImageBorderCrop qw(CROP_ALGORITHM_VERSION crop_blank_borders);
 use LANraragi::Utils::ImageResponse qw(render_thumbnail_placeholder);
-use LANraragi::Utils::PageCache  qw(fetch put);
+use LANraragi::Utils::PageCache  qw(fetch put clear_by_id);
 use LANraragi::Utils::Redis      qw(redis_decode redis_encode);
 use LANraragi::Utils::Vips       ();
 use LANraragi::Model::Dedup::CoverIndex;
@@ -751,8 +751,9 @@ sub delete_archive ($id) {
     $redis->quit();
 
     # Drop the per-worker id->path memo so a future re-added archive at the
-    # same id resolves fresh.
+    # same id resolves fresh, and clear all page-byte variants for that id.
     invalidate_archive_path_cache($id);
+    clear_by_id($id);
 
     # Clean up cover duplicate pairs for the deleted archive.
     eval {

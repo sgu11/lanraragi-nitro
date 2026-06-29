@@ -23,6 +23,7 @@ use LANraragi::Utils::Tags    qw(unflat_tagrules tags_rules_to_array restore_CRL
 use LANraragi::Utils::Archive qw(get_filelist);
 use LANraragi::Utils::Logging qw(get_logger);
 use LANraragi::Utils::Path    qw(create_path open_path_or_die date_modified get_archive_path);
+use LANraragi::Utils::PageCache qw(clear_by_id);
 
 use LANraragi::Model::Config;
 
@@ -150,6 +151,8 @@ sub change_archive_id ( $old_id, $new_id ) {
     _load_archive_model();
     LANraragi::Model::Archive::invalidate_archive_path_cache($old_id);
     LANraragi::Model::Archive::invalidate_archive_path_cache($new_id);
+    clear_by_id($old_id);
+    clear_by_id($new_id);
 
     # Update archive size
     my $file = get_archive_path( $redis, $new_id );

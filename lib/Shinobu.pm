@@ -36,6 +36,7 @@ use LANraragi::Utils::Logging    qw(get_logger);
 use LANraragi::Utils::Generic    qw(is_archive exec_with_lock_pure);
 use LANraragi::Utils::Redis      qw(redis_encode);
 use LANraragi::Utils::Path       qw(create_path open_path find_path get_archive_path);
+use LANraragi::Utils::PageCache  qw(clear_by_id);
 use LANraragi::Utils::PageSide   qw(clear_first_spread_start_detection enqueue_first_spread_start_detection);
 
 use LANraragi::Model::Config;
@@ -225,6 +226,7 @@ sub update_filemap {
             if ( $actual_size && $current_arcsize != $actual_size ) {
                 $logger->info("arcsize mismatch for $id (cached: " . ($current_arcsize || "none") . ", actual: $actual_size), updating!");
                 $redis_arc->hdel( $id, "pagefiles" );
+                clear_by_id($id);
                 clear_first_spread_start_detection( $redis_arc, $id );
                 add_arcsize( $redis_arc, $id );
                 $logger->debug("Recalculating pagecount for $id");
@@ -371,6 +373,7 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
             if ( !$current_arcsize || $current_arcsize != $actual_size ) {
                 $logger->info("arcsize mismatch for $id (cached: " . ($current_arcsize // "none") . ", actual: $actual_size), updating!");
                 $redis_arc->hdel( $id, "pagefiles" );
+                clear_by_id($id);
                 clear_first_spread_start_detection( $redis_arc, $id );
                 add_arcsize( $redis_arc, $id );
                 $logger->debug("Recalculating pagecount for $id");
@@ -425,6 +428,7 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
         if ( !$current_arcsize || $current_arcsize != $actual_size ) {
             $logger->debug("arcsize mismatch or unset for $id, updating!");
             $redis_arc->hdel( $id, "pagefiles" );
+            clear_by_id($id);
             clear_first_spread_start_detection( $redis_arc, $id );
             add_arcsize( $redis_arc, $id );
 

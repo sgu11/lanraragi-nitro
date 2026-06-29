@@ -64,6 +64,7 @@ my $archive_redis = FakeArchiveDeleteRedis->new(
 );
 my $search_redis = FakeArchiveDeleteRedis->new;
 my $invalidations = 0;
+my @page_cache_clears;
 
 {
     no warnings 'redefine';
@@ -74,6 +75,7 @@ my $invalidations = 0;
     local *LANraragi::Utils::Database::update_indexes = sub { return 1 };
     local *LANraragi::Model::Archive::get_archive_path = sub { return "missing-file.cbz" };
     local *LANraragi::Model::Archive::invalidate_cache = sub { $invalidations++; return 1 };
+    local *LANraragi::Model::Archive::clear_by_id = sub { push @page_cache_clears, @_ };
 
     my $status = LANraragi::Model::Archive::delete_archive($id);
 
@@ -81,6 +83,7 @@ my $invalidations = 0;
 }
 
 is( $invalidations, 1, "delete_archive invalidates search cache generation after index cleanup" );
+is_deeply( \@page_cache_clears, [$id], "delete_archive clears page-cache variants for the deleted archive" );
 is_deeply( $archive_redis->{del}, [$id], "archive hash is deleted" );
 is_deeply( $search_redis->{srem}[0], [ "LRR_NEW", $id ], "archive is removed from NEW search set" );
 
