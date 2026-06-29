@@ -366,8 +366,50 @@ sub get_page_data ( $id, $path, $metrics = undef ) {
 # a stale entry here only risks pointing at an old path, and the extraction
 # call sites already handle missing files.
 my %ARCHIVE_PATH_CACHE;
+my $ARCHIVE_PATH_CACHE_GENERATION;
+
+sub _archive_path_cache_generation_path {
+    my $temp = eval { get_temp() };
+    return unless $temp;
+    return "$temp/archive-path-cache.generation";
+}
+
+sub _read_archive_path_cache_generation {
+    my $path = _archive_path_cache_generation_path();
+    return "" unless $path && -e $path;
+
+    open( my $fh, '<', $path ) or return "";
+    local $/ = undef;
+    my $generation = <$fh> // "";
+    close $fh;
+    return $generation;
+}
+
+sub _bump_archive_path_cache_generation {
+    my $path = _archive_path_cache_generation_path();
+    return unless $path;
+
+    my ( $sec, $usec ) = gettimeofday;
+    open( my $fh, '>', $path ) or return;
+    print {$fh} "$sec.$usec.$$";
+    close $fh;
+}
+
+sub _sync_archive_path_cache_generation {
+    my $generation = _read_archive_path_cache_generation();
+    if ( !defined $ARCHIVE_PATH_CACHE_GENERATION ) {
+        $ARCHIVE_PATH_CACHE_GENERATION = $generation;
+        return;
+    }
+
+    return if $ARCHIVE_PATH_CACHE_GENERATION eq $generation;
+
+    %ARCHIVE_PATH_CACHE = ();
+    $ARCHIVE_PATH_CACHE_GENERATION = $generation;
+}
 
 sub _resolve_archive_path ($id) {
+    _sync_archive_path_cache_generation();
     return $ARCHIVE_PATH_CACHE{$id} if exists $ARCHIVE_PATH_CACHE{$id};
 
     my $redis   = LANraragi::Model::Config->get_redis;
@@ -388,6 +430,7 @@ sub invalidate_archive_path_cache {
     } else {
         %ARCHIVE_PATH_CACHE = ();
     }
+    _bump_archive_path_cache_generation();
 }
 
 sub _crop_cache_key ( $id, $path, $format ) {

@@ -7,7 +7,7 @@ use Test::More;
 use LANraragi::Model::Metrics;
 
 package FakeMetricsRedis {
-    sub new { return bless { hashes => {}, deleted => [] }, shift }
+    sub new { return bless { hashes => {}, deleted => [], wait_all_responses_count => 0 }, shift }
 
     sub hincrby {
         my ( $self, $key, $field, $amount ) = @_;
@@ -40,6 +40,12 @@ package FakeMetricsRedis {
         return scalar @keys;
     }
 
+    sub wait_all_responses {
+        my ($self) = @_;
+        $self->{wait_all_responses_count}++;
+        return 1;
+    }
+
     sub quit { return 1 }
 }
 
@@ -52,7 +58,7 @@ ok( $record, "image serving metrics can be recorded" );
 ok( $export, "image serving metrics can be exported to Prometheus" );
 
 SKIP: {
-    skip "image metrics are not implemented yet", 13 unless $record && $export;
+    skip "image metrics are not implemented yet", 16 unless $record && $export;
 
     my $redis = FakeMetricsRedis->new;
 
@@ -80,6 +86,7 @@ SKIP: {
     is( $redis->{hashes}{$key}{crop_dims_duration_sum}, 0.03, "records crop dimension-probe duration separately from detector" );
     is( $redis->{hashes}{$key}{resize_duration_sum}, 0.05, "records resize duration" );
     is( $redis->{hashes}{$key}{bytes_sum}, 1024, "records response bytes" );
+    is( $redis->{wait_all_responses_count}, 1, "image metric writes are pipelined with wait_all_responses" );
 
     my $prometheus = join "\n", LANraragi::Model::Metrics::get_prometheus_image_metrics();
     like( $prometheus, qr/# TYPE lanraragi_image_serving_requests_total counter/, "exports request counter metadata" );

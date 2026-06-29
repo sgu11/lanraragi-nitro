@@ -4,6 +4,8 @@ use v5.36;
 use strict;
 use warnings;
 
+## no critic (Subroutines::ProhibitExplicitReturnUndef)
+
 use Exporter 'import';
 our @EXPORT_OK = qw(
     canonical_pair

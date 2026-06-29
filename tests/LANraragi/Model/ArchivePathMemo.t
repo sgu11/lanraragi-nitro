@@ -3,6 +3,12 @@ use warnings;
 use utf8;
 
 use Test::More;
+use POSIX qw(_exit);
+
+BEGIN {
+    require File::Temp;
+    $ENV{LRR_TEMP_DIRECTORY} = File::Temp::tempdir( CLEANUP => 1 );
+}
 
 # Exercises the per-worker id -> archive path memo introduced for the reader
 # page-serving hot path (REDIS-2). The memo must:
@@ -101,6 +107,34 @@ subtest "invalidate_archive_path_cache() with no arg drops everything" => sub {
     LANraragi::Model::Archive::get_page_data( "arc2", "003.jpg" );
     my $after = $path_redis->quit_count();
     is( $after - $before, 2, "wholesale flush forces both ids to re-open Redis" );
+};
+
+subtest "path memo notices invalidation from another process" => sub {
+    plan tests => 3;
+
+    LANraragi::Model::Archive::invalidate_archive_path_cache();
+    $path_redis->{hashes}{arc1}{file} = "/library/archive-one.cbz";
+
+    my $before = $path_redis->quit_count();
+    my $old_content = LANraragi::Model::Archive::get_page_data( "arc1", "006.jpg" );
+    my $after_old = $path_redis->quit_count();
+    is( $old_content, "BLOB-for-006.jpg-from-/library/archive-one.cbz",
+        "parent memo starts with the old path" );
+    is( $after_old - $before, 1, "old path was resolved once" );
+
+    $path_redis->{hashes}{arc1}{file} = "/library/archive-one-renamed.cbz";
+
+    my $pid = fork();
+    die "fork failed: $!" unless defined $pid;
+    if ( $pid == 0 ) {
+        LANraragi::Model::Archive::invalidate_archive_path_cache("arc1");
+        _exit(0);
+    }
+    waitpid( $pid, 0 );
+
+    my $new_content = LANraragi::Model::Archive::get_page_data( "arc1", "007.jpg" );
+    is( $new_content, "BLOB-for-007.jpg-from-/library/archive-one-renamed.cbz",
+        "parent drops stale memo after another process invalidates it" );
 };
 
 done_testing();

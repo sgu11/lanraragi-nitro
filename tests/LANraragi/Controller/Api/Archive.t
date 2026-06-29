@@ -39,8 +39,14 @@ package FakeArchiveReq {
 # headers (filelist, metadata) the same way the real Mojo controller does.
 package FakeArchiveResHeaders {
     sub new { return bless { set => [] }, shift }
-    sub cache_control { push @{ shift->{set} }, [ cache_control => $_[1] ] }
-    sub vary          { push @{ shift->{set} }, [ vary          => $_[1] ] }
+    sub cache_control {
+        my ( $self, $value ) = @_;
+        push @{ $self->{set} }, [ cache_control => $value ];
+    }
+    sub vary {
+        my ( $self, $value ) = @_;
+        push @{ $self->{set} }, [ vary => $value ];
+    }
 }
 
 package FakeArchiveRes {
@@ -186,6 +192,21 @@ note("Tachiyomi-compatible metadata requests reuse a short in-worker cache and e
     is( scalar @{ $minion->{enqueued} }, 1, "metadata miss queues one warm_filelist job" );
     is( $minion->{enqueued}[0]{task}, "warm_filelist", "warm_filelist task queued" );
     is_deeply( $minion->{enqueued}[0]{args}, [$archive_id], "warm_filelist receives archive id" );
+}
+
+note("Editable metadata responses require browser revalidation");
+{
+    no warnings 'redefine';
+
+    local *LANraragi::Controller::Api::Archive::get_archive_json = sub {
+        return { arcid => $_[1], title => "Editable title", tags => "artist:someone", summary => "Editable" };
+    };
+
+    my $ctx = FakeArchiveController->new( stash => { id => $archive_id } );
+    LANraragi::Controller::Api::Archive::serve_metadata($ctx);
+
+    my ($cache_control) = map { $_->[1] } grep { $_->[0] eq "cache_control" } @{ $ctx->res->headers->{set} };
+    is( $cache_control, "private, no-cache", "metadata is private but must revalidate after edits" );
 }
 
 note("API upload checksum validation streams large uploads instead of slurping");

@@ -28,7 +28,7 @@ sub calc_max_size() {
 }
 
 sub calc_page_size_bytes( $cache_size_mb ) {
-    return undef if !$cache_size_mb;
+    return if !$cache_size_mb;
 
     my $configured_mb = $ENV{LRR_PAGECACHE_PAGE_SIZE_MB} // DEFAULT_PAGE_SIZE_MB;
     my $page_size_mb = $configured_mb =~ /^\d+$/ ? $configured_mb : DEFAULT_PAGE_SIZE_MB;
@@ -92,7 +92,7 @@ sub put( $key, $content ) {
 
     if ( IS_UNIX && defined $page_size_bytes && length($content) >= $page_size_bytes - 4096 ) {
         $logger->warn("Skipping cache put for $key: value is too large for the FastMmap page size");
-        return undef;
+        return;
     }
 
     return $cache->set($key, $content);

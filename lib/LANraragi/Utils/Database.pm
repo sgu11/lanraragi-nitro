@@ -38,6 +38,11 @@ our @EXPORT_OK = qw(
 # 40-character archive ID glob used by the backfill path for LRR_ALL_ARCHIVES.
 my $ARCHIVE_ID_GLOB = '?' x 40;
 
+sub _load_archive_model {
+    require LANraragi::Model::Archive;
+    return;
+}
+
 # Returns the set of archive IDs. Backed by LRR_ALL_ARCHIVES (maintained by
 # add_archive_to_redis / delete_archive / change_archive_id). On an empty set
 # — first run after upgrade — falls back to a one-time KEYS scan and
@@ -142,6 +147,7 @@ sub change_archive_id ( $old_id, $new_id ) {
     # The on-disk path for old_id is gone and new_id may resolve to a different
     # path; clear the per-worker id->path memo for both. Deferred call avoids a
     # compile-time circular use with Model::Archive (which uses this module).
+    _load_archive_model();
     LANraragi::Model::Archive::invalidate_archive_path_cache($old_id);
     LANraragi::Model::Archive::invalidate_archive_path_cache($new_id);
 
@@ -469,6 +475,7 @@ sub clean_database {
         eval { $redis->exists($id); };
 
         if ($@) {
+            _load_archive_model();
             LANraragi::Model::Archive::delete_archive($id);
             $deleted_arcs++;
             next;
@@ -477,6 +484,7 @@ sub clean_database {
         # Check if the linked file exists
         my $file = get_archive_path( $redis, $id );
         unless ( -e $file ) {
+            _load_archive_model();
             LANraragi::Model::Archive::delete_archive($id);
             $deleted_arcs++;
             next;
@@ -496,6 +504,7 @@ sub clean_database {
                     # Blank the file ref first so delete_archive's -e check skips the file
                     # (the file now belongs to $newid, we must not unlink it).
                     $redis->hset( $id, "file", "" );
+                    _load_archive_model();
                     LANraragi::Model::Archive::delete_archive($id);
                     $deleted_arcs++;
                 } else {
@@ -517,6 +526,7 @@ sub clean_database {
 
     # clean_database may blank/remove the file path for any number of ids, so
     # drop the whole per-worker id->path memo rather than tracking per-id.
+    _load_archive_model();
     LANraragi::Model::Archive::invalidate_archive_path_cache();
 
     return ( $deleted_arcs, $unlinked_arcs );

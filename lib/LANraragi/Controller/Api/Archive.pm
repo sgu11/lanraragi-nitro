@@ -70,11 +70,10 @@ sub serve_metadata {
             set_tachiyomi_metadata_cache( $id, $arcdata );
             enqueue_tachiyomi_filelist_warm( $self, $id );
         }
-        # Metadata is stable per archive (content-hash id) until a tag/title
-        # edit bumps the search-gen via invalidate_cache. A short private TTL
-        # lets the browser reuse it within a session (reader re-open, repeated
-        # metadata fetches) without a revalidation round-trip.
-        $self->res->headers->cache_control('private, max-age=300');
+        # Metadata includes editable title/tags/summary fields. Keep the
+        # response private but require revalidation so post-edit readers do not
+        # reuse stale metadata for a fixed max-age window.
+        $self->res->headers->cache_control('private, no-cache');
         $self->res->headers->vary('Accept-Encoding');
         $self->render( openapi => $arcdata );
     } else {
