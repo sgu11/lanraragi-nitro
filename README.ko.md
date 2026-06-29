@@ -112,6 +112,8 @@ Reader behavior:
 
 Request hot path 중심의 지속적 성능 개선임. 상세 추적 문서는 [`docs/performance-audit.md`](docs/performance-audit.md), [`docs/performance-audit-v3.md`](docs/performance-audit-v3.md), [`docs/local-features/performance-reliability.md`](docs/local-features/performance-reliability.md), 현재 baseline measurement는 [`docs/performance-baseline.md`](docs/performance-baseline.md)임.
 
+2026-06-29 성능 최적화 후속 문서: [`docs/performance-optimization-research-2026-06-29.md`](docs/performance-optimization-research-2026-06-29.md), [`docs/superpowers/plans/2026-06-29-performance-optimization.md`](docs/superpowers/plans/2026-06-29-performance-optimization.md), [`docs/performance-optimization-implementation-2026-06-29.md`](docs/performance-optimization-implementation-2026-06-29.md), [`docs/deferred-performance-opportunities-2026-06-29.md`](docs/deferred-performance-opportunities-2026-06-29.md) 및 Korean HTML companion들이 기준임.
+
 **Tier 0**:
 
 - `is_default_password`와 `(apikey, bearer)` tuple per-worker 30s TTL cache.
