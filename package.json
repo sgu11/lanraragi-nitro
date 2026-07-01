@@ -12,6 +12,7 @@
         "test": "prove -r -l -v tests/",
         "test:js": "node --test tests/js/*.test.mjs",
         "smoke:reader-chrome": "node tools/browser/reader-chrome-smoke.mjs",
+        "smoke:quickfilter": "node tools/browser/quickfilter-smoke.mjs",
         "lanraragi-installer": "perl ./tools/install.pl",
         "lint": "eslint public/",
         "start": "perl ./script/launcher.pl -f ./script/lanraragi",

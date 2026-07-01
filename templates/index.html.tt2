@@ -41,10 +41,10 @@
 	<script src="[% c.url_for("/js/vendor/clipboard.min.js?$asset_version") %]" defer></script>
 
 	<script type="module">
-		import * as Index from "[% c.url_for("/js/$version/mod/index.js?$asset_version") %]";
-		import * as IndexTable from "[% c.url_for("/js/$version/mod/index_datatables.js?$asset_version") %]";
-		import * as LRR from "[% c.url_for("/js/$version/mod/common.js?$asset_version") %]";
-		import * as ContextMenu from "[% c.url_for("/js/$version/mod/index_contextmenu.js?$asset_version") %]";
+		import * as Index from "lrr-index";
+		import * as IndexTable from "lrr-index-table";
+		import * as LRR from "lrr-common";
+		import * as ContextMenu from "lrr-index-contextmenu";
 
 		jQuery(() => {
 			[% IF usingdefpass %]

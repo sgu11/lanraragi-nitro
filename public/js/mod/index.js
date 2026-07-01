@@ -2,10 +2,10 @@
  * Non-DataTables Index functions.
  * (The split is there to permit easier switch if we ever yeet datatables from the main UI)
  */
-import * as LRR from "./common.js";
-import * as Server from "./server.js";
-import * as IndexTable from "./index_datatables.js";
-import * as Perf from "./perf.js";
+import * as LRR from "lrr-common";
+import * as Server from "lrr-server";
+import * as IndexTable from "lrr-index-table";
+import * as Perf from "lrr-perf";
 import {
     metadataResponseMeansMissing,
     shouldMigrateProgressValue,

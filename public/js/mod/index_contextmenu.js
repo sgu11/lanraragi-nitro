@@ -1,11 +1,11 @@
 
 // #region Archive Context Menu
 
-import * as LRR from "./common.js";
-import * as Server from "./server.js";
-import * as Index from "./index.js";
-import * as IndexTable from "./index_datatables.js";
-import * as GridSelection from "./index_grid_selection.js";
+import * as LRR from "lrr-common";
+import * as Server from "lrr-server";
+import * as Index from "lrr-index";
+import * as IndexTable from "lrr-index-table";
+import * as GridSelection from "lrr-index-grid-selection";
 import I18N from "i18n";
 
 let pseudoCopyBtn = undefined;

@@ -1,10 +1,10 @@
 /**
  * All the Archive Index functions related to DataTables.
  */
-import * as LRR from "./common.js";
-import * as Index from "./index.js";
-import * as Perf from "./perf.js";
-import { DEFAULT_INDEX_SORT_COLUMN, DEFAULT_INDEX_SORT_DIRECTION, getInitialIndexOrder } from "./index-order.js";
+import * as LRR from "lrr-common";
+import * as Index from "lrr-index";
+import * as Perf from "lrr-perf";
+import { DEFAULT_INDEX_SORT_COLUMN, DEFAULT_INDEX_SORT_DIRECTION, getInitialIndexOrder } from "lrr-index-order";
 import I18N from "i18n";
 
 export let dataTable = {};

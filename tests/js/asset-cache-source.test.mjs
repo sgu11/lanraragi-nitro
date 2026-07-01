@@ -19,11 +19,14 @@ test("versioned module paths also include deploy-specific asset cache busting", 
     assert.match(app, /sub get_source_asset_revision/);
     assert.match(app, /get_git_revision\(\) \/\/ get_source_asset_revision\(\)/);
 
-    assert.match(index, /\/js\/\$version\/mod\/index\.js\?\$asset_version/);
-    assert.match(index, /\/js\/\$version\/mod\/common\.js\?\$asset_version/);
+    assert.match(index, /import \* as Index from "lrr-index"/);
+    assert.match(index, /import \* as LRR from "lrr-common"/);
     assert.match(importmap, /\/js\/i18n\.js\?\$asset_version/);
     assert.match(indexModule, /from "progress-migration"/);
     assert.match(importmap, /"progress-migration": "\[% c\.url_for\("\/js\/\$version\/mod\/progress-migration\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-index": "\[% c\.url_for\("\/js\/\$version\/mod\/index\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-index-table": "\[% c\.url_for\("\/js\/\$version\/mod\/index_datatables\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-index-contextmenu": "\[% c\.url_for\("\/js\/\$version\/mod\/index_contextmenu\.js\?\$asset_version"\) %\]"/);
     assert.match(importmap, /\/js\/\$version\/vendor\/preact\.module\.js\?\$asset_version/);
     assert.match(reader, /\/css\/lrr\.css\?\$asset_version/);
     assert.match(reader, /\/js\/reader\.js\?\$asset_version/);
@@ -97,4 +100,31 @@ test("reader dependencies resolve through asset-versioned import map entries", a
 
     assert.match(server, /from "lrr-common"/);
     assert.doesNotMatch(server, /from "\.\/common\.js"/);
+});
+
+test("index modules resolve through asset-versioned import map entries (no dual instantiation)", async () => {
+    // The index template loads entry modules via absolute URLs with a cache-bust
+    // query (/?$asset_version). If sibling modules import each other via relative
+    // specifiers ("./index.js"), the browser resolves those to a URL WITHOUT the
+    // query and instantiates the module twice — splitting module-level state such
+    // as Index.selectedCategory, which silently breaks the quick-filter chips.
+    // Every cross-module import under public/js/mod must go through an importmap
+    // alias so both the entry and internal imports share one canonical URL.
+    const importmap = await source("templates/common/importmap.html.tt2");
+    const index = await source("public/js/mod/index.js");
+    const indexTable = await source("public/js/mod/index_datatables.js");
+    const contextMenu = await source("public/js/mod/index_contextmenu.js");
+    const gridSelection = await source("public/js/mod/index_grid_selection.js");
+
+    assert.match(importmap, /"lrr-index": "\[% c\.url_for\("\/js\/\$version\/mod\/index\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-index-table": "\[% c\.url_for\("\/js\/\$version\/mod\/index_datatables\.js\?\$asset_version"\) %\]"/);
+
+    assert.match(index, /from "lrr-index-table"/);
+    assert.doesNotMatch(index, /from "\.\/index_datatables\.js"/);
+    assert.match(indexTable, /from "lrr-index"/);
+    assert.doesNotMatch(indexTable, /from "\.\/index\.js"/);
+    assert.match(contextMenu, /from "lrr-index"/);
+    assert.doesNotMatch(contextMenu, /from "\.\/index\.js"/);
+    assert.match(gridSelection, /from "lrr-index-table"/);
+    assert.doesNotMatch(gridSelection, /from "\.\/index_datatables\.js"/);
 });

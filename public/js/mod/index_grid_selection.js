@@ -1,5 +1,5 @@
-import * as LRR from "./common.js";
-import * as IndexTable from "./index_datatables.js";
+import * as LRR from "lrr-common";
+import * as IndexTable from "lrr-index-table";
 import I18N from "i18n";
 
 const selectedArchives = new Set();

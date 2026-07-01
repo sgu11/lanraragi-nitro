@@ -32,7 +32,7 @@
 	<script src="[% c.url_for("/js/edit.js?$asset_version") %]" type="module"></script>
 
 	<script type="module">
-		import * as IndexTable from "[% c.url_for("/js/$version/mod/index_datatables.js?$asset_version") %]";
+		import * as IndexTable from "lrr-index-table";
 
 		jQuery(() => {
 			window.IndexTable = IndexTable;

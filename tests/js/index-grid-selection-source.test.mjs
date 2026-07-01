@@ -8,7 +8,7 @@ test("fork grid selection is isolated behind a context-menu seam", async () => {
     const contextMenu = await source("public/js/mod/index_contextmenu.js");
     const gridSelection = await source("public/js/mod/index_grid_selection.js");
 
-    assert.match(contextMenu, /import \* as GridSelection from "\.\/index_grid_selection\.js";/);
+    assert.match(contextMenu, /import \* as GridSelection from "lrr-index-grid-selection";/);
     assert.match(contextMenu, /GridSelection\.initialize\(catList\)/);
     assert.match(contextMenu, /const\s+gridSelectionMenu\s*=\s*GridSelection\.buildContextMenu\(id, catList\);[\s\S]*?if\s*\(\s*gridSelectionMenu\s*\)\s*return\s+gridSelectionMenu;/);
     assert.match(contextMenu, /GridSelection\.remove\(id\)/);
