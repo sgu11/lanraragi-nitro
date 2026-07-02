@@ -26,3 +26,27 @@ test("saved non-default index order still wins when URL has no sort", () => {
 
     assert.deepEqual(order, [[2, "asc"]]);
 });
+
+test("explicit named sort resolves through DataTables column metadata", () => {
+    const columns = [
+        { sName: "title" },
+        { sName: "date_added" },
+        { sName: "artist" },
+        { sName: "tags" },
+    ];
+    const order = getInitialIndexOrder(new URLSearchParams("sort=artist&sortdir=desc"), {}, 2, columns);
+
+    assert.deepEqual(order, [[2, "desc"]]);
+});
+
+test("saved named sort resolves through DataTables column metadata", () => {
+    const columns = [
+        { sName: "title" },
+        { sName: "date_added" },
+        { sName: "artist" },
+        { sName: "tags" },
+    ];
+    const order = getInitialIndexOrder(new URLSearchParams(""), { indexSort: "date_added", indexOrder: "desc" }, 2, columns);
+
+    assert.deepEqual(order, [[1, "desc"]]);
+});

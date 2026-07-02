@@ -16,7 +16,6 @@ import * as marked from "marked";
 import DOMPurify from "dompurify";
 
 export let selectedCategory = "";
-let awesomplete = {};
 let carouselInitialized = false;
 // Carousel content is stale (searches ran while it was hidden/collapsed).
 // Revealing the carousel triggers a single refresh when this is set.
@@ -69,6 +68,11 @@ export function initializeAll() {
         e.stopImmediatePropagation();
         const id = $(this).closest("[id]").attr("id");
         if (id) toggleArchiveSelection(id);
+    });
+
+    // Mark carousel-originated reader links so Reader can decide whether to enable cross-archive navigation
+    $(document).on("click.carousel-navstate", ".swiper-wrapper .swiper-slide a[href*='/reader?id=']", () => {
+        sessionStorage.setItem("navigationState", "carousel");
     });
 
     // 0 = List view
@@ -314,7 +318,7 @@ export function bookmarkIconOn(arcid) {
 
 export function toggleBookmarkStatusByIcon(e) {
     const icon = e.currentTarget;
-    const id = icon.id;
+    const {id} = icon;
 
     if (!LRR.isUserLogged()) {
         LRR.toast({
@@ -372,7 +376,7 @@ export function loadTagSuggestions() {
             });
 
             // Setup awesomplete for the tag search bar
-            awesomplete = new Awesomplete("#search-input", {
+            new Awesomplete("#search-input", {
                 list: data,
                 data(tag) {
                     // Format tag objects from the API into a format awesomplete likes.
@@ -509,7 +513,10 @@ export function updateCarousel(e) {
     let endpoint;
     const currentSearch = IndexTable.getCurrentSearch();
     const filter = currentSearch ? `&filter=${currentSearch}` : "";
-    const category = selectedCategory ? `&category=${selectedCategory}` : "";
+
+    // See LANraragi::Controller::Api::Search::handle_databases
+    const isBuiltinSelector = selectedCategory === "NEW_ONLY" || selectedCategory === "UNTAGGED_ONLY";
+    const category = (selectedCategory && !isBuiltinSelector) ? `&category=${selectedCategory}` : "";
 
     switch (localStorage.carouselType) {
         case "random":
@@ -1071,7 +1078,6 @@ export function migrateProgress() {
                         clearLocalProgress(id);
                         return null;
                     }
-
                     if (!response.ok || data === null) {
                         // eslint-disable-next-line no-console
                         console.warn(`Failed to migrate progress for ${id} (status ${response.status})`);
@@ -1118,14 +1124,11 @@ export function migrateProgress() {
             });
         });
     } else {
-        // eslint-disable-next-line no-console
         console.log("No local reading progression to migrate");
     }
 }
 
 // #endregion
-
-
 
 // #region Category buttons
 

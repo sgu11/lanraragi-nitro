@@ -11,19 +11,38 @@ function isStoredLegacyDefault(storage) {
     return storage.indexSort === "0" && storage.indexOrder === "asc";
 }
 
-export function getInitialIndexOrder(params, storage, currentCustomColumnCount) {
+function resolveSortColumn(sortValue, columns) {
+    if (!hasStoredValue(sortValue)) {
+        return null;
+    }
+
+    if (/^\d+$/.test(String(sortValue))) {
+        return parseInt(sortValue, 10);
+    }
+
+    if (columns) {
+        const sortColumn = Array.from(columns).findIndex((col) => col.sName === sortValue || col.name === sortValue);
+        if (sortColumn !== -1) {
+            return sortColumn;
+        }
+    }
+
+    return 0;
+}
+
+export function getInitialIndexOrder(params, storage, currentCustomColumnCount, columns = null) {
     const shouldUseStoredOrder = !isStoredLegacyDefault(storage);
     const order = [[DEFAULT_INDEX_SORT_COLUMN, DEFAULT_INDEX_SORT_DIRECTION]];
 
     if (params.has("sort")) {
-        order[0][0] = parseInt(params.get("sort"), 10);
+        order[0][0] = resolveSortColumn(params.get("sort"), columns);
         order[0][1] = LEGACY_INDEX_SORT_DIRECTION;
     } else if (hasStoredValue(storage.indexSort) && shouldUseStoredOrder) {
-        order[0][0] = parseInt(storage.indexSort, 10);
+        order[0][0] = resolveSortColumn(storage.indexSort, columns);
         order[0][1] = LEGACY_INDEX_SORT_DIRECTION;
     }
 
-    if (order[0][0] > currentCustomColumnCount) {
+    if (!Number.isInteger(order[0][0]) || order[0][0] > currentCustomColumnCount) {
         storage.indexSort = 0;
         order[0][0] = parseInt(storage.indexSort, 10);
     }

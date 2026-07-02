@@ -337,7 +337,7 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
 
     $logger->debug("Computed ID is $id.");
     unless ( -e $file ) {
-        # A TOCTOU check, if the file was deleted after ID computation but before a lock was acquired.
+        # A race condition check, if the file was deleted after ID computation but before a lock was acquired.
         $logger->warn("File does not exist; giving up on adding it to the filemap: $file");
         return;
     }
@@ -349,16 +349,20 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
 
         $logger->debug("$file was logged but is already in the filemap!");
 
-            if ( $filemap_id ne $id ) {
-                $logger->debug("$file has a different ID than the one in the filemap! ($filemap_id)");
-                $logger->info("$file has been modified, updating its ID from $filemap_id to $id.");
+        if ( $filemap_id ne $id ) {
+            $logger->debug("$file has a different ID than the one in the filemap! ($filemap_id)");
+            $logger->info("$file has been modified, updating its ID from $filemap_id to $id.");
 
-                change_archive_id( $filemap_id, $id );
-                eval { enqueue_first_spread_start_detection($id); };
-                $logger->warn("Failed to enqueue first-spread-start detection for $id: $@") if $@;
+            # Note: The logic here is technically different than the one in Upload.pm.
+            # Upload.pm checks replace_duplicates and wipes the previous ID/metadata.
+            # Shinobu just updates the ID in the database and leaves the old metadata in place.
+            # There's no way to assess user intent just from a filewatcher though, so we act non-destructively.
+            change_archive_id( $filemap_id, $id );
+            eval { enqueue_first_spread_start_detection($id); };
+            $logger->warn("Failed to enqueue first-spread-start detection for $id: $@") if $@;
 
-                # Don't forget to update the filemap, later operations will behave incorrectly otherwise
-                $redis_cfg->hset( "LRR_FILEMAP", $file, $id );
+            # Don't forget to update the filemap, later operations will behave incorrectly otherwise
+            $redis_cfg->hset( "LRR_FILEMAP", $file, $id );
         } else {
             $logger->debug(
                 "$file has the same ID as the one in the filemap. Duplicate inotify events? Cleaning cache just to make sure");

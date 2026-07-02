@@ -47,7 +47,7 @@ test("paginated reader can use minimal chrome without enabling infinite scroll",
 test("reader hides the mouse cursor after inactivity", async () => {
     const js = await source("public/js/reader.js");
     const css = await source("public/css/lrr.css");
-    const initStart = js.indexOf("export function initializeAll");
+    const initStart = js.search(/export (async )?function initializeAll/);
     const initEnd = js.indexOf("function initializeSettings", initStart);
     const init = js.slice(initStart, initEnd);
 
@@ -134,7 +134,7 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
     const shortcutStart = js.indexOf("function handleShortcuts(e)");
     const shortcutEnd = js.indexOf("function handleWheel(e)", shortcutStart);
     const shortcut = js.slice(shortcutStart, shortcutEnd);
-    const initStart = js.indexOf("export function initializeAll");
+    const initStart = js.search(/export (async )?function initializeAll/);
     const initEnd = js.indexOf("export function loadContentData", initStart);
     const init = js.slice(initStart, initEnd);
 

@@ -43,25 +43,31 @@ export function callAPI(endpoint, method, successMessage, errorMessage, successC
 
     return dataPromise
         .then((data) => {
-            if (Object.prototype.hasOwnProperty.call(data, "success") && !data.success) {
-                throw new Error(data.error);
-            } else {
-                let message = successMessage;
-                if ("successMessage" in data && data.successMessage) {
-                    message = data.successMessage;
-                }
-                if (message !== null) {
-                    LRR.toast({
-                        heading: message,
-                        icon: "success",
-                        hideAfter: 7000,
-                    });
-                }
 
-                if (successCallback !== null) return successCallback(data);
-
-                return null;
+            // Handle OpenAPI-style error messages (HTTP status code + message)
+            if (Object.hasOwn(data, "errors")) {
+                throw new Error(data.errors[0].message);
             }
+            else // Handle LRR API-style error messages (success=0 + error string)
+                if (Object.hasOwn(data, "success") && !data.success) {
+                    throw new Error(data.error);
+                } else {
+                    let message = successMessage;
+                    if ("successMessage" in data && data.successMessage) {
+                        message = data.successMessage;
+                    }
+                    if (message !== null) {
+                        LRR.toast({
+                            heading: message,
+                            icon: "success",
+                            hideAfter: 7000,
+                        });
+                    }
+
+                    if (successCallback !== null) return successCallback(data);
+
+                    return null;
+                }
         })
         .catch((error) => LRR.showErrorToast(errorMessage, error));
 }

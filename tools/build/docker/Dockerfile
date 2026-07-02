@@ -54,7 +54,7 @@ RUN apk add --no-cache \
     vips \
     vips-jxl \
     vips-heif \
-    ghostscript \
+    vips-poppler \
     shadow \
     s6-overlay \
     procps-ng
@@ -80,6 +80,8 @@ RUN apk add --no-cache \
     perl-dev \
     libarchive-dev \
     linux-headers \
+    libffi-dev \
+    pkgconf \
     patch \
     perl-config-autoconf
 
