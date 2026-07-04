@@ -1099,6 +1099,9 @@ msgstr "F: bật/tắt chế độ toàn màn hình"
 msgid "B: toggle bookmark"
 msgstr "B: bật/tắt đánh dấu trang"
 
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
+
 msgid "To return to the archive index, touch the arrow pointing down or use Backspace."
 msgstr ""
 "Để quay lại danh sách truyện, chạm vào mũi tên chỉ xuống hoặc sử dụng phím "

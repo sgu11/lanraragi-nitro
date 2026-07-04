@@ -991,6 +991,9 @@ msgstr "F：切换全屏模式"
 msgid "B: toggle bookmark"
 msgstr "B：切换书签"
 
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
+
 msgid "shift+Left/Right: go to first page/last page"
 msgstr "shift+箭头键：跳到首尾页"
 

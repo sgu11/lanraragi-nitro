@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -53,17 +53,66 @@ test("reader hides the mouse cursor after inactivity", async () => {
 
     assert.notEqual(initStart, -1);
     assert.notEqual(initEnd, -1);
-    assert.match(js, /const READER_CURSOR_IDLE_DELAY_MS = 5000;/);
+    assert.match(js, /const READER_CURSOR_IDLE_DELAY_MS = 1000;/);
+    assert.match(js, /const READER_CURSOR_WAKE_DISTANCE_PX = 50;/);
+    assert.match(js, /const READER_CURSOR_WAKE_DISTANCE_SQUARED = READER_CURSOR_WAKE_DISTANCE_PX \* READER_CURSOR_WAKE_DISTANCE_PX;/);
     assert.match(js, /let readerCursorIdleTimer = null;/);
+    assert.match(js, /let readerCursorLastMousePosition = null;/);
     assert.match(js, /function setReaderCursorIdle\(idle\) \{/);
     assert.match(js, /document\.body\.classList\.toggle\("reader-cursor-idle", idle\);/);
-    assert.match(js, /function handleReaderMouseMove\(\) \{/);
+    assert.match(js, /function handleReaderMouseMove\(e\) \{/);
+    assert.match(js, /if \(!hasReaderCursorWakeMovement\(e\)\) \{ return; \}/);
     assert.match(js, /window\.clearTimeout\(readerCursorIdleTimer\);/);
     assert.match(js, /readerCursorIdleTimer = window\.setTimeout\(\(\) => setReaderCursorIdle\(true\), READER_CURSOR_IDLE_DELAY_MS\);/);
     assert.match(js, /window\.addEventListener\("mousemove", handleReaderMouseMove, \{ passive: true \}\);/);
     assert.match(init, /initializeReaderCursorAutoHide\(\);/);
     assert.match(css, /body\.reader-cursor-idle #display,/);
     assert.match(css, /body\.reader-cursor-idle #display \*[\s\S]*cursor: none !important;/);
+});
+
+test("reader navigation inputs hide cursor and ws mirrors up down navigation", async () => {
+    const js = await source("public/js/reader.js");
+    const template = await source("templates/reader.html.tt2");
+    const enLocale = await source("locales/template/en.po");
+    const koLocale = await source("locales/template/ko.po");
+    const shortcutsStart = js.indexOf("function handleShortcuts(e)");
+    const shortcutsEnd = js.indexOf("function spaceScrollProcessInput", shortcutsStart);
+    const shortcuts = js.slice(shortcutsStart, shortcutsEnd);
+    const initStart = js.search(/export (async )?function initializeAll/);
+    const initEnd = js.indexOf("$(document).on(\"click.toggle-fit-mode\"", initStart);
+    const init = js.slice(initStart, initEnd);
+    const wheelStart = js.indexOf("function handleWheel(e)");
+    const wheelEnd = js.indexOf("function checkFiletypeSupport", wheelStart);
+    const wheel = js.slice(wheelStart, wheelEnd);
+
+    assert.notEqual(shortcutsStart, -1);
+    assert.notEqual(shortcutsEnd, -1);
+    assert.notEqual(initStart, -1);
+    assert.notEqual(initEnd, -1);
+    assert.notEqual(wheelStart, -1);
+    assert.notEqual(wheelEnd, -1);
+    assert.match(js, /function hideReaderCursorForNavigationInput\(\) \{\s*setReaderCursorIdle\(true\);\s*\}/);
+    assert.match(init, /\[32, 38, 40, 83, 87\]\.includes\(e\.which\)/);
+    assert.match(shortcuts, /case 38: \/\/ up arrow[\s\S]*case 87: \/\/ w[\s\S]*slideSpreadBySinglePage\(-1\)/);
+    assert.match(shortcuts, /case 40: \/\/ down arrow[\s\S]*case 83: \/\/ s[\s\S]*slideSpreadBySinglePage\(1\)/);
+    assert.doesNotMatch(shortcuts, /case 83: \/\/ s[\s\S]*addStamp\(\);/);
+    assert.doesNotMatch(js, /function addStamp\(/);
+    assert.match(shortcuts, /case 37: \/\/ left arrow[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(-1, true\);/);
+    assert.match(shortcuts, /case 39: \/\/ right arrow[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(1, true\);/);
+    assert.match(shortcuts, /case 65: \/\/ a[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(-1, true\);/);
+    assert.match(shortcuts, /case 68: \/\/ d[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(1, true\);/);
+    assert.match(wheel, /hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(direction, true\);/);
+    assert.match(template, /W\/S: slide spread up\/down/);
+    assert.doesNotMatch(template, /S: set a Stamp/);
+    assert.match(enLocale, /msgid "W\/S: slide spread up\/down"\nmsgstr "W\/S: slide spread up\/down"/);
+    assert.match(koLocale, /msgid "W\/S: slide spread up\/down"\nmsgstr "W\/S: 스프레드를 위\/아래로 슬라이드"/);
+
+    const localeDir = new URL("../../locales/template/", import.meta.url);
+    const localeFiles = (await readdir(localeDir)).filter((file) => file.endsWith(".po"));
+    for (const localeFile of localeFiles) {
+        const locale = await source(`locales/template/${localeFile}`);
+        assert.match(locale, /msgid "W\/S: slide spread up\/down"/, `${localeFile} includes W/S reader help`);
+    }
 });
 
 test("reader chrome exposes border crop toggle instead of help button", async () => {
@@ -150,7 +199,7 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
     assert.match(js, /if \(shiftRequestedSpreadByPageCount\(step\)\) \{/);
     assert.match(shortcut, /case 38: \/\/ up arrow[\s\S]*slideSpreadBySinglePage\(-1\)/);
     assert.match(shortcut, /case 40: \/\/ down arrow[\s\S]*slideSpreadBySinglePage\(1\)/);
-    assert.match(init, /if \(\[32, 38, 40\]\.includes\(e\.which\)\) handleShortcuts\(e\);/);
+    assert.match(init, /if \(\[32, 38, 40, 83, 87\]\.includes\(e\.which\)\) handleShortcuts\(e\);/);
 });
 
 test("explicit page reload restores double-spread navigation stride", async () => {

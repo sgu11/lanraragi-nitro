@@ -1073,6 +1073,9 @@ msgstr ""
 msgid "B: toggle bookmark"
 msgstr ""
 
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
+
 msgid "N: toggle auto next page"
 msgstr ""
 

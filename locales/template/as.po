@@ -994,6 +994,9 @@ msgstr ""
 msgid "B: toggle bookmark"
 msgstr ""
 
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
+
 msgid "To return to the archive index, touch the arrow pointing down or use Backspace."
 msgstr ""
 

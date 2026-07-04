@@ -15,6 +15,7 @@ English version: [`README.md`](README.md).
 ### Reader
 
 - **Auto-fullscreen**: archive open 시 자동 fullscreen 진입, reader 종료 시 정상 해제. 구형 browser 대응을 위해 `fscreen` polyfill 사용.
+- **Reader cursor auto-hide**: mouse movement 없는 1초 후 page area cursor를 숨김. `W/A/S/D`, arrow, wheel page navigation 입력 시 즉시 숨기고, 50px 이상 mouse 이동 시 다시 표시함.
 - **Image quality**: reader settings에 image quality 선택지 노출 및 mobile toggle 동작 구현.
 - **Blank border crop**: reader chrome, Reader Options, 또는 `K` key로 공백 border crop toggle 가능. reader page preload는 crop algorithm version을 query string에 넣은 cached `/api/archives/{id}/page?crop=border` variant를 요청해 crop policy 변경 시 browser cache를 갱신함. full-image link는 원본 page를 유지함.
 - **Blank border crop toolbar icon**: crop 활성 상태를 반영함. 활성화 시 `fa-crop`, 비활성화 시 `fa-crop-alt`를 표시함.
@@ -30,7 +31,7 @@ English version: [`README.md`](README.md).
 - **Adaptive offset**: cover와 wide page는 항상 single 표시, archive별 server-detected `Pair 2-3` / `Pair 3-4` hint 저장, reader option은 on/off.
 - **Reader Delete key**: `Delete` 키가 표준 archive/tankoubon deletion confirmation modal을 열고, confirm 후 library로 복귀.
 - **Header hidden reader layout**: hidden-header mode에서 infinite-scroll과 동일한 minimal chrome 사용. 일반 paginated rendering, double-page mode, stamps, tap/keyboard navigation 유지. Bottom utility link를 숨기고 image viewport를 full-height no-scroll로 사용. Mouse wheel up/down은 fullscreen과 동일하게 page navigation으로 동작하며, Reader Options가 열려 있으면 멈춤. Side utility icon은 vertical stack.
-- **Single-page spread sliding**: double-page fullscreen/hidden-header mode에서 `Up`은 visible spread를 한 page 이전으로, `Down`은 한 page 다음으로 이동. One-page slide 이후 일반 prev/next navigation은 direct page jump 또는 display-mode 변경 전까지 shifted double-page stride 유지.
+- **Single-page spread sliding**: double-page fullscreen/hidden-header mode에서 `Up`/`W`는 visible spread를 한 page 이전으로, `Down`/`S`는 한 page 다음으로 이동. One-page slide 이후 일반 prev/next navigation은 direct page jump 또는 display-mode 변경 전까지 shifted double-page stride 유지.
 - **Middle-click fullscreen**: reader 어디서든 middle-click으로 fullscreen toggle 가능. `F` key와 동일.
 - **Reader chrome button click**: bookmark/fullscreen control click이 tap-zone page navigation으로 전파되어 page가 같이 넘어가지 않음.
 - **Reading-progress migration**: 삭제된 archive/tankoubon 또는 잘못된 local page 값 때문에 stale migration toast가 반복 표시되지 않음. local/authenticated progress 설정 확인 후 server migration 시도.

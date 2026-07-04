@@ -1116,6 +1116,9 @@ msgstr "F: Aktiver fullskjerm modus"
 msgid "B: toggle bookmark"
 msgstr "B: Aktiver bokmerke"
 
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
+
 msgid "To return to the archive index, touch the arrow pointing down or use Backspace."
 msgstr ""
 "For å gå tilbake til arkivoversikten, trykk på pilen som peker nedover eller "

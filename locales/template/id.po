@@ -2087,8 +2087,8 @@ msgstr "Gabungkan beberapa arsip menjadi satu Tankoubon"
 msgid "G: go to page number"
 msgstr "G: buka halaman tertentu"
 
-msgid "S: set a Stamp"
-msgstr "S: beri Stempel"
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
 
 msgid "Toggle Stamps"
 msgstr "Tampilkan/Sembunyikan Stempel"

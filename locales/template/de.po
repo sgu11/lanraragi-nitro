@@ -2127,8 +2127,8 @@ msgstr "Hinzufügen"
 msgid "Edit Tankoubon"
 msgstr "Tankoubon bearbeiten"
 
-msgid "S: set a Stamp"
-msgstr "S: Einen Stempel setzen"
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
 
 msgid "Toggle Stamps"
 msgstr "Stempel ein-/ausblenden"

@@ -1125,6 +1125,9 @@ msgstr "F: alternar para modo tela cheia"
 msgid "B: toggle bookmark"
 msgstr "B: modo alternativo de tela cheia"
 
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
+
 msgid "To return to the archive index, touch the arrow pointing down or use Backspace."
 msgstr ""
 "Para retornar ao índice do arquivo, toque na seta que aponta para baixo ou "

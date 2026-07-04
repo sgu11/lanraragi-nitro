@@ -2030,8 +2030,8 @@ msgstr "읽은 페이지 / 전체 페이지"
 msgid "Pages read / Total pages / Archives in Tankoubon"
 msgstr "읽은 페이지 / 전체 페이지 / 단행본 내 아카이브"
 
-msgid "S: set a Stamp"
-msgstr "S: 스탬프 설정"
+msgid "W/S: slide spread up/down"
+msgstr "W/S: 스프레드를 위/아래로 슬라이드"
 
 msgid "Toggle Stamps"
 msgstr "스탬프 토글"

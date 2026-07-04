@@ -15,7 +15,10 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 ### Reader
 
 - **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
-- **Reader cursor auto-hide** hides the mouse cursor over the page area after five seconds without mouse movement and restores it immediately on movement.
+- **Reader cursor auto-hide** hides the mouse cursor over the page area after
+  one second without qualifying mouse movement, hides immediately after
+  navigation input (`W/A/S/D`, arrows, or wheel page turns), and restores after
+  50px of mouse movement.
 - **Image quality** options exposed in settings, with a working mobile toggle.
 - **Blank border cropping** can be toggled from the reader chrome, Reader
   Options, or with `K`;
@@ -67,9 +70,10 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   debounce for more responsive page turns, and pauses while Reader Options is
   open. Side utility icons stack vertically in the minimal layout.
 - **Single-page spread sliding** in double-page fullscreen/hidden-header mode:
-  `Up` moves the visible spread back by one page and `Down` moves it forward by
-  one page. After a one-page slide, normal prev/next navigation keeps the shifted
-  double-page stride until a direct page jump or display-mode change resets it.
+  `Up`/`W` move the visible spread back by one page and `Down`/`S` move it
+  forward by one page. After a one-page slide, normal prev/next navigation keeps
+  the shifted double-page stride until a direct page jump or display-mode change
+  resets it.
 - **Middle-click toggles fullscreen** anywhere in the reader (same as pressing `F`).
 - **Reader chrome button clicks** no longer bubble into tap-zone page
   navigation, so bookmark/fullscreen controls do not also turn the page.

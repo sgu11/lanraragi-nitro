@@ -1119,6 +1119,9 @@ msgstr "F: modo pantalla completa"
 msgid "B: toggle bookmark"
 msgstr "B: aplicar marcador"
 
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
+
 msgid "To return to the archive index, touch the arrow pointing down or use Backspace."
 msgstr ""
 "Para regresar al índice de archivos, presiona la flecha apuntando abajo o "

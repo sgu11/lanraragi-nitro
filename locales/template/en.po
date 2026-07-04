@@ -1142,8 +1142,8 @@ msgstr "shift+Left/Right: go to first page/last page"
 msgid "G: go to page number"
 msgstr "G: go to page number"
 
-msgid "S: set a Stamp"
-msgstr "S: set a Stamp"
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
 
 msgid "To return to the archive index, touch the arrow pointing down or use Backspace."
 msgstr "To return to the archive index, touch the arrow pointing down or use Backspace."

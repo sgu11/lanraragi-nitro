@@ -1982,8 +1982,8 @@ msgstr "N : 自動ページ送りの切り替え"
 msgid "G: go to page number"
 msgstr "G : 指定ページへ移動"
 
-msgid "S: set a Stamp"
-msgstr "S : スタンプを設定"
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
 
 msgid "Auto next page interval in seconds"
 msgstr "自動ページ送り間隔（秒）"

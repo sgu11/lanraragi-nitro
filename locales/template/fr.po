@@ -2135,8 +2135,8 @@ msgstr "Sélectionner toute la page"
 msgid "Edit Tankoubon"
 msgstr "Modifier le Tankoubon"
 
-msgid "S: set a Stamp"
-msgstr "S : Ajouter un Tampon"
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
 
 msgid "Toggle Stamps"
 msgstr "Afficher/cacher les Tampons"

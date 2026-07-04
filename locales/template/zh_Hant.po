@@ -997,6 +997,9 @@ msgstr "F：切換全螢幕模式"
 msgid "B: toggle bookmark"
 msgstr "B：切換書籤"
 
+msgid "W/S: slide spread up/down"
+msgstr "W/S: slide spread up/down"
+
 msgid "To return to the archive index, touch the arrow pointing down or use Backspace."
 msgstr "要返回檔案列表，請點擊向下箭頭或按下 Backspace。"
 

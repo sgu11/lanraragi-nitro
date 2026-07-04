@@ -204,7 +204,7 @@
                 <li>[% c.lh("N: toggle auto next page") %]</li>
                 <li>[% c.lh("shift+Left/Right: go to first page/last page") %]</li>
                 <li>[% c.lh("G: go to page number") %]</li>
-                <li>[% c.lh("S: set a Stamp") %]</li>
+                <li>[% c.lh("W/S: slide spread up/down") %]</li>
             </ul>
             <br>[% c.lh("To return to the archive index, touch the arrow pointing down or use Backspace.") %]
         </div>

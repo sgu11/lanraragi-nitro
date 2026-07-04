@@ -45,7 +45,9 @@ let pageThumbnails = [];
 const MAX_PRELOADED_IMAGES = 8;
 const INFINITE_SCROLL_WINDOW_RADIUS = 4;
 const PROGRESS_PERSISTENCE_DELAY_MS = 200;
-const READER_CURSOR_IDLE_DELAY_MS = 5000;
+const READER_CURSOR_IDLE_DELAY_MS = 1000;
+const READER_CURSOR_WAKE_DISTANCE_PX = 50;
+const READER_CURSOR_WAKE_DISTANCE_SQUARED = READER_CURSOR_WAKE_DISTANCE_PX * READER_CURSOR_WAKE_DISTANCE_PX;
 let preloadedImg = {};
 let preloadedPromises = {};
 let preloadedOrder = [];
@@ -106,6 +108,7 @@ let overlayFiltered = false;
 let pageNaviState = true;
 let wakeLock = null;
 let readerCursorIdleTimer = null;
+let readerCursorLastMousePosition = null;
 let appliedContainerLayoutSignature = null;
 
 function isCurrentNavigation(navigationId) {
@@ -329,16 +332,53 @@ function setReaderCursorIdle(idle) {
     document.body.classList.toggle("reader-cursor-idle", idle);
 }
 
-function handleReaderMouseMove() {
-    setReaderCursorIdle(false);
+function hideReaderCursorForNavigationInput() {
+    setReaderCursorIdle(true);
+}
+
+function resetReaderCursorIdleTimer() {
     if (readerCursorIdleTimer !== null) {
         window.clearTimeout(readerCursorIdleTimer);
     }
     readerCursorIdleTimer = window.setTimeout(() => setReaderCursorIdle(true), READER_CURSOR_IDLE_DELAY_MS);
 }
 
+function hasReaderCursorWakeMovement(e) {
+    if (!e || typeof e.clientX !== "number" || typeof e.clientY !== "number") {
+        return true;
+    }
+
+    const currentPosition = {
+        x: e.clientX,
+        y: e.clientY,
+    };
+
+    if (readerCursorLastMousePosition === null) {
+        readerCursorLastMousePosition = currentPosition;
+        return true;
+    }
+
+    const dx = currentPosition.x - readerCursorLastMousePosition.x;
+    const dy = currentPosition.y - readerCursorLastMousePosition.y;
+
+    if ((dx * dx + dy * dy) < READER_CURSOR_WAKE_DISTANCE_SQUARED) {
+        return false;
+    }
+
+    readerCursorLastMousePosition = currentPosition;
+    return true;
+}
+
+function handleReaderMouseMove(e) {
+    if (!hasReaderCursorWakeMovement(e)) { return; }
+
+    setReaderCursorIdle(false);
+    resetReaderCursorIdleTimer();
+}
+
 function initializeReaderCursorAutoHide() {
-    handleReaderMouseMove();
+    setReaderCursorIdle(false);
+    resetReaderCursorIdleTimer();
     window.addEventListener("mousemove", handleReaderMouseMove, { passive: true });
     window.addEventListener("pagehide", () => {
         if (readerCursorIdleTimer !== null) {
@@ -393,7 +433,7 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
     // Bind events to DOM
     $(document).on("keyup", (e) => handleShortcuts(e));
     // Restrict keydown to keys that need browser-default suppression.
-    $(document).on("keydown", (e) => { if ([32, 38, 40].includes(e.which)) handleShortcuts(e); });
+    $(document).on("keydown", (e) => { if ([32, 38, 40, 83, 87].includes(e.which)) handleShortcuts(e); });
     $(document).on("wheel", handleWheel);
 
     $(document).on("click.toggle-fit-mode", "#fit-mode input", toggleFitMode);
@@ -1306,14 +1346,19 @@ function handleShortcuts(e) {
             spaceScrollProcessInput(e);
             break;
         case 38: // up arrow
+        case 87: // w
+            hideReaderCursorForNavigationInput();
             if (shouldSlideSpreadWithVerticalKeys()) { e.preventDefault(); }
             if (e.type !== "keydown" && slideSpreadBySinglePage(-1)) { e.preventDefault(); }
             break;
         case 40: // down arrow
+        case 83: // s
+            hideReaderCursorForNavigationInput();
             if (shouldSlideSpreadWithVerticalKeys()) { e.preventDefault(); }
             if (e.type !== "keydown" && slideSpreadBySinglePage(1)) { e.preventDefault(); }
             break;
         case 37: // left arrow
+            hideReaderCursorForNavigationInput();
             if (e.shiftKey) {
                 changePage("first", true);
             } else {
@@ -1321,6 +1366,7 @@ function handleShortcuts(e) {
             }
             break;
         case 39: // right arrow
+            hideReaderCursorForNavigationInput();
             if (e.shiftKey) {
                 changePage("last", true);
             } else {
@@ -1328,6 +1374,7 @@ function handleShortcuts(e) {
             }
             break;
         case 65: // a
+            hideReaderCursorForNavigationInput();
             if (e.shiftKey) {
                 changePage("first", true);
             } else {
@@ -1338,6 +1385,7 @@ function handleShortcuts(e) {
             toggleBookmark(e);
             break;
         case 68: // d
+            hideReaderCursorForNavigationInput();
             if (e.shiftKey) {
                 changePage("last", true);
             } else {
@@ -1385,11 +1433,6 @@ function handleShortcuts(e) {
             if (e.ctrlKey || e.shiftKey || e.metaKey) { break; }
             sessionStorage.removeItem("navigationState");
             document.location.href = new LRR.ApiURL("/random");
-            break;
-        case 83: // s
-            if (!infiniteScroll) {
-                addStamp();
-            }
             break;
         default:
             break;
@@ -1504,6 +1547,7 @@ function handleWheel(e) {
         const deltaY = e.originalEvent ? e.originalEvent.deltaY : e.deltaY;
         const direction = deltaY > 0 ? -1 : 1;
         wheelDebounce = true;
+        hideReaderCursorForNavigationInput();
         changePage(direction, true);
         setTimeout(() => { wheelDebounce = false; }, 100);
     }
@@ -1542,16 +1586,6 @@ function toggleHelp() {
 
     return false;
     // all toggable panes need to return false to avoid scrolling to top
-}
-
-function addStamp() {
-    if (infiniteScroll) return;
-    if (!LRR.isUserLogged()) return;
-    markerMode = true;
-    clearMarkers();
-    $(".reader-image").css("cursor", "cell");
-    $(".reader-image").css("z-index", 22);
-    $("#overlay-page").show();
 }
 
 function createMarkerElement(markerData, index) {
