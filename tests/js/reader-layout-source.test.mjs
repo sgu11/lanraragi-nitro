@@ -62,6 +62,7 @@ test("reader hides the mouse cursor after inactivity", async () => {
     assert.match(js, /document\.body\.classList\.toggle\("reader-cursor-idle", idle\);/);
     assert.match(js, /function handleReaderMouseMove\(e\) \{/);
     assert.match(js, /if \(!hasReaderCursorWakeMovement\(e\)\) \{ return; \}/);
+    assert.match(js, /return !document\.body\.classList\.contains\("reader-cursor-idle"\);/);
     assert.match(js, /window\.clearTimeout\(readerCursorIdleTimer\);/);
     assert.match(js, /readerCursorIdleTimer = window\.setTimeout\(\(\) => setReaderCursorIdle\(true\), READER_CURSOR_IDLE_DELAY_MS\);/);
     assert.match(js, /window\.addEventListener\("mousemove", handleReaderMouseMove, \{ passive: true \}\);/);

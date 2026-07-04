@@ -355,7 +355,7 @@ function hasReaderCursorWakeMovement(e) {
 
     if (readerCursorLastMousePosition === null) {
         readerCursorLastMousePosition = currentPosition;
-        return true;
+        return !document.body.classList.contains("reader-cursor-idle");
     }
 
     const dx = currentPosition.x - readerCursorLastMousePosition.x;
