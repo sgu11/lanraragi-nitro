@@ -1985,6 +1985,9 @@ msgstr "G : 指定ページへ移動"
 msgid "W/S: slide spread up/down"
 msgstr "W/S: slide spread up/down"
 
+msgid "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+msgstr "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+
 msgid "Auto next page interval in seconds"
 msgstr "自動ページ送り間隔（秒）"
 

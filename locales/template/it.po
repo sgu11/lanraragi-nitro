@@ -1076,6 +1076,9 @@ msgstr ""
 msgid "W/S: slide spread up/down"
 msgstr "W/S: slide spread up/down"
 
+msgid "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+msgstr "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+
 msgid "N: toggle auto next page"
 msgstr ""
 

@@ -40,6 +40,18 @@ test("reader cursor coalesces rapid relative input while a render is pending", (
     assert.equal(consumeQueuedReaderNavigationStep(cursor), null);
 });
 
+test("reader cursor preserves queued jump magnitude while a render is pending", () => {
+    const cursor = createReaderCursor(0);
+    beginReaderNavigation(cursor, 0, 20);
+
+    assert.equal(queueReaderNavigationStep(cursor, 10, { resetAuto: true }), true);
+
+    assert.deepEqual(consumeQueuedReaderNavigationStep(cursor), {
+        step: 10,
+        resetAuto: true,
+    });
+});
+
 test("reader opening page treats synced progress as a library-open hint only", () => {
     assert.deepEqual(selectReaderOpeningPage({
         explicitPage: 4,

@@ -994,6 +994,9 @@ msgstr "B：切换书签"
 msgid "W/S: slide spread up/down"
 msgstr "W/S: slide spread up/down"
 
+msgid "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+msgstr "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+
 msgid "shift+Left/Right: go to first page/last page"
 msgstr "shift+箭头键：跳到首尾页"
 

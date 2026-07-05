@@ -2033,6 +2033,9 @@ msgstr "읽은 페이지 / 전체 페이지 / 단행본 내 아카이브"
 msgid "W/S: slide spread up/down"
 msgstr "W/S: 스프레드를 위/아래로 슬라이드"
 
+msgid "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+msgstr "Home/End: 처음/끝으로 이동; Page Up/Page Down: 10페이지 이전/다음으로 이동"
+
 msgid "Toggle Stamps"
 msgstr "스탬프 토글"
 

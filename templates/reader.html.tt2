@@ -203,6 +203,7 @@
                 <li>[% c.lh("K: toggle blank border cropping") %]</li>
                 <li>[% c.lh("N: toggle auto next page") %]</li>
                 <li>[% c.lh("shift+Left/Right: go to first page/last page") %]</li>
+                <li>[% c.lh("Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages") %]</li>
                 <li>[% c.lh("G: go to page number") %]</li>
                 <li>[% c.lh("W/S: slide spread up/down") %]</li>
             </ul>

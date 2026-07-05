@@ -91,7 +91,7 @@ export function queueReaderNavigationStep(cursor, step, { resetAuto = false } = 
         return false;
     }
 
-    cursor.queuedRelativeStep = numericStep > 0 ? 1 : -1;
+    cursor.queuedRelativeStep = numericStep;
     cursor.queuedResetAuto = Boolean(resetAuto);
     return true;
 }
@@ -268,8 +268,14 @@ export function getPageNavigationDestination(targetPage, state) {
         return getDisplayWindow(currentPage, state).start;
     }
 
-    const nextIndex = Math.max(0, Math.min(windows.length - 1, currentIndex + (step > 0 ? 1 : -1)));
-    return windows[nextIndex].start;
+    if (Math.abs(step) === 1) {
+        const nextIndex = Math.max(0, Math.min(windows.length - 1, currentIndex + (step > 0 ? 1 : -1)));
+        return windows[nextIndex].start;
+    }
+
+    const targetPageIndex = Math.max(0, Math.min(state.maxPage, currentPage + step));
+    const targetWindow = windows.find((window) => targetPageIndex >= window.start && targetPageIndex <= window.end);
+    return (targetWindow || windows[windows.length - 1] || { start: 0 }).start;
 }
 
 export function getSpreadWindowWithPageShift(targetPage, state) {

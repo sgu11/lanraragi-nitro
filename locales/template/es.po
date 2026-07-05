@@ -1122,6 +1122,9 @@ msgstr "B: aplicar marcador"
 msgid "W/S: slide spread up/down"
 msgstr "W/S: slide spread up/down"
 
+msgid "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+msgstr "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+
 msgid "To return to the archive index, touch the arrow pointing down or use Backspace."
 msgstr ""
 "Para regresar al índice de archivos, presiona la flecha apuntando abajo o "

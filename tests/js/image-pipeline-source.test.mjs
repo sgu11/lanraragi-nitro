@@ -173,8 +173,9 @@ test("reader explicit session page preserves shifted double-page window", async 
     assert.match(js, /getSpreadWindowWithPageShift\(0, getSpreadState\(\{[\s\S]*displayWindow: \{ start: page, end: page \},[\s\S]*\}\)\)/);
     assert.match(selectInitialPage, /reason: "explicit-page",[\s\S]*displayWindow: getSessionDisplayWindow\(initialPage\.page\),[\s\S]*displayWindowStride: 2,/);
     assert.match(loadImages, /requestedDisplayWindowStride = initialPage\.displayWindowStride \|\| null;/);
+    assert.match(shiftRequestedSpreadByPageCount, /const numericStep = Number\(step\);[\s\S]*Math\.abs\(numericStep\) !== 1/);
     assert.match(shiftRequestedSpreadByPageCount, /const stride = activeDisplayWindowStride \|\| 2;/);
-    assert.match(shiftRequestedSpreadByPageCount, /getSpreadWindowWithPageShift\(step > 0 \? stride : -stride/);
+    assert.match(shiftRequestedSpreadByPageCount, /getSpreadWindowWithPageShift\(numericStep > 0 \? stride : -stride/);
     assert.match(shiftRequestedSpreadByPageCount, /requestedDisplayWindowStride = stride;/);
 });
 

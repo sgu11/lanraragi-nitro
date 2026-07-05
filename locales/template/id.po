@@ -2090,6 +2090,9 @@ msgstr "G: buka halaman tertentu"
 msgid "W/S: slide spread up/down"
 msgstr "W/S: slide spread up/down"
 
+msgid "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+msgstr "Home/End: jump to beginning/end; Page Up/Page Down: jump previous/next 10 pages"
+
 msgid "Toggle Stamps"
 msgstr "Tampilkan/Sembunyikan Stempel"
 

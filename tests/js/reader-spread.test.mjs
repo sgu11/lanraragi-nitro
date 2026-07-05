@@ -130,6 +130,8 @@ test("navigation follows display windows instead of fixed offsets", () => {
     assert.equal(getPageNavigationDestination(1, { ...state, currentPage: 1 }), 3);
     assert.equal(getPageNavigationDestination(1, { ...state, currentPage: 3 }), 4);
     assert.equal(getPageNavigationDestination(-1, { ...state, currentPage: 4 }), 3);
+    assert.equal(getPageNavigationDestination(10, { ...state, currentPage: 1 }), 6);
+    assert.equal(getPageNavigationDestination(-10, { ...state, currentPage: 4 }), 0);
 });
 
 test("double-page cover navigation only probes the cover before rendering", () => {

@@ -93,26 +93,38 @@ test("reader navigation inputs hide cursor and ws mirrors up down navigation", a
     assert.notEqual(wheelStart, -1);
     assert.notEqual(wheelEnd, -1);
     assert.match(js, /function hideReaderCursorForNavigationInput\(\) \{\s*setReaderCursorIdle\(true\);\s*\}/);
-    assert.match(init, /\[32, 38, 40, 83, 87\]\.includes\(e\.which\)/);
+    assert.match(init, /\[32, 33, 34, 35, 36, 38, 40, 83, 87\]\.includes\(e\.which\)/);
     assert.match(shortcuts, /case 38: \/\/ up arrow[\s\S]*case 87: \/\/ w[\s\S]*slideSpreadBySinglePage\(-1\)/);
     assert.match(shortcuts, /case 40: \/\/ down arrow[\s\S]*case 83: \/\/ s[\s\S]*slideSpreadBySinglePage\(1\)/);
     assert.doesNotMatch(shortcuts, /case 83: \/\/ s[\s\S]*addStamp\(\);/);
     assert.doesNotMatch(js, /function addStamp\(/);
     assert.match(shortcuts, /case 37: \/\/ left arrow[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(-1, true\);/);
     assert.match(shortcuts, /case 39: \/\/ right arrow[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(1, true\);/);
+    assert.match(shortcuts, /case 33: \/\/ page up[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\(-10, true\);/);
+    assert.match(shortcuts, /case 34: \/\/ page down[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\(10, true\);/);
+    assert.match(shortcuts, /case 35: \/\/ end[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\("last", true\);/);
+    assert.match(shortcuts, /case 36: \/\/ home[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\("first", true\);/);
     assert.match(shortcuts, /case 65: \/\/ a[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(-1, true\);/);
     assert.match(shortcuts, /case 68: \/\/ d[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(1, true\);/);
     assert.match(wheel, /hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(direction, true\);/);
     assert.match(template, /W\/S: slide spread up\/down/);
+    assert.match(template, /Home\/End: jump to beginning\/end; Page Up\/Page Down: jump previous\/next 10 pages/);
     assert.doesNotMatch(template, /S: set a Stamp/);
     assert.match(enLocale, /msgid "W\/S: slide spread up\/down"\nmsgstr "W\/S: slide spread up\/down"/);
+    assert.match(enLocale, /msgid "Home\/End: jump to beginning\/end; Page Up\/Page Down: jump previous\/next 10 pages"\nmsgstr "Home\/End: jump to beginning\/end; Page Up\/Page Down: jump previous\/next 10 pages"/);
     assert.match(koLocale, /msgid "W\/S: slide spread up\/down"\nmsgstr "W\/S: 스프레드를 위\/아래로 슬라이드"/);
+    assert.match(koLocale, /msgid "Home\/End: jump to beginning\/end; Page Up\/Page Down: jump previous\/next 10 pages"\nmsgstr "Home\/End: 처음\/끝으로 이동; Page Up\/Page Down: 10페이지 이전\/다음으로 이동"/);
 
     const localeDir = new URL("../../locales/template/", import.meta.url);
     const localeFiles = (await readdir(localeDir)).filter((file) => file.endsWith(".po"));
     for (const localeFile of localeFiles) {
         const locale = await source(`locales/template/${localeFile}`);
         assert.match(locale, /msgid "W\/S: slide spread up\/down"/, `${localeFile} includes W/S reader help`);
+        assert.match(
+            locale,
+            /msgid "Home\/End: jump to beginning\/end; Page Up\/Page Down: jump previous\/next 10 pages"/,
+            `${localeFile} includes reader jump help`
+        );
     }
 });
 
@@ -187,20 +199,26 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
     const initStart = js.search(/export (async )?function initializeAll/);
     const initEnd = js.indexOf("export function loadContentData", initStart);
     const init = js.slice(initStart, initEnd);
+    const shiftStart = js.indexOf("function shiftRequestedSpreadByPageCount(step)");
+    const shiftEnd = js.indexOf("function cycleSpreadStart", shiftStart);
+    const shiftRequestedSpread = js.slice(shiftStart, shiftEnd);
 
     assert.notEqual(shortcutStart, -1);
     assert.notEqual(shortcutEnd, -1);
     assert.notEqual(initStart, -1);
     assert.notEqual(initEnd, -1);
+    assert.notEqual(shiftStart, -1);
+    assert.notEqual(shiftEnd, -1);
     assert.match(js, /getSinglePageSpreadWindow,/);
     assert.match(js, /getSpreadWindowWithPageShift,/);
     assert.match(js, /function shouldSlideSpreadWithVerticalKeys\(\) \{/);
     assert.match(js, /function slideSpreadBySinglePage\(step\) \{/);
     assert.match(js, /function shiftRequestedSpreadByPageCount\(step\) \{/);
     assert.match(js, /if \(shiftRequestedSpreadByPageCount\(step\)\) \{/);
+    assert.match(shiftRequestedSpread, /const numericStep = Number\(step\);[\s\S]*if \(!Number\.isFinite\(numericStep\) \|\| Math\.abs\(numericStep\) !== 1\) \{[\s\S]*return false;[\s\S]*numericStep > 0 \? stride : -stride/);
     assert.match(shortcut, /case 38: \/\/ up arrow[\s\S]*slideSpreadBySinglePage\(-1\)/);
     assert.match(shortcut, /case 40: \/\/ down arrow[\s\S]*slideSpreadBySinglePage\(1\)/);
-    assert.match(init, /if \(\[32, 38, 40, 83, 87\]\.includes\(e\.which\)\) handleShortcuts\(e\);/);
+    assert.match(init, /if \(\[32, 33, 34, 35, 36, 38, 40, 83, 87\]\.includes\(e\.which\)\) handleShortcuts\(e\);/);
 });
 
 test("explicit page reload restores double-spread navigation stride", async () => {

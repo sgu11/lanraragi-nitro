@@ -158,6 +158,9 @@ Reader behavior:
   `spreadstart`, `firstspreadstart`, current page, and known wide pages.
 - Page navigation follows those windows instead of applying a fixed `+/-2`
   offset.
+- Pressing `Home`/`End` jumps to the beginning/end of the reader, and
+  `Page Up`/`Page Down` jumps backward/forward 10 pages through the same
+  navigation path as ordinary page turns.
 - Pressing `J` toggles adaptive offset between `auto` and `pair2`, persisted via
   `PUT /api/archives/{id}/spreadstart?value=<auto|pair2>`.
 - Hidden-header/minimal-reader chrome is isolated in

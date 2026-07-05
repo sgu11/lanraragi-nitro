@@ -433,7 +433,7 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
     // Bind events to DOM
     $(document).on("keyup", (e) => handleShortcuts(e));
     // Restrict keydown to keys that need browser-default suppression.
-    $(document).on("keydown", (e) => { if ([32, 38, 40, 83, 87].includes(e.which)) handleShortcuts(e); });
+    $(document).on("keydown", (e) => { if ([32, 33, 34, 35, 36, 38, 40, 83, 87].includes(e.which)) handleShortcuts(e); });
     $(document).on("wheel", handleWheel);
 
     $(document).on("click.toggle-fit-mode", "#fit-mode input", toggleFitMode);
@@ -1165,13 +1165,18 @@ function slideSpreadBySinglePage(step) {
 }
 
 function shiftRequestedSpreadByPageCount(step) {
+    const numericStep = Number(step);
+    if (!Number.isFinite(numericStep) || Math.abs(numericStep) !== 1) {
+        return false;
+    }
+
     if (!doublePageMode || infiniteScroll || !activeDisplayWindowWasRequested || !activeDisplayWindow
         || activeDisplayWindow.end <= activeDisplayWindow.start) {
         return false;
     }
 
     const stride = activeDisplayWindowStride || 2;
-    requestedDisplayWindow = getSpreadWindowWithPageShift(step > 0 ? stride : -stride, getSpreadState({
+    requestedDisplayWindow = getSpreadWindowWithPageShift(numericStep > 0 ? stride : -stride, getSpreadState({
         displayWindow: activeDisplayWindow,
     }));
     requestedDisplayWindowStride = stride;
@@ -1344,6 +1349,30 @@ function handleShortcuts(e) {
             break;
         case 32: // spacebar
             spaceScrollProcessInput(e);
+            break;
+        case 33: // page up
+            hideReaderCursorForNavigationInput();
+            e.preventDefault();
+            if (e.type === "keydown") { break; }
+            changePage(-10, true);
+            break;
+        case 34: // page down
+            hideReaderCursorForNavigationInput();
+            e.preventDefault();
+            if (e.type === "keydown") { break; }
+            changePage(10, true);
+            break;
+        case 35: // end
+            hideReaderCursorForNavigationInput();
+            e.preventDefault();
+            if (e.type === "keydown") { break; }
+            changePage("last", true);
+            break;
+        case 36: // home
+            hideReaderCursorForNavigationInput();
+            e.preventDefault();
+            if (e.type === "keydown") { break; }
+            changePage("first", true);
             break;
         case 38: // up arrow
         case 87: // w
@@ -2728,7 +2757,7 @@ function generateThumbnails() {
 /**
  * Change current page in reader.
  * 
- * @param {(-1|1|"first"|"last")} targetPage    One of -1 (previous), 1 (next), "first", or "last" page.
+ * @param {number|"first"|"last"} targetPage    Page step or one of "first" or "last" page.
  * @param {boolean} resetAuto                   Whether to reset current slideshow counter.
  */
 function changePage(targetPage, resetAuto = false) {
