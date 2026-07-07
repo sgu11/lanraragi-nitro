@@ -202,6 +202,7 @@ export function initializeAll() {
                             click() {
                                 localStorage.hidecompleted = $(this).is(":checked");
                                 IndexTable.dataTable.draw();
+                                updateCarousel();
                             },
                         },
                     },
@@ -214,6 +215,7 @@ export function initializeAll() {
                             click() {
                                 localStorage.grouptanks = $(this).is(":checked");
                                 IndexTable.dataTable.draw();
+                                updateCarousel();
                             },
                         },
                     },
@@ -304,7 +306,7 @@ export function bookmarkIconOff(arcid) {
     icons.forEach(el => {
         el.classList.remove("fas");
         el.classList.add("far");
-    })
+    });
 }
 
 // Turn bookmark icons to ON for all archives.
@@ -313,7 +315,7 @@ export function bookmarkIconOn(arcid) {
     icons.forEach(el => {
         el.classList.remove("far");
         el.classList.add("fas");
-    })
+    });
 }
 
 export function toggleBookmarkStatusByIcon(e) {
@@ -340,13 +342,13 @@ export function toggleBookmarkStatusByIcon(e) {
 
 // #endregion
 
-// #region Search and Suggestions 
+// #region Search and Suggestions
 
 /**
  * Handle quick search functionality. If user is in index page and
  * presses "/" key, focus to search input. If the release overlay
  * is open, closes it before focusing to search input.
- * 
+ *
  * @param {KeyboardEvent} e - The keyboard event
  */
 export function handleQuickSearch(e) {
@@ -518,34 +520,36 @@ export function updateCarousel(e) {
     const isBuiltinSelector = selectedCategory === "NEW_ONLY" || selectedCategory === "UNTAGGED_ONLY";
     const category = (selectedCategory && !isBuiltinSelector) ? `&category=${selectedCategory}` : "";
 
+    // Mirror index setting toggles and special categories so carousels respect them too (when relevant)
+    const groupTanks = localStorage.grouptanks === "false" ? "&groupby_tanks=false" : "";
+    const hideCompleted = localStorage.hidecompleted === "true" ? "&hidecompleted=true" : "";
+    const newOnly = selectedCategory === "NEW_ONLY" ? "&newonly=true" : "";
+    const untaggedOnly = selectedCategory === "UNTAGGED_ONLY" ? "&untaggedonly=true" : "";
+
     switch (localStorage.carouselType) {
         case "random":
             $("#carousel-icon")[0].classList = "fas fa-random";
             $("#carousel-title").text(I18N.CarouselRandom);
-            endpoint = `/api/search/random?count=15${filter}${category}`;
-
-            // Special categories that imply additional query params
-            if (selectedCategory === "NEW_ONLY") {
-                endpoint += "&newonly=true";
-            } else if (selectedCategory === "UNTAGGED_ONLY") {
-                endpoint += "&untaggedonly=true";
-            }
+            endpoint = `/api/search/random?count=15${filter}${category}${groupTanks}${hideCompleted}${newOnly}${untaggedOnly}`;
 
             break;
         case "inbox":
             $("#carousel-icon")[0].classList = "fas fa-envelope-open-text";
             $("#carousel-title").text(I18N.NewArchives);
-            endpoint = `/api/search?newonly=true&sortby=date_added&order=desc&start=-1${filter}${category}`;
+            // newonly always true here by design
+            endpoint = `/api/search?newonly=true&sortby=date_added&order=desc&start=-1${filter}${category}${groupTanks}${hideCompleted}${untaggedOnly}`;
             break;
         case "untagged":
             $("#carousel-icon")[0].classList = "fas fa-edit";
             $("#carousel-title").text(I18N.UntaggedArchives);
-            endpoint = `/api/search?untaggedonly=true&sortby=date_added&order=desc&start=-1${filter}${category}`;
+            // untaggedonly always true here by design
+            endpoint = `/api/search?untaggedonly=true&sortby=date_added&order=desc&start=-1${filter}${category}${groupTanks}${hideCompleted}${newOnly}`;
             break;
         case "ondeck":
             $("#carousel-icon")[0].classList = "fas fa-book-reader";
             $("#carousel-title").text(I18N.CarouselOnDeck);
-            endpoint = `/api/search?sortby=lastread&hidecompleted=true${filter}`;
+            // hidecompleted always true here by design
+            endpoint = `/api/search?sortby=lastread&hidecompleted=true${filter}${groupTanks}${untaggedOnly}${newOnly}`;
             break;
         default:
             $("#carousel-icon")[0].classList = "fas fa-pastafarianism";
@@ -623,10 +627,10 @@ export function toggleMultiSelectMode() {
                     clearSelection();
                     exitSelectionCarouselMode();
                 }
-                else 
+                else
                     isMultiSelectMode = true; // Revert the toggle if user cancels
             });
-        else 
+        else
             exitSelectionCarouselMode();
     }
 }
@@ -698,6 +702,9 @@ export function exitSelectionCarouselMode() {
     // Hide MSM controls
     $("#msm-carousel-controls").hide();
 
+    // Update msm flag
+    isMultiSelectMode = false;
+
     // Reload normal carousel content
     updateCarousel();
 
@@ -716,9 +723,11 @@ export function toggleArchiveSelection(id) {
         removeArchiveFromSelection(id);
     } else {
         selectedArchives.add(id);
-        // Find archive data from DataTables to build the carousel slide
+        // Find archive data from DataTables to build the carousel slide.
+        // If there's nothing in DT (because we're adding something from the current carousel instead),
+        // fallback to the shared data cache.
         const row = IndexTable.dataTable.row(`#${id}`);
-        const data = row.data();
+        const data = row.data() || LRR.getArchiveData(id);
         if (data) {
             addArchiveToSelection(data);
         }
@@ -737,13 +746,13 @@ export function addArchiveToSelection(data) {
     swiper.virtual.appendSlide(slide);
     swiper.virtual.update();
 
-    // Add highlight classes to matching divs in compact and thumb mode 
+    // Add highlight classes to matching divs in compact and thumb mode
     $(`#thumbs_container #${id}`).addClass("msm-selected");
     $(`tr#${id}.context-menu`).addClass("msm-selected");
 
     // Bind click on newly added slide to deselect the archive
     // Uses event delegation so it works even with virtual slides
-    $(document).off(`click.msm-carousel-${id}`).on(`click.msm-carousel-${id}`, `#${id}.swiper-slide`, 
+    $(document).off(`click.msm-carousel-${id}`).on(`click.msm-carousel-${id}`, `#${id}.swiper-slide`,
         function (e) {
             if (!isMultiSelectMode) return;
             e.preventDefault();
@@ -809,7 +818,7 @@ export function clearSelection() {
 }
 
 /**
- * Update the count display for the current selection and save a copy to localStorage. 
+ * Update the count display for the current selection and save a copy to localStorage.
  * Also show/hide controls if applicable.
  */
 export function updateSelectionCount() {
@@ -920,8 +929,7 @@ function mergeSelectionIntoTankoubon() {
 function addArchivesToTank(tankId, arcIds) {
     arcIds.reduce((chain, arcId) =>
         chain.then(() =>
-            Server.callAPI(`/api/tankoubons/${tankId}/${arcId}`, "PUT",
-                null, I18N.MSMMergeAddError, null)
+            Server.callAPISilent(`/api/tankoubons/${tankId}/${arcId}`, "PUT")
         ),
     Promise.resolve()
     ).then(() => {
@@ -930,7 +938,8 @@ function addArchivesToTank(tankId, arcIds) {
         clearSelection();
         exitSelectionCarouselMode();
         IndexTable.doSearch();
-    });
+    })
+        .catch((error) => LRR.showErrorToast(I18N.MSMMergeAddError, error));
 };
 
 // #endregion
@@ -1162,14 +1171,14 @@ export function loadCategories() {
             // Pinned categories are shown at the beginning
             data.sort((b, a) => b.name.localeCompare(a.name));
             data.sort((a, b) => b.pinned - a.pinned);
-            // Queue some hardcoded categories at the beginning - those are special-cased in the DataTables variant of the search endpoint. 
+            // Queue some hardcoded categories at the beginning - those are special-cased in the DataTables variant of the search endpoint.
             let html = `<div style='display:inline-block'>
-                            <input class='favtag-btn ${(("NEW_ONLY" === selectedCategory) ? "toggled" : "")}' 
-                            type='button' id='NEW_ONLY' value='🆕 ${I18N.NewArchives}' 
+                            <input class='favtag-btn ${(("NEW_ONLY" === selectedCategory) ? "toggled" : "")}'
+                            type='button' id='NEW_ONLY' value='🆕 ${I18N.NewArchives}'
                             onclick='window.Index.toggleCategory(this)' title='${I18N.NewArchiveDesc}'/>
                         </div><div style='display:inline-block'>
-                            <input class='favtag-btn ${(("UNTAGGED_ONLY" === selectedCategory) ? "toggled" : "")}' 
-                            type='button' id='UNTAGGED_ONLY' value='🏷️ ${I18N.UntaggedArchives}' 
+                            <input class='favtag-btn ${(("UNTAGGED_ONLY" === selectedCategory) ? "toggled" : "")}'
+                            type='button' id='UNTAGGED_ONLY' value='🏷️ ${I18N.UntaggedArchives}'
                             onclick='window.Index.toggleCategory(this)' title='${I18N.UntaggedArcDesc}'/>
                         </div>`;
 
@@ -1183,8 +1192,8 @@ export function loadCategories() {
                 catName = LRR.encodeHTML(catName);
 
                 const div = `<div style='display:inline-block'>
-                    <input class='favtag-btn ${((category.id === selectedCategory) ? "toggled" : "")}' 
-                            type='button' id='${category.id}' value='${catName}' 
+                    <input class='favtag-btn ${((category.id === selectedCategory) ? "toggled" : "")}'
+                            type='button' id='${category.id}' value='${catName}'
                             onclick='window.Index.toggleCategory(this)' title='${I18N.CategoryDesc}'/>
                 </div>`;
 
@@ -1304,7 +1313,7 @@ export function handleCustomSort() {
     if (namespace === "title") {
         order[0][0] = 0;
     } else {
-        // The order set in the combobox uses is offset from title by 1; 
+        // The order set in the combobox uses is offset from title by 1;
         // e.g. customColumn1 is offset from title by 1.
         order[0][0] = 1;
         localStorage.customColumn1 = namespace;

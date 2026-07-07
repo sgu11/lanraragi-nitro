@@ -66,7 +66,7 @@ sub handle_datatables ($self) {
     $sortorder = ( $sortorder && $sortorder eq 'desc' ) ? 1 : 0;
 
     my ( $total, $filtered, @ids ) =
-      LANraragi::Model::Search::do_search( $filter, $categoryfilter, $start, $sortkey, $sortorder, $newfilter, $untaggedfilter, 
+      LANraragi::Model::Search::do_search( $filter, $categoryfilter, $start, $sortkey, $sortorder, $newfilter, $untaggedfilter,
         $grouptanks eq "true",
         $hidecompleted eq "true" );
 
@@ -191,7 +191,7 @@ sub get_random_archives {
     my $category      = $req->param('category')      || "";
     my $newfilter     = $req->param('newonly')       // "false";
     my $untaggedf     = $req->param('untaggedonly')  // "false";
-    my $grouptanks    = $req->param('groupby_tanks') // "false";
+    my $grouptanks    = $req->param('groupby_tanks') // "true";
     my $hidecompleted = $req->param('hidecompleted') // "false";
     my $random_count  = $req->param('count')         || 5;
 

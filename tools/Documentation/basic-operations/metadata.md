@@ -6,6 +6,8 @@ To use a plugin on a single archive, you need to access its **editing** page by 
 
 ![Editing an Archive's Metadata](../.gitbook/assets/edit.PNG)
 
+You can add tags and a text summary to Archives. Summaries aren't searchable, but they'll show up in the Web Reader.
+
 {% hint style="danger" %}
 The "Delete Archive" button will permanently wipe the Archive from your filesystem!
 {% endhint %}

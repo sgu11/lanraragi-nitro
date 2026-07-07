@@ -502,8 +502,8 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
         }
     });
 
-    $(document).on("click.add-toc", ".add-toc", (e) => { 
-        const page = +$(e.target).closest("div[page]").attr("page") + 1; 
+    $(document).on("click.add-toc", ".add-toc", (e) => {
+        const page = +$(e.target).closest("div[page]").attr("page") + 1;
         addTocSection(page);
 
         // Stop event propagation to avoid going to page
@@ -649,7 +649,7 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
 
     // Load metadata for the requested ID and populate the page
     loadContentData().then(() => {
-      
+
         document.title = content.title;
         $(".max-page").text(content.pages);
 
@@ -697,7 +697,10 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
                     }
 
                     let tagList = LRR.buildTagList(tags);
-                    Server.updateTagsFromArchive(id, tagList);
+                    if (id.startsWith("TANK_"))
+                        Server.updateTagsFromTankoubon(id, tagList);
+                    else
+                        Server.updateTagsFromArchive(id, tagList);
                     $("#tagContainer > table").replaceWith(LRR.buildTagsDiv(tagList.join(",")));
                 }
             }).init();
@@ -737,7 +740,7 @@ export function loadContentData() {
         } else {
             progress = data.progress - 1;
         }
-    }
+    };
 
     // If the ID is a Tank ID (TANK_xxxx), use the Tankoubon API for metadata
     if (id.startsWith("TANK_")) {
@@ -785,7 +788,7 @@ export function loadContentData() {
 
             updateProgress(data, id);
 
-            if (data.toc) 
+            if (data.toc)
                 content.chapters = LRR.buildArchiveChapters(data.toc, id, data.pagecount);
 
             // Check and display warnings for unsupported filetypes
@@ -829,11 +832,11 @@ export function removeCategoryBadge(categoryId) {
 
 export function addTocSection(page, currentTitle = null) {
 
-    LRR.closeOverlay(); 
+    LRR.closeOverlay();
     LRR.showPopUp({
         title: I18N.ReaderTocPrompt,
         input: "text",
-        inputPlaceholder: currentTitle || I18N.UntitledChapter, 
+        inputPlaceholder: currentTitle || I18N.UntitledChapter,
         inputAttributes: {
             autocapitalize: "off",
         },
@@ -857,7 +860,7 @@ export function addTocSection(page, currentTitle = null) {
 
 export function removeTocSection() {
 
-    LRR.closeOverlay(); 
+    LRR.closeOverlay();
     LRR.showPopUp({
         text: I18N.ReaderDeleteTocPrompt,
         icon: "warning",
@@ -1758,8 +1761,8 @@ function loadStamps(currentPage) {
                 let y = data.result[i].position.split(",")[1];
                 markerData.x = x;
                 markerData.y = y;
-                markerData.name = data.result[i].content
-                markerData.id = data.result[i].id
+                markerData.name = data.result[i].content;
+                markerData.id = data.result[i].id;
                 markerData.left = true;
                 markers.push(markerData);
             }
@@ -1777,8 +1780,8 @@ function loadStamps(currentPage) {
                             let y = data.result[i].position.split(",")[1];
                             markerData.x = x;
                             markerData.y = y;
-                            markerData.name = data.result[i].content
-                            markerData.id = data.result[i].id
+                            markerData.name = data.result[i].content;
+                            markerData.id = data.result[i].id;
                             markerData.left = false;
                             markers.push(markerData);
                         }
@@ -1903,10 +1906,10 @@ function loadBookmarkStatus() {
                             bookmark.setAttribute("style", "opacity: 0.5; cursor: not-allowed;");
                         }
                         leftOption.appendChild(bookmark);
-                    })
-                })
+                    });
+                });
         }
-    )
+    );
 }
 
 function updateMetadata() {
@@ -2609,23 +2612,23 @@ function updateArchiveOverlay(forceUpdate = false) {
         const thumbCss = (localStorage.cropthumbs === "true") ? "id3" : "id3 nocrop";
         const { arcId, localPage } = getArchiveForPage(page);
         const thumbnailUrl = new LRR.ApiURL(`/api/archives/${arcId}/thumbnail?page=${localPage}`);
-        
+
         let thumbnail = `
             <div class='${thumbCss} quick-thumbnail' page='${index}' style='display: inline-block; cursor: pointer'>
                 <span class='page-number'>${I18N.ReaderPage(page)}</span>
                 <img src="${thumbnailUrl}" id="${index}_thumb" loading="lazy" />`;
-        
-        if (LRR.isUserLogged()) 
-            thumbnail += `<a href="#" style="padding:12px; top:2%; left:72%;" 
-                             title="${I18N.ReaderSetPageAsThumbnail}" 
+
+        if (LRR.isUserLogged())
+            thumbnail += `<a href="#" style="padding:12px; top:2%; left:72%;"
+                             title="${I18N.ReaderSetPageAsThumbnail}"
                              class="fas fa-file-image page-number set-thumbnail"></a>
-                          <a href="#" style="padding:12px; top:80%; left:72%;" 
-                             title="${I18N.ReaderAddToc}" 
+                          <a href="#" style="padding:12px; top:80%; left:72%;"
+                             title="${I18N.ReaderAddToc}"
                              class="fas fa-book-medical page-number add-toc"></a>`;
 
         if (pageThumbnails.includes(index)) thumbnail +=
             `</div>`;
-        else thumbnail += 
+        else thumbnail +=
                 `<i id="${index}_spinner" class="fa fa-4x fa-circle-notch fa-spin ttspinner" style="display:flex;justify-content: center; align-items: center;"></i>
             </div>`;
 
@@ -2756,7 +2759,7 @@ function generateThumbnails() {
 
 /**
  * Change current page in reader.
- * 
+ *
  * @param {number|"first"|"last"} targetPage    Page step or one of "first" or "last" page.
  * @param {boolean} resetAuto                   Whether to reset current slideshow counter.
  */
@@ -2790,9 +2793,19 @@ function changePage(targetPage, resetAuto = false) {
         destination = getPageNavigationDestination(step, getSpreadState());
     }
     if (destination < 0) {
-        return readPreviousArchive();
+        // Clamp if we're not at the first page, to avoid doublepage mode accidentally yeeting us to previous archive
+        if (currentPage > 0) {
+            destination = 0;
+        } else {
+            return readPreviousArchive();
+        }
     } else if (destination > maxPage) {
-        return readNextArchive();
+        // Ditto for last page
+        if (currentPage < maxPage) {
+            destination = maxPage;
+        } else {
+            return readNextArchive();
+        }
     }
     return goToPage(destination);
 }
@@ -2839,7 +2852,7 @@ function getFilename(index) {
 async function setupArchiveNavigation() {
     const navigationState = sessionStorage.getItem("navigationState");
     const currArchiveIdsJson = localStorage.getItem("currArchiveIds");
-    const referrer = document.referrer;
+    const {referrer} = document;
     const isDirectNavigation = !referrer || !referrer.includes(window.location.host);
     if (isDirectNavigation) {
         archiveIds = [];
@@ -3080,7 +3093,7 @@ jQuery(() => {
                     "editmarker": {"name": "Edit Marker", "icon":"fas fa-pen-to-square"},
                     "deletemarker": {"name": "Delete Marker", "icon":"fas fa-minus"},
                 }
-            }
+            };
         }
     });
 });

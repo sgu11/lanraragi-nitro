@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom" 
+<feed xmlns="http://www.w3.org/2005/Atom"
     xmlns:dcterms="http://purl.org/dc/terms/"
-    xmlns:opds="http://opds-spec.org/2010/catalog" 
+    xmlns:opds="http://opds-spec.org/2010/catalog"
     xmlns:pse="http://vaemendis.net/opds-pse/ns"
     xmlns:thr="http://purl.org/syndication/thread/1.0">
 
@@ -21,27 +21,27 @@
         <uri>http://github.org/Difegue/LANraragi</uri>
     </author>
 
-    <link rel="http://opds-spec.org/facet" 
+    <link rel="http://opds-spec.org/facet"
         href="/api/opds"
-        title="All Archives" 
-        opds:facetGroup="Categories" 
+        title="All Archives"
+        opds:facetGroup="Categories"
         opds:activeFacet="true" />
- 
-    
-    <link rel="http://opds-spec.org/facet" 
-        href="/api/opds?category=SET_1589138380"
-        title="AMERICA ONRY"  
-        opds:facetGroup="Categories" 
-        />
-    
-    <link rel="http://opds-spec.org/facet" 
-        href="/api/opds?category=SET_1589141306"
-        title="Segata Sanshiro"  
-        opds:facetGroup="Categories" 
-        thr:count="2" />
-    
 
-    
+
+    <link rel="http://opds-spec.org/facet"
+        href="/api/opds?category=SET_1589138380"
+        title="AMERICA ONRY"
+        opds:facetGroup="Categories"
+        />
+
+    <link rel="http://opds-spec.org/facet"
+        href="/api/opds?category=SET_1589141306"
+        title="Segata Sanshiro"
+        opds:facetGroup="Categories"
+        thr:count="2" />
+
+
+
     <entry>
         <title>4f7f5f92300189726765</title>
         <id>urn:lrr:be447b58ea66137c415ee306ee2ac44b308ee484</id>
@@ -54,9 +54,9 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
+
         <summary>series:Neon Genesis Evangelion, artist:Yoshiyuki Sadamoto, chapter:1, character:Shinji Ikari, character:Misato Katsuragi, science fiction</summary>
 
         <link rel="alternate" href="/api/opds/be447b58ea66137c415ee306ee2ac44b308ee484"
@@ -69,16 +69,16 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/be447b58ea66137c415ee306ee2ac44b308ee484/pse?page={pageNumber}" pse:count="34"
-             
+
             />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=be447b58ea66137c415ee306ee2ac44b308ee484" />
     </entry>
-    
+
     <entry>
         <title>All about Egypt</title>
         <id>urn:lrr:28697b96f0ac5858be2666ed10ca47742c955555</id>
-        <updated>1970-01-01T00:00:00Z</updated>
-        <published>1970-01-01T00:00:00Z</published>
+        <updated>2020-09-13T12:26:40Z</updated>
+        <published>2020-09-13T12:26:40Z</published>
         <author>
             <name></name>
         </author>
@@ -86,10 +86,10 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="New Archive" />
-        
-        <summary>medjed, character:doubles guy, character:king of GETs, check this 5</summary>
+
+        <summary>medjed, character:doubles guy, character:king of GETs, check this 5, date_added:1600000000</summary>
 
         <link rel="alternate" href="/api/opds/28697b96f0ac5858be2666ed10ca47742c955555"
             type="application/atom+xml;type=entry;profile=opds-catalog" />
@@ -101,11 +101,11 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/28697b96f0ac5858be2666ed10ca47742c955555/pse?page={pageNumber}" pse:count="22"
-             
+
             />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=28697b96f0ac5858be2666ed10ca47742c955555" />
     </entry>
-    
+
     <entry>
         <title>Apple Archive</title>
         <id>urn:lrr:d0be2dc421be4fcd0172e5afceea3970e2f3d940</id>
@@ -118,9 +118,9 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
+
         <summary>fruit:apple</summary>
 
         <link rel="alternate" href="/api/opds/d0be2dc421be4fcd0172e5afceea3970e2f3d940"
@@ -133,11 +133,11 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/d0be2dc421be4fcd0172e5afceea3970e2f3d940/pse?page={pageNumber}" pse:count="10"
-             
+
             />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=d0be2dc421be4fcd0172e5afceea3970e2f3d940" />
     </entry>
-    
+
     <entry>
         <title>Banana Archive</title>
         <id>urn:lrr:250e77f12a5ab6972a0895d290c4792f0a326ea8</id>
@@ -150,9 +150,9 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
+
         <summary>fruit:banana</summary>
 
         <link rel="alternate" href="/api/opds/250e77f12a5ab6972a0895d290c4792f0a326ea8"
@@ -165,11 +165,11 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/250e77f12a5ab6972a0895d290c4792f0a326ea8/pse?page={pageNumber}" pse:count="10"
-             
+
             />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=250e77f12a5ab6972a0895d290c4792f0a326ea8" />
     </entry>
-    
+
     <entry>
         <title>Cherry Archive</title>
         <id>urn:lrr:7e41c6480852a4a914e48c7a3a4084f193e963d9</id>
@@ -182,9 +182,9 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
+
         <summary>fruit:cherry</summary>
 
         <link rel="alternate" href="/api/opds/7e41c6480852a4a914e48c7a3a4084f193e963d9"
@@ -197,11 +197,11 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/7e41c6480852a4a914e48c7a3a4084f193e963d9/pse?page={pageNumber}" pse:count="10"
-             
+
             />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=7e41c6480852a4a914e48c7a3a4084f193e963d9" />
     </entry>
-    
+
     <entry>
         <title>Dragon Fruit Archive</title>
         <id>urn:lrr:af8978b1797b72acfff9595a5a2a373ec3d9106d</id>
@@ -214,9 +214,9 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
+
         <summary>fruit:dragon</summary>
 
         <link rel="alternate" href="/api/opds/af8978b1797b72acfff9595a5a2a373ec3d9106d"
@@ -229,11 +229,11 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/af8978b1797b72acfff9595a5a2a373ec3d9106d/pse?page={pageNumber}" pse:count="10"
-             
+
             />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=af8978b1797b72acfff9595a5a2a373ec3d9106d" />
     </entry>
-    
+
     <entry>
         <title>Fate GO MEMO</title>
         <id>urn:lrr:28697b96f0ac5858be2614ed10ca47742c9522fd</id>
@@ -246,9 +246,9 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher>wadamemo</dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
+
         <summary>parody:fate grand order,  group:wadamemo,  artist:wada rco,  artbook,  full color, male:very cool too</summary>
 
         <link rel="alternate" href="/api/opds/28697b96f0ac5858be2614ed10ca47742c9522fd"
@@ -261,11 +261,11 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/28697b96f0ac5858be2614ed10ca47742c9522fd/pse?page={pageNumber}" pse:count="1"
-             
+
             />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=28697b96f0ac5858be2614ed10ca47742c9522fd" />
     </entry>
-    
+
     <entry>
         <title>Fate GO MEMO 2</title>
         <id>urn:lrr:2810d5e0a8d027ecefebca6237031a0fa7b91eb3</id>
@@ -278,9 +278,9 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher>wadamemo</dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
+
         <summary>parody:fate grand order,  character:abigail williams,  character:artoria pendragon alter,  character:asterios,  character:ereshkigal,  character:gilgamesh,  character:hans christian andersen,  character:hassan of serenity,  character:hector,  character:helena blavatsky,  character:irisviel von einzbern,  character:jeanne alter,  character:jeanne darc,  character:kiara sessyoin,  character:kiyohime,  character:lancer,  character:martha,  character:minamoto no raikou,  character:mochizuki chiyome,  character:mordred pendragon,  character:nitocris,  character:oda nobunaga,  character:osakabehime,  character:penthesilea,  character:queen of sheba,  character:rin tosaka,  character:saber,  character:sakata kintoki,  character:scheherazade,  character:sherlock holmes,  character:suzuka gozen,  character:tamamo no mae,  character:ushiwakamaru,  character:waver velvet,  character:xuanzang,  character:zhuge liang,  group:wadamemo,  artist:wada rco,  artbook,  full color</summary>
 
         <link rel="alternate" href="/api/opds/2810d5e0a8d027ecefebca6237031a0fa7b91eb3"
@@ -293,16 +293,16 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/2810d5e0a8d027ecefebca6237031a0fa7b91eb3/pse?page={pageNumber}" pse:count="34"
-             pse:lastRead="34"  
+             pse:lastRead="34"
              pse:lastReadDate="2020-05-09T15:31:20Z" />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=2810d5e0a8d027ecefebca6237031a0fa7b91eb3" />
     </entry>
-    
+
     <entry>
         <title>Find the Computer Room</title>
         <id>urn:lrr:28697b96f0ac5777be2614ed10ca47742c9522fa</id>
-        <updated>1970-01-01T00:00:00Z</updated>
-        <published>1970-01-01T00:00:00Z</published>
+        <updated>2022-04-15T05:20:00Z</updated>
+        <published>2022-04-15T05:20:00Z</published>
         <author>
             <name></name>
         </author>
@@ -310,10 +310,10 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
-        <summary>year of shadow, character:vector the crocodile</summary>
+
+        <summary>year of shadow, character:vector the crocodile, date_added:1650000000</summary>
 
         <link rel="alternate" href="/api/opds/28697b96f0ac5777be2614ed10ca47742c9522fa"
             type="application/atom+xml;type=entry;profile=opds-catalog" />
@@ -325,16 +325,16 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/28697b96f0ac5777be2614ed10ca47742c9522fa/pse?page={pageNumber}" pse:count="128"
-             
+
             />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=28697b96f0ac5777be2614ed10ca47742c9522fa" />
     </entry>
-    
+
     <entry>
         <title>Ghost in the Shell 1.5 - Human-Error Processor vol01ch01</title>
         <id>urn:lrr:4857fd2e7c00db8b0af0337b94055d8445118630</id>
-        <updated>1970-01-01T00:00:00Z</updated>
-        <published>1970-01-01T00:00:00Z</published>
+        <updated>2021-05-03T00:00:00Z</updated>
+        <published>2021-05-03T00:00:00Z</published>
         <author>
             <name>shirow masamune</name>
         </author>
@@ -342,10 +342,10 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
-        <summary>artist:shirow masamune</summary>
+
+        <summary>artist:shirow masamune, date_added:1620000000</summary>
 
         <link rel="alternate" href="/api/opds/4857fd2e7c00db8b0af0337b94055d8445118630"
             type="application/atom+xml;type=entry;profile=opds-catalog" />
@@ -357,16 +357,16 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/4857fd2e7c00db8b0af0337b94055d8445118630/pse?page={pageNumber}" pse:count="34"
-             pse:lastRead="34"  
+             pse:lastRead="34"
              pse:lastReadDate="2020-05-09T15:31:20Z" />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=4857fd2e7c00db8b0af0337b94055d8445118630" />
     </entry>
-    
+
     <entry>
         <title>Rohan Kishibe goes to Gucci</title>
         <id>urn:lrr:e4c422fd10943dc169e3489a38cdbf57101a5f7e</id>
-        <updated>1970-01-01T00:00:00Z</updated>
-        <published>1970-01-01T00:00:00Z</published>
+        <updated>2023-11-14T22:13:20Z</updated>
+        <published>2023-11-14T22:13:20Z</published>
         <author>
             <name></name>
         </author>
@@ -374,10 +374,10 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="New Archive" />
-        
-        <summary>parody: jojo&#39;s bizarre adventure</summary>
+
+        <summary>parody: jojo&#39;s bizarre adventure, date_added:1700000000</summary>
 
         <link rel="alternate" href="/api/opds/e4c422fd10943dc169e3489a38cdbf57101a5f7e"
             type="application/atom+xml;type=entry;profile=opds-catalog" />
@@ -389,11 +389,11 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/e4c422fd10943dc169e3489a38cdbf57101a5f7e/pse?page={pageNumber}" pse:count="10"
-             
+
             />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=e4c422fd10943dc169e3489a38cdbf57101a5f7e" />
     </entry>
-    
+
     <entry>
         <title>Saturn Backup Cartridge - American Manual</title>
         <id>urn:lrr:e69e43e1355267f7d32a4f9b7f2fe108d2401ebg</id>
@@ -406,9 +406,9 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
+
         <summary>character:segata, female:very cool too</summary>
 
         <link rel="alternate" href="/api/opds/e69e43e1355267f7d32a4f9b7f2fe108d2401ebg"
@@ -421,11 +421,11 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/e69e43e1355267f7d32a4f9b7f2fe108d2401ebg/pse?page={pageNumber}" pse:count="200"
-             pse:lastRead="34"  
+             pse:lastRead="34"
              pse:lastReadDate="2020-05-09T15:31:21Z" />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=e69e43e1355267f7d32a4f9b7f2fe108d2401ebg" />
     </entry>
-    
+
     <entry>
         <title>Saturn Backup Cartridge - Japanese Manual</title>
         <id>urn:lrr:e69e43e1355267f7d32a4f9b7f2fe108d2401ebf</id>
@@ -438,9 +438,9 @@
         <dcterms:language></dcterms:language>
         <dcterms:publisher></dcterms:publisher>
         <dcterms:issued></dcterms:issued>
-        
+
         <category term="Archive" />
-        
+
         <summary>character:segata sanshiro, male:very cool</summary>
 
         <link rel="alternate" href="/api/opds/e69e43e1355267f7d32a4f9b7f2fe108d2401ebf"
@@ -453,10 +453,10 @@
             type="application/x-cbz" />
         <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg"
             href="/api/opds/e69e43e1355267f7d32a4f9b7f2fe108d2401ebf/pse?page={pageNumber}" pse:count="2"
-             pse:lastRead="10"  
+             pse:lastRead="10"
              pse:lastReadDate="2020-05-09T15:31:20Z" />
         <link type="text/html" rel="alternate" title="Open in LANraragi" href="/reader?id=e69e43e1355267f7d32a4f9b7f2fe108d2401ebf" />
     </entry>
-    
+
 
 </feed>

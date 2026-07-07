@@ -93,7 +93,7 @@ Edit.addArchiveToTank = function () {
 
     // Get the Archive metadata to feature the name, but don't actually save the Tank.
     // That's handled by the Save button.
-    Server.callAPI(`/api/archives/${arcId}`, "GET", 
+    Server.callAPI(`/api/archives/${arcId}`, "GET",
         null,
         I18N.TankoubonAddArchiveError,
         (data) => {
@@ -104,7 +104,10 @@ Edit.addArchiveToTank = function () {
                     <img style="height:300px" src='${new LRR.ApiURL("/api/archives/"+arcId+"/thumbnail")}'
                         onerror="this.src='${new LRR.ApiURL("/img/noThumb.png")}'">
                 </div>
-                <a class="remove-archive" title="${I18N.TankoubonRemoveFromMenu}">	
+                <a class="edit-archive-link" title="${I18N.EditArchiveMetadata}" href="${new LRR.ApiURL(`/edit?id=${arcId}`)}" target="_blank" rel="noopener">
+                    <i class="fas fa-pencil-alt"></i>
+                </a>
+                <a class="remove-archive" title="${I18N.TankoubonRemoveFromMenu}">
                     <i class="fas fa-close" style="text-align:right"></i>
                 </a>
             </li>`);
