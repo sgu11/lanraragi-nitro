@@ -58,6 +58,7 @@ test("index cold load applies URL state with one search and one category fetch",
     const index = await source("public/js/mod/index.js");
 
     assert.match(table, /deferLoading: 0/);
+    assert.match(table, /initComplete\(\)[\s\S]*?dataTable = this\.api\(\);[\s\S]*?consumeURLParameters\(\);/);
     assert.match(table, /currentSearch = params\.get\("q"\) \|\| ""/);
     assert.doesNotMatch(table, /decodeURIComponent\(params\.get\("q"\)\)/);
     const doSearch = table.slice(table.indexOf("export function doSearch"), table.indexOf("// #region Compact View"));

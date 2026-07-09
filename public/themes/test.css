@@ -1,8 +1,6 @@
 /* LANraragi Theme: Editorial Gold */
 /* Dark, warm editorial aesthetic with gold accents */
 
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-jp-dynamic-subset.min.css');
-
 /* misc */
 
 p {
@@ -17,7 +15,7 @@ img {
 body {
   background-color: #000000;
   color: #e8e4df;
-  font-family: "Pretendard JP Variable", "Pretendard JP", sans-serif;
+  font-family: Inter, system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
   height: 100%;
   text-align: center;
   padding: 0;

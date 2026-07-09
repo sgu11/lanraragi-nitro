@@ -121,10 +121,14 @@ export function initializeAll() {
         drawCallback: drawCallback,
         createdRow: createdRow,
         columns,
+        initComplete() {
+            // The constructor's deferred draw only clears bDeferLoading. Apply
+            // URL state after that draw has fully finished so this first
+            // explicit draw performs the single server request.
+            dataTable = this.api();
+            consumeURLParameters();
+        },
     });
-
-    // If the url has parameters, handle them now by doing the matching search.
-    consumeURLParameters();
 }
 
 export function getCurrentSearch() {
