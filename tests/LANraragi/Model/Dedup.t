@@ -234,6 +234,38 @@ note("lead hashes: compute first N pages and compare by minimum hamming");
     );
 }
 
+note("cover sweep preloads review membership and filters by Hamming before Redis state");
+{
+    package CoverSweepRedis {
+        sub new { bless { calls => {}, added => [] }, shift }
+        sub smembers { $_[0]{calls}{smembers}++; return ('a|b') }
+        sub zrange { $_[0]{calls}{zrange}++; return ('c|d') }
+        sub sismember { die 'per-candidate SISMEMBER must not be used' }
+        sub zscore { die 'per-candidate ZSCORE must not be used' }
+        sub zadd { my ($self, @args) = @_; push @{$self->{added}}, \@args; 1 }
+        sub hset { 1 }
+    }
+    package main;
+
+    my $redis = CoverSweepRedis->new;
+    my $result = LANraragi::Model::Dedup::find_cover_duplicate_pairs_in_memory(
+        {
+            a => '0000000000000000',
+            b => '0000000000000000', # dismissed
+            c => '0000000000000001',
+            d => '0000000000000001', # already present
+            e => 'ffffffffffffffff', # rejected by Hamming
+        },
+        $redis,
+        { cover_max_hamming => 2, candidate_pair_cap => 100 },
+    );
+
+    is( $redis->{calls}{smembers}, 1, 'dismissed set loaded once' );
+    is( $redis->{calls}{zrange}, 1, 'existing deck loaded once' );
+    is( scalar @{$redis->{added}}, 4, 'only new close-hash pairs are stored' );
+    is( $result->{candidates}, 10, 'candidate accounting remains stable' );
+}
+
 note("relation classifier: duplicate, translation, subset, risk flags");
 {
     my $base_a = {

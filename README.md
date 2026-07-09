@@ -14,6 +14,13 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 
 ### Reader
 
+- **Reader failure recovery and accessibility** — page fetch/decode failures
+  cancel pending navigation, clear queued input, and show an inline retry;
+  overlays use dialog semantics/focus return, controls have 44px targets, and
+  reduced-motion preferences are respected.
+- **Large archive overview windowing** — thumbnail overview construction is
+  deferred until opened and capped at 60 pages per navigable window.
+
 - **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
 - **Reader cursor auto-hide** hides the mouse cursor over the page area after
   one second without qualifying mouse movement, hides immediately after
@@ -191,7 +198,7 @@ Reader behavior:
 - **Focused duplicate review queue** — `/duplicates_custom` now opens one large side-by-side cover comparison at a time, keeps a compact upcoming-pair rail, and advances review actions in place instead of replacing the whole deck after every delete/status decision.
 - **Comparison evidence chips** — each side of the duplicate comparison highlights stronger keep signals for page count, archive size, tag count, Korean language, cover resolution, and newer date; resolution is read from the existing `cover_fp` dimensions.
 - **Duplicate review training log** — status decisions in `/duplicates_custom` append sanitized review events with pair snapshots, derived features, UI context, and labels to `LRR_COVER_DUPLICATE_REVIEW_EVENTS`; export pages with `GET /api/duplicates/cover/review-events`.
-- **No-confirm duplicate deletes** — keep/delete actions in `/duplicates_custom` delete immediately and advance the focused queue without a confirmation modal.
+- **No-confirm duplicate deletes** — keep/delete actions in `/duplicates_custom` delete immediately and advance the focused queue without a confirmation modal; the UI now states that destructive behavior explicitly instead of promising a confirmation.
 - The fork duplicate finder is mounted at `/duplicates_custom`; `/duplicates` is left close to upstream's duplicate-group page to reduce upstream-sync conflicts.
 - Technical baseline: [`docs/local-features/duplicate-detection.md`](docs/local-features/duplicate-detection.md).
 - Explainer: [`docs/deduplication-advancement-explainer-2026-06-19.md`](docs/deduplication-advancement-explainer-2026-06-19.md) and illustrated Korean HTML view.
@@ -215,12 +222,12 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 - **Async page-size lookup** — `LRR.getImgSizeAsync` replaces the sync `$.ajax({ async: false, HEAD })` that blocked the UI thread on every page turn.
 - **Pipelined Redis bulk fetches** — duplicate-finder `thumbhash` reads, backup metadata, and plugin metadata use `HMGET` + `wait_all_responses` instead of N sequential round-trips; `clean_database` downgraded from `HGETALL` to `EXISTS` for existence checks.
 - **Page response cache headers (N-1)** — `Cache-Control: private, max-age=3600, immutable` on `/api/archives/{id}/page` so the browser can serve back-button/replay hits without hitting the app. Archive IDs are content-hashed, so the URL is stable for the bytes.
-- **Image-sized PageCache entries** — Unix `PageCache` sets a 32 MB FastMmap page size by default so original, resized, and cropped page blobs can be reused instead of silently missing after `put()`. Override with `LRR_PAGECACHE_PAGE_SIZE_MB` when the temp cache budget needs a different entry ceiling.
-- **`LRR_MCE_WORKERS` env var (N-5)** — plumbs into `MCE::Loop->init` at the Shinobu / Minion mce_loop call sites so over-subscription on small VMs can be tamed without patching.
+- **Bounded image-sized PageCache entries** — Unix `PageCache` sets a 32 MB FastMmap page size and an explicit floor-divided page count, so original/resized/cropped blobs fit without FastMmap expanding a 3,000 MiB cap into a 5,728 MiB mmap. Override with `LRR_PAGECACHE_PAGE_SIZE_MB` when needed.
+- **Bounded nested job concurrency** — Minion defaults to two concurrent jobs (`LRR_MINION_JOBS`) and derives per-job MCE workers from the host CPU budget; `LRR_MCE_WORKERS` remains an explicit override.
 - **Fresh-install default `archives_per_page` = 30 (B.8)** — faster first paint on mobile for new installs; existing instances keep their configured value.
 - **Thumbnail-job race guard (B.9)** — `HSETNX` on the `thumbjob` field closes the TOCTOU between the `-e` probe and `enqueue`; Minion `on_failed` hook `HDEL`s the stale field so failed jobs don't wedge future regeneration.
 - **Single thumbnail miss coalescing** — `/thumbnail?no_fallback=true` for archive pages and Tankoubons uses short config-DB lock keys so repeated visible/tooltip misses return the existing active Minion job instead of enqueueing duplicates.
-- **Image serving metrics** — Prometheus output includes page-serving request, byte, total duration, archive extraction, and resize counters labeled by image kind, variant, and cache status.
+- **Actionable request metrics** — Prometheus output preserves underscore-containing endpoints, includes HTTP status counters and duration histograms for p95/p99 queries, resets search counters on restart, and reports Minion queue/worker state plus Minion/Shinobu process metrics. Redis hot-path increments use real callback pipelines.
 - **Bounded reader preload cache** — reader Blob URL preloads dedupe in-flight fetches, reuse the inline first page when already loaded, and revoke evicted Blob URLs instead of growing unbounded.
 - **Inflight-promise dedup in `Server.callAPI` (B.10)** — concurrent GETs to the same URL share a single fetch; the Map self-evicts on settle.
 - **Filelist cache (B.1)** — `pagefiles` on the archive hash (Storable-frozen, invalidated by Shinobu on arcsize mismatch and by `change_archive_id`). Reader opens on warm cache skip the libarchive scan — 237 → 49 ms on truly cold archives.
@@ -231,6 +238,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 - **Reader infinite-scroll lazy windowing** — infinite scroll now materializes a near-page image window and lazy placeholders instead of creating and waiting for every page image before jumping to the requested page.
 - **Reader preload A/B switch** — `localStorage.readerPreloadStrategy = "browser"` can compare browser-managed image cache/preload behavior against the default bounded Blob URL preload path.
 - **Reader/library render containment** — repeated thumbnail surfaces use `content-visibility: auto` with intrinsic sizing to reduce offscreen render work.
+- **Single-pass index startup** — URL state is decoded once (including literal `%` searches), DataTables sends one initial search, categories load once, and hidden carousel/changelog dependencies are lazy.
 
 **Tier B-redis** — maintained sets + pipelined rebuild:
 - **`LRR_ALL_ARCHIVES` / `LRR_CATEGORIES` / `LRR_TANKS` (B.3)** — maintained sets replace every `KEYS '?'x40`, `KEYS 'SET_*'`, `KEYS 'TANK_*'` scan. Lazy backfill from `KEYS` on first read covers existing installs.
@@ -242,6 +250,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 ### Server reliability
 
 - **filesystem-aware Shinobu file watcher** — detects inode-number changes after a `filesystem receive` / dataset-swap and re-creates the watcher instead of silently losing events.
+- **Non-blocking Shinobu events** — create/modify bursts are coalesced with a Redis lease and queued to an idempotent Minion ingest task, so file-stability polling, hashing, thumbnails, and auto-plugins no longer freeze the watcher loop.
 - **Undef handling** hardened in search and Shinobu paths to avoid log spam on edge-case archives.
 - **Edit route hardening** redirects `/edit` requests without an archive ID before touching Redis, avoiding a protocol-error 500 during smoke checks.
 - **Unicode upload filename lock fix** encodes Redis lock keys before digesting/storing them, so API and Web uploads with non-ASCII filenames no longer fail during lock-token generation.

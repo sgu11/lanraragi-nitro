@@ -20,6 +20,7 @@ use LANraragi::Utils::Database   ();
 use LANraragi::Utils::Plugins    qw(get_downloader_for_url get_plugin get_plugin_parameters use_plugin);
 use LANraragi::Utils::String     qw(trim_url);
 use LANraragi::Utils::TempFolder qw(get_temp);
+use LANraragi::Utils::Generic    qw(get_minion_mce_worker_count);
 
 use LANraragi::Model::Upload;
 use LANraragi::Model::Config;
@@ -46,6 +47,31 @@ sub _clear_thumbnail_job_lock {
 # Add Tasks to the Minion instance.
 sub add_tasks {
     my $minion = shift;
+
+    $minion->add_task(
+        ingest_archive_file => sub {
+            my ( $job, $file, $lock_key ) = @_;
+            my $logger = get_logger( "Minion", "minion" );
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my $error;
+
+            eval {
+                require Shinobu;
+                Shinobu::add_to_filemap( $redis_cfg, $file ) if -e $file;
+                1;
+            } or $error = $@ || "Unknown ingest failure";
+
+            if ($error) {
+                $redis_cfg->quit;
+                $logger->error("Failed to ingest $file: $error");
+                $job->fail( { errors => [$error], file => $file } );
+                return;
+            }
+            $redis_cfg->del($lock_key) if $lock_key;
+            $redis_cfg->quit;
+            $job->finish( { file => $file } );
+        }
+    );
 
     $minion->add_task(
         thumbnail_task => sub {
@@ -172,7 +198,7 @@ sub add_tasks {
 
             eval {
                 if ( IS_UNIX ) {
-                    MCE::Loop->init( { max_workers => $ENV{LRR_MCE_WORKERS} } ) if $ENV{LRR_MCE_WORKERS};
+                    MCE::Loop->init( { max_workers => get_minion_mce_worker_count() } );
                     mce_loop {
                         $sub->( @{$_} );
                     }
@@ -239,7 +265,7 @@ sub add_tasks {
 
             eval {
                 if ( IS_UNIX ) {
-                    MCE::Loop->init( { max_workers => $ENV{LRR_MCE_WORKERS} } ) if $ENV{LRR_MCE_WORKERS};
+                    MCE::Loop->init( { max_workers => get_minion_mce_worker_count() } );
                     mce_loop {
                         $sub->( @{$_} );
                     }

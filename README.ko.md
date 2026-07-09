@@ -14,6 +14,9 @@ English version: [`README.md`](README.md).
 
 ### Reader
 
+- **Reader failure recovery 및 accessibility**: page fetch/decode 실패 시 pending navigation과 queued input을 정리하고 inline retry를 제공함. Overlay는 dialog/focus semantics를 사용하고 control target은 44px이며 reduced-motion 설정을 존중함.
+- **대형 archive overview windowing**: thumbnail overview는 실제로 열 때 생성하고 한 번에 60 page만 render함.
+
 - **Auto-fullscreen**: archive open 시 자동 fullscreen 진입, reader 종료 시 정상 해제. 구형 browser 대응을 위해 `fscreen` polyfill 사용.
 - **Reader cursor auto-hide**: mouse movement 없는 1초 후 page area cursor를 숨김. `W/A/S/D`, arrow, wheel page navigation 입력 시 즉시 숨기고, 50px 이상 mouse 이동 시 다시 표시함.
 - **Image quality**: reader settings에 image quality 선택지 노출 및 mobile toggle 동작 구현.

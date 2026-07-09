@@ -12,8 +12,6 @@ import {
     shouldRunProgressMigration,
 } from "progress-migration";
 import I18N from "i18n";
-import * as marked from "marked";
-import DOMPurify from "dompurify";
 
 export let selectedCategory = "";
 let carouselInitialized = false;
@@ -27,6 +25,10 @@ let progressTracking = {
     isProgressLocal: true,
     isProgressAuthenticated: true,
 };
+let swiperAssetsPromise = null;
+let latestReleasePromise = null;
+const RELEASE_CACHE_KEY = "lrr.latestRelease.v1";
+const RELEASE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 export let pageSize = 100;
 export let isMultiSelectMode = false;
 export let selectedArchives = new Set();
@@ -294,7 +296,6 @@ export function toggleOrder(e) {
  */
 export function handleEscapeKey(e) {
     if (e.key !== "Escape") return;
-    if (e.target.tagName === "INPUT") return;
     LRR.closeOverlay();
 }
 
@@ -353,7 +354,7 @@ export function toggleBookmarkStatusByIcon(e) {
  */
 export function handleQuickSearch(e) {
     if (e.key !== "/") return;
-    if (e.target.tagName === "INPUT") return;
+    if (e.target.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']")) return;
     if (e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
     e.preventDefault();
     if ($("#overlay-shade").is(":visible")) LRR.closeOverlay();
@@ -444,15 +445,59 @@ export function toggleCarouselVisibility(e) {
     }
 }
 
-export function toggleCarousel(e, updateLocalStorage = true) {
+function ensureSwiperAssets() {
+    if (window.Swiper) return Promise.resolve();
+    if (swiperAssetsPromise) return swiperAssetsPromise;
+
+    const assetVersion = encodeURIComponent(document.documentElement.dataset.assetVersion || "");
+    const versionSuffix = assetVersion ? `?${assetVersion}` : "";
+    const stylesheet = document.createElement("link");
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = `${new LRR.ApiURL("/css/vendor/swiper-bundle.min.css")}${versionSuffix}`;
+    stylesheet.dataset.lrrSwiper = "true";
+    const stylesheetReady = new Promise((resolve, reject) => {
+        stylesheet.onload = resolve;
+        stylesheet.onerror = () => reject(new Error("Failed to load carousel styles"));
+    });
+
+    const scriptReady = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = `${new LRR.ApiURL("/js/vendor/swiper-bundle.min.js")}${versionSuffix}`;
+        script.defer = true;
+        script.dataset.lrrSwiper = "true";
+        script.onload = resolve;
+        script.onerror = () => reject(new Error("Failed to load carousel assets"));
+        document.head.appendChild(script);
+    });
+    document.head.appendChild(stylesheet);
+
+    swiperAssetsPromise = Promise.all([stylesheetReady, scriptReady])
+        .then(() => undefined)
+        .catch((error) => {
+            document.querySelectorAll("[data-lrr-swiper]").forEach((asset) => asset.remove());
+            swiperAssetsPromise = null;
+            throw error;
+        });
+    return swiperAssetsPromise;
+}
+
+export async function toggleCarousel(e, updateLocalStorage = true) {
     if (updateLocalStorage)
         localStorage.carouselOpen = (localStorage.carouselOpen === "1") ? "0" : "1";
 
     if (!carouselInitialized) {
+        try {
+            await ensureSwiperAssets();
+        } catch (error) {
+            carouselDirty = true;
+            LRR.showErrorToast(I18N.CarouselError, error);
+            return;
+        }
+        if (carouselInitialized) return;
         carouselInitialized = true;
         $("#reload-carousel").show();
 
-        swiper = new Swiper(".index-carousel-container", {
+        swiper = new window.Swiper(".index-carousel-container", {
             breakpoints: (() => {
                 const breakpoints = {
                     0: { // ensure every device have at least 1 slide
@@ -514,11 +559,11 @@ export function updateCarousel(e) {
     // Hit a different API endpoint depending on the requested localStorage carousel type
     let endpoint;
     const currentSearch = IndexTable.getCurrentSearch();
-    const filter = currentSearch ? `&filter=${currentSearch}` : "";
+    const filter = currentSearch ? `&filter=${encodeURIComponent(currentSearch)}` : "";
 
     // See LANraragi::Controller::Api::Search::handle_databases
     const isBuiltinSelector = selectedCategory === "NEW_ONLY" || selectedCategory === "UNTAGGED_ONLY";
-    const category = (selectedCategory && !isBuiltinSelector) ? `&category=${selectedCategory}` : "";
+    const category = (selectedCategory && !isBuiltinSelector) ? `&category=${encodeURIComponent(selectedCategory)}` : "";
 
     // Mirror index setting toggles and special categories so carousels respect them too (when relevant)
     const groupTanks = localStorage.grouptanks === "false" ? "&groupby_tanks=false" : "";
@@ -575,8 +620,8 @@ export function updateCarousel(e) {
 
     $("#reload-carousel").addClass("fa-spin");
 
-    Server.callAPI(endpoint, "GET", null, I18N.CarouselError,
-        (results) => {
+    Server.callAPISilent(endpoint, "GET")
+        .then((results) => {
             Perf.measure("index.carousel", () => {
                 swiper.virtual.removeAllSlides();
                 const slides = results.data
@@ -589,11 +634,16 @@ export function updateCarousel(e) {
                 $("#carousel-empty").show();
             }
 
-            $("#carousel-loading").hide();
             $(".swiper-wrapper").show();
+        })
+        .catch((error) => {
+            carouselDirty = true;
+            LRR.showErrorToast(I18N.CarouselError, error);
+        })
+        .finally(() => {
+            $("#carousel-loading").hide();
             $("#reload-carousel").removeClass("fa-spin");
-        },
-    );
+        });
 }
 
 export function markCarouselDirty() {
@@ -951,20 +1001,7 @@ function addArchivesToTank(tankId, arcIds) {
  * If so, flash another friendly notification inviting the user to check it out
  */
 export function checkVersion() {
-    const githubAPI = "https://api.github.com/repos/difegue/lanraragi/releases/latest";
-
-    fetch(githubAPI)
-        .then((response) => {
-            if (response.ok) {
-                return response.json();
-            }
-            if (response.status === 403) {
-                console.warn("Github API rate limit exceeded: ", response);
-                throw new Error(I18N.IndexGithubRateLimitError);
-            }
-            console.warn("GitHub API returned: ", response);
-            throw new Error(I18N.IndexGithubAPIError(response.status));
-        })
+    getLatestRelease()
         .then((data) => {
             const expr = /(\d+)/g;
             const latestVersionArr = Array.from(data.tag_name.match(expr));
@@ -1006,39 +1043,62 @@ export function checkVersion() {
  */
 export function fetchChangelog() {
     if (localStorage.lrrVersion !== serverVersion) {
-        localStorage.lrrVersion = serverVersion;
-
-        fetch("https://api.github.com/repos/difegue/lanraragi/releases/latest", { method: "GET" })
-            .then((response) => {
-                if (response.ok) {
-                    return response.json();
-                }
-                if (response.status === 403) {
-                    console.warn("Github API rate limit exceeded: ", response);
-                    throw new Error(I18N.IndexGithubRateLimitError);
-                }
-                console.warn("GitHub API returned: ", response);
-                throw new Error(I18N.IndexGithubAPIError(response.status));
-            })
-            .then((data) => {
+        Promise.all([getLatestRelease(), import("marked"), import("dompurify")])
+            .then(([data, marked, domPurifyModule]) => {
                 if (data.error) throw new Error(data.error);
 
                 if (data.state === "failed") {
                     throw new Error(data.result);
                 }
 
+                const DOMPurify = domPurifyModule.default;
                 document.getElementById("changelog").innerHTML = DOMPurify.sanitize(marked.parse(data.body, {
                     gfm: true,
                     breaks: true,
                 }));
+                localStorage.lrrVersion = serverVersion;
                 $("#updateOverlay").scrollTop(0);
 
                 $("#overlay-shade").fadeTo(150, 0.6, () => {
-                    $("#updateOverlay").css("display", "block");
+                    $("#updateOverlay").attr("aria-hidden", "false").css("display", "block").trigger("focus");
                 });
             })
             .catch((error) => { LRR.showErrorToast(I18N.IndexUpdateError, error); });
     }
+}
+
+function getLatestRelease() {
+    if (latestReleasePromise) return latestReleasePromise;
+
+    try {
+        const cached = JSON.parse(sessionStorage.getItem(RELEASE_CACHE_KEY));
+        if (cached?.expires > Date.now() && cached.data) {
+            latestReleasePromise = Promise.resolve(cached.data);
+            return latestReleasePromise;
+        }
+    } catch { /* ignore corrupt browser cache */ }
+
+    const githubAPI = "https://api.github.com/repos/difegue/lanraragi/releases/latest";
+    latestReleasePromise = fetch(githubAPI)
+        .then((response) => {
+            if (response.ok) return response.json();
+            if (response.status === 403) throw new Error(I18N.IndexGithubRateLimitError);
+            throw new Error(I18N.IndexGithubAPIError(response.status));
+        })
+        .then((data) => {
+            try {
+                sessionStorage.setItem(RELEASE_CACHE_KEY, JSON.stringify({
+                    expires: Date.now() + RELEASE_CACHE_TTL_MS,
+                    data,
+                }));
+            } catch { /* storage may be unavailable */ }
+            return data;
+        })
+        .catch((error) => {
+            latestReleasePromise = null;
+            throw error;
+        });
+    return latestReleasePromise;
 }
 
 /**

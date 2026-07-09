@@ -100,7 +100,19 @@ sub calc_page_size_bytes( $cache_size_mb ) {
     my $page_size_mb = $configured_mb =~ /^\d+$/ ? $configured_mb : DEFAULT_PAGE_SIZE_MB;
 
     $page_size_mb = max(1, min($page_size_mb, $cache_size_mb));
-    return $page_size_mb * 1024 * 1024;
+
+    # Cache::FastMmap rounds page sizes down to a power of two internally.
+    # Do the same here so the page-count calculation below matches the actual
+    # mmap geometry for non-power-of-two overrides.
+    my $page_size_bytes = $page_size_mb * 1024 * 1024;
+    return 2**int( log($page_size_bytes) / log(2) );
+}
+
+sub calc_page_count( $cache_size_mb, $effective_page_size_bytes ) {
+    return if !$cache_size_mb || !$effective_page_size_bytes;
+
+    my $cache_size_bytes = $cache_size_mb * 1024 * 1024;
+    return max( 1, int( $cache_size_bytes / $effective_page_size_bytes ) );
 }
 
 sub initialize() {
@@ -108,19 +120,29 @@ sub initialize() {
     my $cache_size_mb = calc_max_size;
     my $disk_size = $cache_size_mb . "m";
     $page_size_bytes = calc_page_size_bytes($cache_size_mb);
+    my $page_count = calc_page_count( $cache_size_mb, $page_size_bytes );
+    my $effective_size_bytes = defined $page_count ? $page_count * $page_size_bytes : 0;
     $logger->debug(
         "Initializing cache, disk size: "
           . $disk_size
-          . ( defined $page_size_bytes ? ", page size: " . $page_size_bytes : "" )
+          . ( defined $page_size_bytes
+            ? ", effective mmap size: $effective_size_bytes, page size: $page_size_bytes, pages: $page_count"
+            : "" )
     );
 
     if ( IS_UNIX ) {
         my %cache_options = (
             driver     => 'FastMmap',
-            cache_size => $disk_size,
             root_dir    => get_temp,
         );
-        $cache_options{page_size} = $page_size_bytes if defined $page_size_bytes;
+        if ( defined $page_size_bytes ) {
+            # Supplying cache_size + page_size lets Cache::FastMmap choose a
+            # Mersenne-like page count that can nearly double the configured
+            # cap (for example 3000 MiB became 179 * 32 MiB = 5728 MiB).
+            # Explicit geometry always stays at or below tempmaxsize.
+            $cache_options{page_size} = $page_size_bytes;
+            $cache_options{num_pages} = $page_count;
+        }
         $cache = CHI->new(%cache_options);
     } else {
         $cache = CHI->new(

@@ -139,12 +139,12 @@ test("reader chrome exposes border crop toggle instead of help button", async ()
 
     assert.notEqual(leftOptionsStart, -1);
     assert.notEqual(leftOptionsEnd, -1);
-    assert.match(leftOptions, /id="toggle-settings-overlay"/);
-    assert.match(leftOptions, /id="toggle-border-crop-button"/);
+    assert.match(leftOptions, /class="[^"]*toggle-settings-overlay/);
+    assert.match(leftOptions, /class="[^"]*toggle-border-crop-button/);
     assert.match(leftOptions, /fa-crop-alt/);
     assert.doesNotMatch(leftOptions, /fa-crop(?!-alt)/);
     assert.doesNotMatch(leftOptions, /id="toggle-help"/);
-    assert.match(js, /\$\(document\)\.on\("click\.toggle-border-crop-button", "#toggle-border-crop-button", toggleBorderCrop\);/);
+    assert.match(js, /\$\(document\)\.on\("click\.toggle-border-crop-button", "\.toggle-border-crop-button", toggleBorderCrop\);/);
 
     const updateStart = js.indexOf("function updateBorderCropToggle()");
     const updateEnd = js.indexOf("function getReaderImageSource", updateStart);

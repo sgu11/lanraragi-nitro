@@ -77,6 +77,9 @@ test("custom duplicate delete actions skip the confirmation modal", async () => 
     assert.match(actionHandler, /Duplicates\.performReviewAction\(\{[\s\S]*archiveId[\s\S]*Duplicates\.deleteArchive\(archiveId\)/);
     assert.doesNotMatch(actionHandler, /confirmDeleteArchive/);
     assert.doesNotMatch(actionHandler, /confirmTitle/);
+    assert.match(script, /DuplicatesImmediateDelete/);
+    assert.match(script, /dupe-immediate-delete-note/);
+    assert.doesNotMatch(script, /after confirmation/);
 });
 
 test("custom duplicate finder renders pair-relative comparison chips", async () => {
@@ -96,11 +99,11 @@ test("custom duplicate finder renders pair-relative comparison chips", async () 
     assert.match(styles, /\.dupe-resolution-chip/);
     assert.match(styles, /\.dupe-resolution-chip\.is-highlighted/);
 
-    assert.match(template, /duplicates_custom\.css"\) %]\?\[% asset_version %]-no-delete-confirm/);
-    assert.match(template, /duplicates_custom\.js"\) %]\?\[% asset_version %]-no-delete-confirm/);
+    assert.match(template, /duplicates_custom\.css\?\$asset_version/);
+    assert.match(template, /duplicates_custom\.js\?\$asset_version/);
 });
 
-test("custom duplicate fork-only labels do not call Maketext", async () => {
+test("custom duplicate fork-only labels use Maketext", async () => {
     const template = await source("templates/duplicates_custom.html.tt2");
     const forkOnlyLabels = [
         "Refresh deck",
@@ -111,6 +114,6 @@ test("custom duplicate fork-only labels do not call Maketext", async () => {
     ];
 
     for (const label of forkOnlyLabels) {
-        assert.doesNotMatch(template, new RegExp(`c\\.lh\\(\"${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+        assert.match(template, new RegExp(`c\\.lh\\(\"${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
     }
 });

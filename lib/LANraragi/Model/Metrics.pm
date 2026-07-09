@@ -5,6 +5,7 @@ use warnings;
 use utf8;
 use Time::HiRes                 qw(gettimeofday tv_interval);
 use Mojo::JSON                  qw(encode_json decode_json);
+use Encode                      qw(encode_utf8 decode_utf8);
 
 use LANraragi::Model::Config;
 use LANraragi::Model::Stats;
@@ -17,10 +18,28 @@ use constant IS_WIN32 => ( $^O eq 'MSWin32' );
 
 use constant REQUEST_METRICS_FLUSH_INTERVAL     => 1.0;   # min seconds between flushes
 use constant REQUEST_METRICS_FLUSH_MAX_UPDATES  => 1000;  # max buffered updates before forced flush
+use constant REQUEST_DURATION_BUCKETS => ( 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10 );
 
 my %REQUEST_METRICS_CACHE            = ();
 my $REQUEST_METRICS_LAST_FLUSH       = 0;
 my $REQUEST_METRICS_UPDATE_COUNT     = 0;
+
+sub _encode_endpoint {
+    my ($endpoint) = @_;
+    return unpack( 'H*', encode_utf8( $endpoint // '' ) );
+}
+
+sub _decode_endpoint {
+    my ($encoded) = @_;
+    return decode_utf8( pack( 'H*', $encoded // '' ) );
+}
+
+sub _bucket_field {
+    my ($upper_bound) = @_;
+    my $field = "$upper_bound";
+    $field =~ s/\./_/g;
+    return "duration_bucket_$field";
+}
 
 # Get all metrics in Prometheus exposition format.
 sub get_prometheus_metrics {
@@ -47,16 +66,19 @@ sub get_prometheus_api_metrics {
 
     foreach my $key ( @metric_keys ) {
 
-        # Parse key: metrics:worker:{PID}:{endpoint_encoded}_{method}
-        if ( $key =~ /^metrics:worker:(\d+):(.+)_([A-Z]+)$/ ) {
-            my ($worker_pid, $endpoint_encoded, $method) = ($1, $2, $3);
+        # v2 keys use a reversible UTF-8 hex endpoint. Legacy underscore keys
+        # remain readable until the next startup cleanup.
+        my ( $worker_pid, $endpoint, $method );
+        if ( $key =~ /^metrics:worker:(\d+):v2:([0-9a-f]+):([A-Z]+)$/ ) {
+            ( $worker_pid, $endpoint, $method ) = ( $1, _decode_endpoint($2), $3 );
+        } elsif ( $key =~ /^metrics:worker:(\d+):(.+)_([A-Z]+)$/ ) {
+            ( $worker_pid, $endpoint, $method ) = ( $1, $2, $3 );
+            $endpoint =~ s/_/\//g;
+        }
+        if ( defined $worker_pid ) {
             $active_workers{$worker_pid} = 1;
 
-            next unless $endpoint_encoded && $method;
-
-            # Decode endpoint back to original path
-            my $endpoint = $endpoint_encoded;
-            $endpoint =~ s/_/\//g;
+            next unless $endpoint && $method;
 
             my %metric_data = $metrics_redis->hgetall($key);
             next unless %metric_data;
@@ -70,6 +92,19 @@ sub get_prometheus_api_metrics {
             $aggregated_api_metrics{"lanraragi_api_duration_seconds_total"}{$labels} += $metric_data{duration_sum} || 0;
             $aggregated_api_metrics{"lanraragi_http_request_size_bytes_total"}{$labels} += $metric_data{request_size_sum} || 0;
             $aggregated_api_metrics{"lanraragi_http_response_size_bytes_total"}{$labels} += $metric_data{response_size_sum} || 0;
+
+            foreach my $field ( keys %metric_data ) {
+                if ( $field =~ /^status_(\d{3})$/ ) {
+                    my $status_labels = qq{$labels,status_code="$1"};
+                    $aggregated_api_metrics{"lanraragi_api_responses_total"}{$status_labels} += $metric_data{$field} || 0;
+                }
+            }
+
+            foreach my $upper_bound ( REQUEST_DURATION_BUCKETS ) {
+                my $field = _bucket_field($upper_bound);
+                my $bucket_labels = qq{$labels,le="$upper_bound"};
+                $aggregated_api_metrics{"lanraragi_api_duration_seconds_bucket"}{$bucket_labels} += $metric_data{$field} || 0;
+            }
         }
     }
 
@@ -78,6 +113,28 @@ sub get_prometheus_api_metrics {
     foreach my $labels ( sort keys %{ $aggregated_api_metrics{"lanraragi_api_requests_total"} || {} } ) {
         my $value = $aggregated_api_metrics{"lanraragi_api_requests_total"}{$labels};
         push @output, "lanraragi_api_requests_total{$labels} $value";
+    }
+
+    push @output, "# TYPE lanraragi_api_responses_total counter";
+    push @output, "# HELP lanraragi_api_responses_total Total API responses by HTTP status code";
+    foreach my $labels ( sort keys %{ $aggregated_api_metrics{"lanraragi_api_responses_total"} || {} } ) {
+        push @output, "lanraragi_api_responses_total{$labels} "
+          . $aggregated_api_metrics{"lanraragi_api_responses_total"}{$labels};
+    }
+
+    push @output, "# TYPE lanraragi_api_duration_seconds histogram";
+    push @output, "# UNIT lanraragi_api_duration_seconds seconds";
+    push @output, "# HELP lanraragi_api_duration_seconds API request duration histogram";
+    foreach my $labels ( sort keys %{ $aggregated_api_metrics{"lanraragi_api_duration_seconds_bucket"} || {} } ) {
+        push @output, "lanraragi_api_duration_seconds_bucket{$labels} "
+          . $aggregated_api_metrics{"lanraragi_api_duration_seconds_bucket"}{$labels};
+    }
+    foreach my $labels ( sort keys %{ $aggregated_api_metrics{"lanraragi_api_requests_total"} || {} } ) {
+        my $count = $aggregated_api_metrics{"lanraragi_api_requests_total"}{$labels};
+        my $sum = $aggregated_api_metrics{"lanraragi_api_duration_seconds_total"}{$labels} || 0;
+        push @output, "lanraragi_api_duration_seconds_bucket{$labels,le=\"+Inf\"} $count";
+        push @output, "lanraragi_api_duration_seconds_count{$labels} $count";
+        push @output, "lanraragi_api_duration_seconds_sum{$labels} $sum";
     }
 
     push @output, "# TYPE lanraragi_api_duration_seconds_total counter";
@@ -137,13 +194,13 @@ sub record_image_serving_metrics {
 
     my $error;
     eval {
-        $redis->hincrby( $key, "count", 1 );
-        $redis->hincrbyfloat( $key, "duration_sum",         $args{duration_seconds} // 0 );
-        $redis->hincrbyfloat( $key, "extract_duration_sum", $args{extract_seconds}  // 0 );
-        $redis->hincrbyfloat( $key, "crop_duration_sum",    $args{crop_seconds}     // 0 );
-        $redis->hincrbyfloat( $key, "crop_dims_duration_sum", $args{crop_dims_seconds} // 0 );
-        $redis->hincrbyfloat( $key, "resize_duration_sum",  $args{resize_seconds}   // 0 );
-        $redis->hincrby( $key, "bytes_sum", $args{bytes} // 0 );
+        $redis->hincrby( $key, "count", 1, sub { } );
+        $redis->hincrbyfloat( $key, "duration_sum",         $args{duration_seconds} // 0, sub { } );
+        $redis->hincrbyfloat( $key, "extract_duration_sum", $args{extract_seconds}  // 0, sub { } );
+        $redis->hincrbyfloat( $key, "crop_duration_sum",    $args{crop_seconds}     // 0, sub { } );
+        $redis->hincrbyfloat( $key, "crop_dims_duration_sum", $args{crop_dims_seconds} // 0, sub { } );
+        $redis->hincrbyfloat( $key, "resize_duration_sum",  $args{resize_seconds}   // 0, sub { } );
+        $redis->hincrby( $key, "bytes_sum", $args{bytes} // 0, sub { } );
         # Pipeline the seven increments into one round-trip (REDIS-3) instead of
         # seven serialized hincrby/hincrbyfloat calls per page-flip.
         $redis->wait_all_responses;
@@ -174,12 +231,12 @@ sub record_search_metrics {
 
     my $error;
     eval {
-        $redis->hincrby( $key, "count", 1 );
-        $redis->hincrbyfloat( $key, "duration_sum", $args{duration_seconds} // 0 );
-        $redis->hincrbyfloat( $key, "preamble_sum", $args{preamble_seconds} // 0 );
-        $redis->hincrbyfloat( $key, "cacheget_sum", $args{cacheget_seconds} // 0 );
-        $redis->hincrbyfloat( $key, "filter_sum",   $args{filter_seconds}   // 0 );
-        $redis->hincrbyfloat( $key, "sort_sum",     $args{sort_seconds}     // 0 );
+        $redis->hincrby( $key, "count", 1, sub { } );
+        $redis->hincrbyfloat( $key, "duration_sum", $args{duration_seconds} // 0, sub { } );
+        $redis->hincrbyfloat( $key, "preamble_sum", $args{preamble_seconds} // 0, sub { } );
+        $redis->hincrbyfloat( $key, "cacheget_sum", $args{cacheget_seconds} // 0, sub { } );
+        $redis->hincrbyfloat( $key, "filter_sum",   $args{filter_seconds}   // 0, sub { } );
+        $redis->hincrbyfloat( $key, "sort_sum",     $args{sort_seconds}     // 0, sub { } );
         $redis->wait_all_responses;
     };
     $error = $@;
@@ -204,9 +261,9 @@ sub record_search_rowbuild_metrics {
 
     my $error;
     eval {
-        $redis->hincrby( $key, "count", 1 );
-        $redis->hincrbyfloat( $key, "duration_sum", $args{duration_seconds} // 0 );
-        $redis->hincrby( $key, "rows_sum", $args{rows} // 0 );
+        $redis->hincrby( $key, "count", 1, sub { } );
+        $redis->hincrbyfloat( $key, "duration_sum", $args{duration_seconds} // 0, sub { } );
+        $redis->hincrby( $key, "rows_sum", $args{rows} // 0, sub { } );
         $redis->wait_all_responses;
     };
     $error = $@;
@@ -457,6 +514,28 @@ sub get_prometheus_process_metrics {
         }
     }
 
+    # Minion's own stats expose queue pressure and worker availability, which
+    # process RSS/CPU alone cannot explain. Keep this best-effort so a Minion
+    # backend outage does not make the Prometheus endpoint fail wholesale.
+    eval {
+        my $stats = LANraragi::Model::Config->get_minion->stats;
+        my %job_fields = (
+            active   => "active_jobs",
+            inactive => "inactive_jobs",
+            failed   => "failed_jobs",
+            finished => "finished_jobs",
+        );
+        push @output, "# TYPE lanraragi_minion_jobs gauge";
+        push @output, "# HELP lanraragi_minion_jobs Minion jobs by state";
+        foreach my $state ( sort keys %job_fields ) {
+            push @output, qq{lanraragi_minion_jobs{state="$state"} } . ( $stats->{ $job_fields{$state} } // 0 );
+        }
+        push @output, "# TYPE lanraragi_minion_workers gauge";
+        push @output, "# HELP lanraragi_minion_workers Minion workers by state";
+        push @output, qq{lanraragi_minion_workers{state="active"} } . ( $stats->{active_workers} // 0 );
+        push @output, qq{lanraragi_minion_workers{state="inactive"} } . ( $stats->{inactive_workers} // 0 );
+    };
+
     $metrics_redis->quit();
     return @output;
 }
@@ -553,10 +632,8 @@ sub collect_request_metrics {
     my $endpoint        = LANraragi::Utils::Metrics::extract_endpoint($path);
     return unless $endpoint;
 
-    # Encode endpoint to avoid Redis key issues with slashes
-    my $endpoint_encoded    = $endpoint;
-    $endpoint_encoded       =~ s/\//_/g;  # Replace / with _
-    my $metric_base         = "metrics:worker:$$:${endpoint_encoded}_${method}";
+    my $endpoint_encoded = _encode_endpoint($endpoint);
+    my $metric_base      = "metrics:worker:$$:v2:${endpoint_encoded}:${method}";
 
     # Update in-process cache
     my $entry = ( $REQUEST_METRICS_CACHE{$metric_base} ||= {
@@ -569,6 +646,10 @@ sub collect_request_metrics {
     $entry->{duration_sum}      += $duration;
     $entry->{request_size_sum}  += $request_size;
     $entry->{response_size_sum} += $response_size;
+    $entry->{"status_$status_code"}++ if $status_code >= 100 && $status_code <= 599;
+    foreach my $upper_bound ( REQUEST_DURATION_BUCKETS ) {
+        $entry->{ _bucket_field($upper_bound) }++ if $duration <= $upper_bound;
+    }
     $REQUEST_METRICS_UPDATE_COUNT++;
 
     # Conditionally flush to redis
@@ -596,24 +677,26 @@ sub collect_process_metrics {
 
         eval {
             # CPU metrics (counters)
-            $metrics_redis->hset($process_key, "cpu_user_seconds_total", $proc_stat->{utime});
-            $metrics_redis->hset($process_key, "cpu_system_seconds_total", $proc_stat->{stime});
-            $metrics_redis->hset($process_key, "cpu_seconds_total", $proc_stat->{utime} + $proc_stat->{stime});
+            $metrics_redis->hset($process_key, "cpu_user_seconds_total", $proc_stat->{utime}, sub { });
+            $metrics_redis->hset($process_key, "cpu_system_seconds_total", $proc_stat->{stime}, sub { });
+            $metrics_redis->hset($process_key, "cpu_seconds_total", $proc_stat->{utime} + $proc_stat->{stime}, sub { });
 
             # Memory metrics (gauges)
-            $metrics_redis->hset($process_key, "virtual_memory_bytes", $proc_statm->{vsize});
-            $metrics_redis->hset($process_key, "resident_memory_bytes", $proc_statm->{rss});
+            $metrics_redis->hset($process_key, "virtual_memory_bytes", $proc_statm->{vsize}, sub { });
+            $metrics_redis->hset($process_key, "resident_memory_bytes", $proc_statm->{rss}, sub { });
 
             # File descriptor metrics (gauges)
-            $metrics_redis->hset($process_key, "open_fds", $proc_fds->{open}) if defined $proc_fds->{open};
-            $metrics_redis->hset($process_key, "max_fds", $proc_fds->{max}) if defined $proc_fds->{max};
+            $metrics_redis->hset($process_key, "open_fds", $proc_fds->{open}, sub { }) if defined $proc_fds->{open};
+            $metrics_redis->hset($process_key, "max_fds", $proc_fds->{max}, sub { }) if defined $proc_fds->{max};
 
             # Process start time (gauge)
-            $metrics_redis->hset($process_key, "start_time_seconds", $proc_stat->{starttime});
+            $metrics_redis->hset($process_key, "start_time_seconds", $proc_stat->{starttime}, sub { });
 
             # I/O metrics (counters)
-            $metrics_redis->hset($process_key, "read_bytes_total", $proc_io->{read_bytes});
-            $metrics_redis->hset($process_key, "write_bytes_total", $proc_io->{write_bytes});
+            $metrics_redis->hset($process_key, "read_bytes_total", $proc_io->{read_bytes}, sub { });
+            $metrics_redis->hset($process_key, "write_bytes_total", $proc_io->{write_bytes}, sub { });
+            $metrics_redis->expire( $process_key, 90, sub { } );
+            $metrics_redis->wait_all_responses;
         };
         $error = $@;
 
@@ -646,7 +729,8 @@ sub cleanup_metrics {
         my @minion_keys     = $metrics_redis->keys("metrics:minion:*");
         my @shinobu_keys    = $metrics_redis->keys("metrics:shinobu:*");
         my @image_keys      = $metrics_redis->keys("metrics:image:*");
-        my @all_keys        = (@api_keys, @http_keys, @minion_keys, @shinobu_keys, @image_keys);
+        my @search_keys     = $metrics_redis->keys("metrics:search:*");
+        my @all_keys        = (@api_keys, @http_keys, @minion_keys, @shinobu_keys, @image_keys, @search_keys);
         if ( @all_keys ) {
             $metrics_redis->del(@all_keys);
             my $count = scalar(@all_keys);
@@ -674,11 +758,15 @@ sub flush_request_metrics_to_redis {
     eval {
         foreach my $base ( keys %REQUEST_METRICS_CACHE ) {
             my $fields = $REQUEST_METRICS_CACHE{$base} || {};
-            $redis->hincrby($base, "count",               $fields->{count}             || 0);
-            $redis->hincrbyfloat($base, "duration_sum",   $fields->{duration_sum}      || 0);
-            $redis->hincrby($base, "request_size_sum",    $fields->{request_size_sum}  || 0);
-            $redis->hincrby($base, "response_size_sum",   $fields->{response_size_sum} || 0);
+            $redis->hincrby($base, "count",               $fields->{count}             || 0, sub { });
+            $redis->hincrbyfloat($base, "duration_sum",   $fields->{duration_sum}      || 0, sub { });
+            $redis->hincrby($base, "request_size_sum",    $fields->{request_size_sum}  || 0, sub { });
+            $redis->hincrby($base, "response_size_sum",   $fields->{response_size_sum} || 0, sub { });
+            foreach my $field ( grep { /^(?:status_|duration_bucket_)/ } keys %{$fields} ) {
+                $redis->hincrby( $base, $field, $fields->{$field} || 0, sub { } );
+            }
         }
+        $redis->wait_all_responses;
     };
     $error = $@;
     $redis->quit();

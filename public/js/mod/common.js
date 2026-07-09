@@ -156,7 +156,7 @@ export function openInNewTab(url) {
  */
 export function closeOverlay() {
     $("#overlay-shade").fadeOut(300);
-    $(".base-overlay").css("display", "none");
+    $(".base-overlay").attr("aria-hidden", "true").css("display", "none");
 }
 
 /**

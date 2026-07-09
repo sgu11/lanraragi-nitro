@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="[% c.language_tag %]">
 <head>
     <title>[% title %]</title>
 
@@ -46,14 +46,14 @@
 
 <body data-user-logged="[% userlogged %]">
 
-    <div id="i1" class="sni">
+    <main id="i1" class="sni">
         <div id="i2">
             <h1 id="archive-title">...</h1>
 
             [% INCLUDE pagesel %] [% INCLUDE arrows %] [% INCLUDE fileinfo %]
         </div>
 
-        <div id="i3" class="loading">
+        <div id="i3" class="loading" aria-busy="true">
             <div class="loading-overlay">
                 <p class="loading-spinner">
                     <i id="spinner" class="fa fa-fan fa-spin"></i>
@@ -62,8 +62,14 @@
 
             <div id="overlay-page" class="focus-overlay"></div>
 
+            <div id="reader-load-error" class="reader-load-error" role="alert" style="display:none">
+                <strong>[% c.lh("This page could not be loaded.") %]</strong>
+                <span id="reader-load-error-detail"></span>
+                <button id="reader-load-retry" class="stdbtn" type="button">[% c.lh("Retry") %]</button>
+            </div>
+
             <a id="display">
-                <img id="img" class="reader-image" src="[% first_page_url %]" fetchpriority="high"><img id="img_doublepage" class="reader-image" src="" fetchpriority="high">
+                <img id="img" class="reader-image" src="[% first_page_url %]" fetchpriority="high" alt="[% c.lh('Reader page') %]"><img id="img_doublepage" class="reader-image" src="" fetchpriority="high" alt="[% c.lh('Reader page') %]">
             </a>
 
         </div>
@@ -92,16 +98,17 @@
             [% END %]
         </div>
 
-    </div>
+    </main>
 
     <div id="overlay-shade"></div>
-    <div id="archivePagesOverlay" class="id1 base-overlay page-overlay" style="display:none" loaded="false">
+    <div id="archivePagesOverlay" class="id1 base-overlay page-overlay" style="display:none" loaded="false"
+        role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="archive-title-overlay" tabindex="-1">
         <h2 class="ih" id="archive-title-overlay" style="text-align:center">[% c.lh("Archive Overview") %]</h2>
         <div id="tagContainer" class="caption caption-tags caption-reader">
             <br>
             <div style="margin-bottom:16px;">
                 <div class="id3 nocrop reader-thumbnail">
-                    <img id="reader-overview-thumbnail" src="[% IF is_tank %][% c.url_for("/api/tankoubons/$id/thumbnail") %][% ELSE %][% c.url_for("/api/archives/$id/thumbnail") %][% END %]" />
+                    <img id="reader-overview-thumbnail" src="[% IF is_tank %][% c.url_for("/api/tankoubons/$id/thumbnail") %][% ELSE %][% c.url_for("/api/archives/$id/thumbnail") %][% END %]" alt="[% c.lh('Archive Overview') %]" />
                 </div>
 
                 [% IF userlogged %]
@@ -158,7 +165,7 @@
 
         <div id="extract-spinner" style="width: 80%; margin-left: auto; margin-right: auto">
             <p class="loading-spinner">
-                <i id="spinner" class="fa fa-dharmachakra fa-4x fa-spin"></i>
+                <i class="fa fa-dharmachakra fa-4x fa-spin" aria-hidden="true"></i>
             </p>
             [% c.lh("Working on it...") %]
         </div>
@@ -173,7 +180,8 @@
             <feConvolveMatrix order="3" kernelMatrix="0 -0.5 0 -0.5 3 -0.5 0 -0.5 0" preserveAlpha="true"/>
         </filter>
     </svg>
-    <div id="settingsOverlay" class="id1 base-overlay small-overlay" style="display:none">
+    <div id="settingsOverlay" class="id1 base-overlay small-overlay" style="display:none"
+        role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reader-options-title" tabindex="-1">
         [% INCLUDE config %]
     </div>
 
@@ -223,7 +231,7 @@
 <!-- -->
 [% BLOCK config %]
 
-<h2 class="ih" style="text-align:center">[% c.lh("Reader Options") %]</h2>
+<h2 class="ih" id="reader-options-title" style="text-align:center">[% c.lh("Reader Options") %]</h2>
 
 <h1 class="ih config-panel">[% c.lh("Those options save automatically -- Click around and find out!") %]</h1>
 
@@ -237,6 +245,7 @@
 <div id="container-width">
     <h2 class="config-panel"> [% c.lh("Container Width (in pixels or percentage)") %]</h2>
     <input id="container-width-input" class="stdinput" style="display:inline; width: 70%;"
+        aria-label="[% c.lh('Container Width (in pixels or percentage)') %]"
         placeholder="[% c.lh('The default value is 1200px, or 90% in Double Page Mode.') %]">
     <input id="container-width-apply" class="favtag-btn config-btn" type="button" style="display:inline;" value="[% c.lh('Apply') %]">
 </div>
@@ -263,7 +272,7 @@
 
 <div id="preload-images">
     <h2 class="config-panel"> [% c.lh("How many images to preload") %]</h2>
-    <input id="preload-input" class="stdinput" style="display:inline" placeholder="[% c.lh('The default is two images.') %]" type="number">
+    <input id="preload-input" class="stdinput" style="display:inline" placeholder="[% c.lh('The default is two images.') %]" type="number" min="0" max="8" aria-label="[% c.lh('How many images to preload') %]">
     <input id="preload-apply" class="favtag-btn config-btn" type="button" style="display:inline;" value="[% c.lh('Apply') %]">
 </div>
 
@@ -336,33 +345,33 @@
 [% END %]
 <!-- -->
 [% BLOCK arrows %]
-<div class="sn paginator">
-    <a class="fa fa-backward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-left"></a>
-    <a class="fa fa-angle-double-left page-link" style="font-size: 1.5em;" value="outer-left"></a>
-    <a class="fa fa-angle-left page-link" style="font-size: 1.5em;" value="left"></a>
+<div class="sn paginator" aria-label="[% c.lh('Reader page navigation') %]">
+    <button type="button" class="fa fa-backward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-left" aria-label="[% c.lh('Previous archive') %]"></button>
+    <button type="button" class="fa fa-angle-double-left page-link" style="font-size: 1.5em;" value="outer-left" aria-label="[% c.lh('First page') %]"></button>
+    <button type="button" class="fa fa-angle-left page-link" style="font-size: 1.5em;" value="left" aria-label="[% c.lh('Previous page') %]"></button>
 
     <div class="pagecount">
         <span class="current-page">...</span> /
         <span class="max-page">...</span>
     </div>
 
-    <a class="fa fa-angle-right page-link" style="font-size: 1.5em;" value="right"></a>
-    <a class="fa fa-angle-double-right page-link" style="font-size: 1.5em;" value="outer-right"></a>
-    <a class="fa fa-forward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-right"></a>
+    <button type="button" class="fa fa-angle-right page-link" style="font-size: 1.5em;" value="right" aria-label="[% c.lh('Next page') %]"></button>
+    <button type="button" class="fa fa-angle-double-right page-link" style="font-size: 1.5em;" value="outer-right" aria-label="[% c.lh('Last page') %]"></button>
+    <button type="button" class="fa fa-forward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-right" aria-label="[% c.lh('Next archive') %]"></button>
 </div>
 [% END %]
 <!-- -->
 [% BLOCK pagesel %]
 <div class="absolute-options absolute-left">
-    <a class="fa fa-cog fa-2x" id="toggle-settings-overlay" href="#" title="[% c.lh('Reader Options') %]"></a>
-    <a class="fa fa-crop-alt fa-2x" id="toggle-border-crop-button" href="#" title="[% c.lh('Blank Border Cropping') %]"></a>
+    <a class="fa fa-cog fa-2x toggle-settings-overlay" href="#" title="[% c.lh('Reader Options') %]" aria-label="[% c.lh('Reader Options') %]"></a>
+    <a class="fa fa-crop-alt fa-2x toggle-border-crop-button" href="#" title="[% c.lh('Blank Border Cropping') %]" aria-label="[% c.lh('Blank Border Cropping') %]"></a>
 </div>
 
 <div class="absolute-options absolute-right">
-    <a class="fa fa-arrow-right fa-2x reading-direction" href="#" title="[% c.lh('Reading Direction') %]"></a>
-    <a class="fa fa-stopwatch fa-2x toggle-auto-next-page" href="#" title="[% c.lh('Auto Next Page') %]"></a>
-    <a class="fa fa-th fa-2x" id="toggle-archive-overlay" href="#" title="[% c.lh('Archive Overview') %]"></a>
-    <a class="fa fa-compress fa-2x" id="toggle-full-screen" href="#" title="[% c.lh('FullScreen') %]"></a>
+    <a class="fa fa-arrow-right fa-2x reading-direction" href="#" title="[% c.lh('Reading Direction') %]" aria-label="[% c.lh('Reading Direction') %]"></a>
+    <a class="fa fa-stopwatch fa-2x toggle-auto-next-page" href="#" title="[% c.lh('Auto Next Page') %]" aria-label="[% c.lh('Auto Next Page') %]"></a>
+    <a class="fa fa-th fa-2x toggle-archive-overlay" href="#" title="[% c.lh('Archive Overview') %]" aria-label="[% c.lh('Archive Overview') %]"></a>
+    <a class="fa fa-compress fa-2x toggle-full-screen" href="#" title="[% c.lh('FullScreen') %]" aria-label="[% c.lh('FullScreen') %]"></a>
 </div>
 [% END %]
 <!-- -->

@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 
-<html>
+<html lang="[% c.language_tag %]">
 
 <head>
     <title>[% title %] - [% c.lh("Duplicates") %]</title>
@@ -14,7 +14,7 @@
     <link type="image/png" rel="icon" href="favicon.ico" />
     <link rel="manifest" href="app.webappmanifest" />
     <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/lrr.css?$asset_version") %]" />
-    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/duplicates_custom.css") %]?[% asset_version %]-no-delete-confirm" />
+    <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/duplicates_custom.css?$asset_version") %]" />
     <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/fontawesome-all.min.css") %]" />
     <link rel="stylesheet" type="text/css" href="[% c.url_for("/css/vendor/sweetalert2.min.css") %]" />
     [% csshead %]
@@ -23,7 +23,7 @@
 
     <script src="[% c.url_for("/js/vendor/jquery.min.js") %]" type="text/JAVASCRIPT"></script>
 
-    <script src="[% c.url_for("/js/duplicates_custom.js") %]?[% asset_version %]-no-delete-confirm" type="module"></script>
+    <script src="[% c.url_for("/js/duplicates_custom.js?$asset_version") %]" type="module"></script>
 
 </head>
 
@@ -32,7 +32,7 @@
     <div id="dupes-container">
         <div id="dupes-page-header">
             <h2>[% c.lh("Duplicates") %]</h2>
-            <div id="dupes-review-count">0 reviewed</div>
+            <div id="dupes-review-count">[% c.lh("0 reviewed") %]</div>
         </div>
 
         <div id="dupes-toolbar">
@@ -40,50 +40,50 @@
                 <i class="fas fa-arrow-left"></i> [% c.lh("Return to Library") %]
             </button>
             <button id="run-refresh" class="stdbtn" type="button">
-                <i class="fas fa-sync"></i> Refresh deck
+                <i class="fas fa-sync"></i> [% c.lh("Refresh deck") %]
             </button>
             <button id="run-find-cover" class="stdbtn" type="button" title="Cover-only pass: ignores page-count gap, surfaces chapter↔volume style matches.">
-                <i class="fas fa-image"></i> Find cover matches
+                <i class="fas fa-image"></i> [% c.lh("Find cover matches") %]
             </button>
             <span id="dupes-stats" class="dupes-stats">Loading…</span>
             <label class="dupes-threshold-label">
-                Cover Hamming threshold:
+                [% c.lh("Cover Hamming threshold:") %]
                 <input id="threshold-slider" type="range" min="12" max="25" step="1" value="22" />
                 <span id="threshold-value">22</span>
                 <select id="preset-select">
-                    <option value="12">12 (strict)</option>
+                    <option value="12">12 ([% c.lh("strict") %])</option>
                     <option value="20">20</option>
                     <option value="22" selected>22</option>
-                    <option value="25">25 (loose)</option>
+                    <option value="25">25 ([% c.lh("loose") %])</option>
                 </select>
             </label>
             <label class="dupes-threshold-label">
-                Status:
+                [% c.lh("Status:") %]
                 <select id="status-select">
-                    <option value="new" selected>New</option>
-                    <option value="all">All</option>
-                    <option value="same_cover">Same Cover</option>
-                    <option value="variant">Variant</option>
-                    <option value="not_duplicate">Not Duplicate</option>
-                    <option value="needs_review">Needs Review</option>
-                    <option value="resolved">Resolved</option>
+                    <option value="new" selected>[% c.lh("New") %]</option>
+                    <option value="all">[% c.lh("All") %]</option>
+                    <option value="same_cover">[% c.lh("Same Cover") %]</option>
+                    <option value="variant">[% c.lh("Variant") %]</option>
+                    <option value="not_duplicate">[% c.lh("Not Duplicate") %]</option>
+                    <option value="needs_review">[% c.lh("Needs Review") %]</option>
+                    <option value="resolved">[% c.lh("Resolved") %]</option>
                 </select>
             </label>
         </div>
 
         <div id="dupes-review-shell">
             <main id="dupes-active-stage">
-                <div id="dupes-list">Loading pairs…</div>
+                <div id="dupes-list">[% c.lh("Loading pairs...") %]</div>
             </main>
             <aside id="dupes-queue-rail">
                 <div class="dupes-queue-header">
-                    <span>Review queue</span>
+                    <span>[% c.lh("Review queue") %]</span>
                     <span id="dupes-queue-count">0</span>
                 </div>
                 <div id="dupes-queue-list"></div>
             </aside>
         </div>
-        <div id="dupes-keyboard-hints">Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review</div>
+        <div id="dupes-keyboard-hints">[% c.lh("Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review") %]</div>
     </div>
 
 </body>

@@ -89,6 +89,10 @@ export function initializeAll() {
     dataTable = $(".datatables").DataTable({
         serverSide: true,
         processing: true,
+        // URL search/category/order state is applied immediately below. Skip
+        // DataTables' automatic empty first request so cold index load performs
+        // exactly one /search request.
+        deferLoading: 0,
         ajax: {
             url: "search",
             cache: true,
@@ -157,9 +161,6 @@ export function doSearch(page) {
         dataTable.settings()[0].iInitDisplayStart = 0;
     }
     dataTable.draw();
-
-    // Re-load categories so the most recently selected/created ones appear first
-    Index.loadCategories();
 
     // Re-load carousel
     Index.updateCarousel();
@@ -351,7 +352,7 @@ export function drawCallback() {
                     // special case for empty search params: window.location.search is "" if there are
                     // no search params, even if window.location ends with '?'
                     if (window.location.search !== "") {
-                        window.history.pushState(null, null, "/");
+                        window.history.pushState(null, null, `${new LRR.ApiURL("/")}`);
                     }
                 } else if (params !== window.location.search) {
                     window.history.pushState(null, null, params);
@@ -455,7 +456,10 @@ export function consumeURLParameters() {
     if (params.has("c")) Index.setSelectedCategory(params.get("c"));
     else Index.setSelectedCategory("");
 
-    if (params.has("q")) { currentSearch = decodeURIComponent(params.get("q")); }
+    // URLSearchParams has already decoded percent escapes. Calling
+    // decodeURIComponent again throws for literal percent searches such as
+    // q=100%25 and used to silently fall back to the unfiltered library.
+    currentSearch = params.get("q") || "";
 
     // get current columns count, except title and tags
     const currentCustomColumnCount = dataTable.columns().count() - 2;

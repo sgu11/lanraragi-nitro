@@ -65,3 +65,66 @@ body.reader-minimal-chrome:not(.infinite-scroll) .reader-image {
 body.reader-minimal-chrome .sb {
   margin-top: 10px;
 }
+
+.absolute-options a,
+.paginator .page-link {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.paginator .page-link {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.absolute-options a:focus-visible,
+.paginator .page-link:focus-visible,
+.overlay-window-button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+.overlay-window-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 8px 0 16px;
+}
+
+.overlay-window-pages {
+  contain: layout style;
+}
+
+.reader-load-error {
+  position: absolute;
+  z-index: 30;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  flex-direction: column;
+  gap: 10px;
+  width: min(34rem, calc(100vw - 32px));
+  padding: 18px;
+  border-radius: 8px;
+  background: rgba(20, 20, 20, 0.94);
+  color: #fff;
+  box-sizing: border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

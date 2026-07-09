@@ -33,7 +33,8 @@ BEGIN {
 use Exporter 'import';
 our @EXPORT_OK = qw(is_image is_archive render_api_response get_tag_with_namespace shasum_str start_shinobu
   split_workload_by_cpu start_minion get_css_list generate_themes_header flat get_bytelength array_difference
-  intersect_arrays filter_hash_by_keys exec_with_lock exec_with_lock_pure generate_css_detail get_version get_item_title);
+  intersect_arrays filter_hash_by_keys exec_with_lock exec_with_lock_pure generate_css_detail get_version get_item_title
+  get_effective_cpu_count get_minion_job_count get_minion_mce_worker_count);
 
 # Version information
 my $version_info;
@@ -115,17 +116,111 @@ sub split_workload_by_cpu {
     return @sections;
 }
 
+sub _read_first_line {
+    my ($path) = @_;
+    return unless -r $path;
+    open( my $fh, '<', $path ) or return;
+    my $line = <$fh>;
+    close $fh;
+    chomp $line if defined $line;
+    return $line;
+}
+
+sub _count_cpu_list {
+    my ($list) = @_;
+    return unless defined $list && $list =~ /\d/;
+
+    my $count = 0;
+    foreach my $range ( split /,/, $list ) {
+        if ( $range =~ /^\s*(\d+)\s*-\s*(\d+)\s*$/ && $2 >= $1 ) {
+            $count += $2 - $1 + 1;
+        } elsif ( $range =~ /^\s*\d+\s*$/ ) {
+            $count++;
+        } else {
+            return;
+        }
+    }
+    return $count || undef;
+}
+
+sub _quota_cpu_count {
+    my ($cpu_max) = @_;
+    return unless defined $cpu_max && $cpu_max =~ /^\s*(\d+)\s+(\d+)\s*$/;
+    my ( $quota, $period ) = ( $1, $2 );
+    return unless $quota > 0 && $period > 0;
+    return int( ( $quota + $period - 1 ) / $period ) || 1;
+}
+
+# Sys::CpuAffinity can report every host CPU even when a container is pinned to
+# a smaller cpuset. Respect process affinity and cgroup quota so Minion and its
+# nested MCE loops share the CPU budget actually assigned to this runtime.
+sub get_effective_cpu_count {
+    my ( $detected, $cpuset_list, $cpu_max ) = @_;
+    my $configured = $ENV{LRR_CPU_COUNT};
+    return $configured if defined $configured && $configured =~ /^\d+$/ && $configured >= 1;
+
+    $detected //= Sys::CpuAffinity::getNumCpus();
+    $detected = 1 if !$detected || $detected < 1;
+
+    if ( IS_UNIX && $Config{osname} eq 'linux' ) {
+        if ( !defined $cpuset_list && open( my $fh, '<', '/proc/self/status' ) ) {
+            while ( my $line = <$fh> ) {
+                if ( $line =~ /^Cpus_allowed_list:\s*(.+)$/ ) {
+                    $cpuset_list = $1;
+                    last;
+                }
+            }
+            close $fh;
+        }
+        $cpu_max //= _read_first_line('/sys/fs/cgroup/cpu.max');
+    }
+
+    my $cpuset_count = _count_cpu_list($cpuset_list);
+    my $quota_count  = _quota_cpu_count($cpu_max);
+    $detected = $cpuset_count if defined $cpuset_count && $cpuset_count < $detected;
+    $detected = $quota_count  if defined $quota_count  && $quota_count < $detected;
+    return $detected;
+}
+
 # Start a Minion worker if there aren't any available.
+sub get_minion_job_count {
+    my ($cpu_count) = @_;
+    $cpu_count //= get_effective_cpu_count();
+
+    my $configured = $ENV{LRR_MINION_JOBS};
+    return $configured if defined $configured && $configured =~ /^\d+$/ && $configured >= 1;
+    return $cpu_count < 2 ? 1 : 2;
+}
+
+# Keep nested MCE work within one machine-wide CPU budget. A Minion worker can
+# execute several jobs concurrently, and thumbnail jobs then fork again through
+# MCE; using the full CPU count at both levels produced CPU_count² workers.
+sub get_minion_mce_worker_count {
+    my ( $cpu_count, $minion_jobs ) = @_;
+    $cpu_count //= get_effective_cpu_count();
+
+    my $configured = $ENV{LRR_MCE_WORKERS};
+    return $configured if defined $configured && $configured =~ /^\d+$/ && $configured >= 1;
+
+    $minion_jobs //= get_minion_job_count($cpu_count);
+    return int( $cpu_count / $minion_jobs ) || 1;
+}
+
 sub start_minion {
     my $mojo   = shift;
     my $logger = get_logger( "Minion", "minion" );
 
     if (IS_UNIX) {
-        my $numcpus = Sys::CpuAffinity::getNumCpus();
-        $logger->info("Starting new Minion worker in subprocess with $numcpus parallel jobs.");
+        my $numcpus = get_effective_cpu_count();
+        my $parallel_jobs = get_minion_job_count($numcpus);
+        my $mce_workers = get_minion_mce_worker_count( $numcpus, $parallel_jobs );
+        $logger->info(
+            "Starting new Minion worker in subprocess with $parallel_jobs parallel jobs "
+              . "and up to $mce_workers nested MCE workers per job."
+        );
 
         my $worker = $mojo->app->minion->worker;
-        $worker->status->{jobs} = $numcpus;
+        $worker->status->{jobs} = $parallel_jobs;
         $worker->on( dequeue => sub { pop->once( spawn => \&_spawn ) } );
 
         # https://github.com/mojolicious/minion/issues/76
@@ -133,6 +228,12 @@ sub start_minion {
         $proc->start(
             sub {
                 $logger->info("Minion worker $$ started");
+                if ( LANraragi::Model::Config->enable_metrics ) {
+                    require LANraragi::Model::Metrics;
+                    Mojo::IOLoop->recurring(
+                        30 => sub { LANraragi::Model::Metrics::collect_process_metrics("minion") }
+                    );
+                }
                 $worker->run;
                 $logger->info("Minion worker $$ stopped");
                 return 1;

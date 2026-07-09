@@ -48,6 +48,7 @@ let showingSinglePage = true;
 let pageThumbnails = [];
 const MAX_PRELOADED_IMAGES = 8;
 const INFINITE_SCROLL_WINDOW_RADIUS = 4;
+const OVERLAY_PAGE_WINDOW_SIZE = 60;
 const PROGRESS_PERSISTENCE_DELAY_MS = 200;
 const READER_CURSOR_IDLE_DELAY_MS = 1000;
 const READER_CURSOR_WAKE_DISTANCE_PX = 50;
@@ -100,7 +101,6 @@ let doublePageMode;
 let ignoreProgress;
 let infiniteScroll;
 let fitMode;
-let currentPageLoaded;
 let progress;
 let showOverlayByDefault;
 let preloadCount;
@@ -114,6 +114,7 @@ let wakeLock = null;
 let readerCursorIdleTimer = null;
 let readerCursorLastMousePosition = null;
 let appliedContainerLayoutSignature = null;
+let overlayReturnFocus = null;
 
 function isCurrentNavigation(navigationId) {
     return isCurrentReaderNavigation(readerCursor, navigationId);
@@ -434,7 +435,9 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
     applyContainerWidth();
     registerPreload();
     registerAutoNextPage();
-    document.documentElement.style.scrollBehavior = "smooth";
+    document.documentElement.style.scrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth";
     initializeReaderCursorAutoHide();
 
     // Bind events to DOM
@@ -460,8 +463,8 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
     $(document).on("submit.auto-next-page", "#auto-next-page-input", registerAutoNextPage);
     $(document).on("click.auto-next-page", "#auto-next-page-apply", registerAutoNextPage);
 
-    $(document).on("click.close-overlay", "#overlay-shade", LRR.closeOverlay);
-    $(document).on("click.toggle-full-screen", "#toggle-full-screen", (e) => {
+    $(document).on("click.close-overlay", "#overlay-shade", closeReaderOverlay);
+    $(document).on("click.toggle-full-screen", ".toggle-full-screen", (e) => {
         e.preventDefault();
         e.stopPropagation();
         toggleFullScreen();
@@ -471,15 +474,23 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
     // Fork: image-quality selector + auto-fullscreen toggle + double-page spread-start.
     $("#image-quality input").on("click.image-quality", setImageQuality);
     $(document).on("click.toggle-border-crop", "#toggle-border-crop input", toggleBorderCrop);
-    $(document).on("click.toggle-border-crop-button", "#toggle-border-crop-button", toggleBorderCrop);
+    $(document).on("click.toggle-border-crop-button", ".toggle-border-crop-button", toggleBorderCrop);
     $(document).on("click.toggle-mobile-fullscreen", "#toggle-mobile-fullscreen input", toggleMobileFullscreen);
     $(document).on("click.toggle-spread-start", "#toggle-spread-start input", cycleSpreadStart);
     $(document).on("click.toggle-auto-next-page", ".toggle-auto-next-page", toggleAutoNextPage);
-    $(document).on("click.toggle-archive-overlay", "#toggle-archive-overlay", toggleArchiveOverlay);
-    $(document).on("click.toggle-settings-overlay", "#toggle-settings-overlay", toggleSettingsOverlay);
+    $(document).on("click.toggle-archive-overlay", ".toggle-archive-overlay", toggleArchiveOverlay);
+    $(document).on("click.toggle-settings-overlay", ".toggle-settings-overlay", toggleSettingsOverlay);
     $(document).on("click.toggle-help", "#toggle-help", toggleHelp);
     $(document).on("click.toggle-stamps", "#toggle-stamps", toggleStamps);
     $(document).on("click.toggle-bookmark", ".toggle-bookmark", toggleBookmark);
+    $(document).on("click.retry-reader-page", "#reader-load-retry", () => {
+        const retryPage = Number($("#reader-load-error").attr("data-page"));
+        if (Number.isInteger(retryPage)) goToPage(retryPage);
+    });
+    $(document).on("click.overlay-window", ".overlay-window-button", function () {
+        updateArchiveOverlay(true, Number($(this).attr("data-start-page")));
+    });
+    $(document).on("keydown.reader-dialog", ".base-overlay", trapOverlayFocus);
     $(document).on("click.regenerate-archive-cache", "#regenerate-cache", () => {
         window.location.href = new LRR.ApiURL(`/reader?id=${id}&force_reload`);
     });
@@ -635,7 +646,7 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
     fscreen.inFullscreen = () => !!fscreen.fullscreenElement;
     if (!fscreen.fullscreenEnabled) {
         // Fullscreen mode is unsupported; use attribute selector to hide all instances
-        $("[id='toggle-full-screen']").hide();
+        $(".toggle-full-screen").hide();
     }
 
     // Infer initial information from the URL
@@ -650,7 +661,7 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
     registerInitialPageScrollCancellation();
 
     // Set up archive navigation state from the entry source (datatables vs carousel vs direct nav)
-    await setupArchiveNavigation();
+    setupArchiveNavigation().catch((error) => console.warn("Archive navigation setup failed", error));
 
     // Remove the "new" tag with an api call (archives only; tanks don't have an isnew flag)
     if (!id.startsWith("TANK_"))
@@ -666,7 +677,7 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
         const artist = content.tags.match(/artist:([^,]+)(?:,|$)/i);
         if (artist) {
             const artistName = artist[1];
-            const artistSearchUrl = `/?sort=0&q=artist%3A${encodeURIComponent(artistName)}%24&`;
+            const artistSearchUrl = new LRR.ApiURL(`/?sort=0&q=artist%3A${encodeURIComponent(artistName)}%24&`);
             const link = $("<a></a>")
                 .attr("href", artistSearchUrl)
                 .text(artistName);
@@ -1062,6 +1073,21 @@ export function initializeSettings() {
     // fork: auto-fullscreen-on-first-click
     mobileFullscreen = localStorage.mobileFullscreen !== "false"; // default true
     $(mobileFullscreen ? "#mobile-fullscreen-on" : "#mobile-fullscreen-off").addClass("toggled");
+    initializeToggleAccessibility();
+}
+
+function initializeToggleAccessibility() {
+    const settings = document.getElementById("settingsOverlay");
+    if (!settings || settings.dataset.toggleA11yInitialized === "true") return;
+    settings.dataset.toggleA11yInitialized = "true";
+
+    const sync = (button) => button.setAttribute("aria-pressed", button.classList.contains("toggled") ? "true" : "false");
+    settings.querySelectorAll(".config-btn").forEach(sync);
+    new MutationObserver((records) => {
+        records.forEach((record) => {
+            if (record.target.matches(".config-btn")) sync(record.target);
+        });
+    }).observe(settings, { subtree: true, attributes: true, attributeFilter: ["class"] });
 }
 
 function applyReaderChromeLayout() {
@@ -1199,10 +1225,19 @@ function shiftRequestedSpreadByPageCount(step) {
 function cycleSpreadStart() {
     if (!doublePageMode || infiniteScroll) { return; }
     const modes = ["auto", "pair2"];
+    const previous = spreadStart;
     const next = modes[(modes.indexOf(spreadStart) + 1) % modes.length];
     setSpreadStart(next);
     // Persist per-archive (backend: PUT /api/archives/{id}/spreadstart)
-    fetch(new LRR.ApiURL(`/api/archives/${id}/spreadstart?value=${next}`), { method: "PUT" });
+    fetch(new LRR.ApiURL(`/api/archives/${id}/spreadstart?value=${next}`), { method: "PUT" })
+        .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        })
+        .catch((error) => {
+            setSpreadStart(previous);
+            goToPage(currentPage);
+            LRR.showErrorToast(I18N.ReaderArchiveError, error);
+        });
     goToPage(currentPage);
 }
 
@@ -1229,7 +1264,7 @@ function initFullscreen() {
     fscreen.inFullscreen = () => !!fscreen.fullscreenElement;
     if (!fscreen.fullscreenEnabled) {
         // Fullscreen mode is unsupported; use attribute selector to hide all instances
-        $("[id='toggle-full-screen']").hide();
+        $(".toggle-full-screen").hide();
     }
 
     fscreen.onfullscreenchange = () => handleFullScreen(fscreen.fullscreenElement !== null);
@@ -1268,7 +1303,9 @@ function initInfiniteScrollView(initialPageReason = "default-first") {
                 updateProgress();
             }
         });
-    }, { threshold: 0.5 });
+    // A narrow viewport-center band works for both short and very tall pages;
+    // threshold: 0.5 never fires when an image is taller than twice the viewport.
+    }, { threshold: 0, rootMargin: "-49% 0px -49% 0px" });
     const preloadObserver = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
             if (entry.isIntersecting) materializeInfiniteScrollImage(entry.target);
@@ -1333,13 +1370,48 @@ function materializeInfiniteScrollWindow(centerPage) {
     }
 }
 
+function isEditableShortcutTarget(target) {
+    return target?.matches?.("input, textarea, select, [contenteditable='true'], [contenteditable='']");
+}
+
+function closeReaderOverlay() {
+    LRR.closeOverlay();
+    const returnTarget = overlayReturnFocus;
+    overlayReturnFocus = null;
+    returnTarget?.focus?.();
+}
+
+function trapOverlayFocus(e) {
+    if (e.key !== "Tab" || !$(e.currentTarget).is(":visible")) return;
+    const focusable = [...e.currentTarget.querySelectorAll(
+        "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+    )].filter((element) => element.offsetParent !== null);
+    if (focusable.length === 0) {
+        e.preventDefault();
+        e.currentTarget.focus();
+        return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+    }
+}
+
 /** Process inputs
  * @param {JQuery.KeyDownEvent<Document, undefined, Document, Document> | JQuery.KeyUpEvent<Document, undefined, Document, Document>} e
 */
 function handleShortcuts(e) {
-    if (e.target.tagName === "INPUT") {
+    if (e.key === "Escape" && $(".base-overlay:visible").length) {
+        e.preventDefault();
+        closeReaderOverlay();
         return;
     }
+    if (isEditableShortcutTarget(e.target)) return;
 
     switch (e.key) {
         case ",":
@@ -1354,7 +1426,7 @@ function handleShortcuts(e) {
             returnToIndex();
             break;
         case 27: // escape
-            LRR.closeOverlay();
+            closeReaderOverlay();
             break;
         case 46: // delete
             confirmDeleteArchive();
@@ -1876,21 +1948,27 @@ function toggleBookmark(e) {
         return;
     }
 
-    if ($(".toggle-bookmark").hasClass("fas fa-bookmark")) {
-        // Remove from category
-        Server.removeArchiveFromCategory(id, localStorage.getItem("bookmarkCategoryId"));
-        removeCategoryBadge(localStorage.getItem("bookmarkCategoryId"));
-        $(".toggle-bookmark")
-            .removeClass("fas fa-bookmark")
-            .addClass("far fa-bookmark");
-    } else {
-        // Add to category
-        Server.addArchiveToCategory(id, localStorage.getItem("bookmarkCategoryId"));
-        addCategoryBadge(localStorage.getItem("bookmarkCategoryId"));
-        $(".toggle-bookmark")
-            .removeClass("far fa-bookmark")
-            .addClass("fas fa-bookmark");
-    }
+    const categoryId = localStorage.getItem("bookmarkCategoryId");
+    const wasBookmarked = $(".toggle-bookmark").hasClass("fas fa-bookmark");
+    const applyBookmarkState = (bookmarked) => {
+        if (bookmarked) {
+            addCategoryBadge(categoryId);
+            $(".toggle-bookmark").removeClass("far fa-bookmark").addClass("fas fa-bookmark").attr("aria-pressed", "true");
+        } else {
+            removeCategoryBadge(categoryId);
+            $(".toggle-bookmark").removeClass("fas fa-bookmark").addClass("far fa-bookmark").attr("aria-pressed", "false");
+        }
+    };
+
+    applyBookmarkState(!wasBookmarked);
+    const request = wasBookmarked
+        ? Server.callAPISilent(`/api/categories/${categoryId}/${id}`, "DELETE")
+        : Server.callAPISilent(`/api/categories/${categoryId}/${id}`, "PUT");
+    request.catch((error) => {
+        applyBookmarkState(wasBookmarked);
+        LRR.showErrorToast(I18N.CategoryEditError, error);
+    });
+
 }
 
 // dynamically add bookmark icon if bookmark link is configured.
@@ -1911,6 +1989,8 @@ function loadBookmarkStatus() {
                         bookmark.className = `${bookmarkState} fa-bookmark fa-2x toggle-bookmark${disabledClass}`;
                         bookmark.href = "#";
                         bookmark.title = I18N.ToggleBookmark;
+                        bookmark.setAttribute("aria-label", I18N.ToggleBookmark);
+                        bookmark.setAttribute("aria-pressed", isBookmarked ? "true" : "false");
                         if (!LRR.isUserLogged()) {
                             bookmark.setAttribute("style", "opacity: 0.5; cursor: not-allowed;");
                         }
@@ -1929,8 +2009,7 @@ function updateMetadata() {
     const filenameDoublePage = imgDoublePage.dataset.filename;
 
     if (!filename && showingSinglePage) {
-        currentPageLoaded = true;
-        $("#i3").removeClass("loading");
+        $("#i3").removeClass("loading").attr("aria-busy", "false");
         return;
     }
 
@@ -1981,8 +2060,7 @@ function updateMetadata() {
         : `${currentPage + 1} + ${currentPage + 2}`;
     $(".current-page").each((_i, el) => $(el).html(newVal));
 
-    currentPageLoaded = true;
-    $("#i3").removeClass("loading");
+    $("#i3").removeClass("loading").attr("aria-busy", "false");
 }
 
 async function goToPage(page, { resetScroll = true, preserveDisplayWindow = false } = {}) {
@@ -1998,71 +2076,91 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
         previousPage = currentPage;
         const targetPage = navigation.page;
         showingSinglePage = false;
+        let navigationFailed = false;
 
-        if (infiniteScroll) {
-            activeDisplayWindow = null;
-            activeDisplayWindowWasRequested = false;
-            materializeInfiniteScrollWindow(targetPage);
-            if (!isCurrentNavigation(navigationId)) { return; }
-            if (resetScroll) {
-                $("#display img").get(targetPage).scrollIntoView({ block: "nearest" });
-            }
-            if (!commitCurrentNavigation(navigationId, targetPage)) { return; }
-        } else {
-            if (doublePageMode) {
+        $("#reader-load-error").hide().attr("data-page", "");
+        $("#i3").addClass("loading").attr("aria-busy", "true");
+
+        try {
+
+            if (infiniteScroll) {
+                activeDisplayWindow = null;
+                activeDisplayWindowWasRequested = false;
+                materializeInfiniteScrollWindow(targetPage);
+                if (!isCurrentNavigation(navigationId)) { return; }
+                if (resetScroll) {
+                    $("#display img").get(targetPage).scrollIntoView({ block: "nearest" });
+                }
+                if (!commitCurrentNavigation(navigationId, targetPage)) { return; }
+            } else {
+                if (doublePageMode) {
                 // The probe pages (target, target-1, target+1) only populate
                 // preloadedDimensions for wide-page detection; they don't depend
                 // on each other, so load them concurrently instead of serially.
                 // Each writes to distinct preloadedDimensions/preloadedPromises
                 // keys, so concurrent loadImage calls don't clobber shared state.
-                await Promise.all(
-                    getDoublePageInitialProbePages(targetPage, maxPage).map((probePage) => loadImage(probePage))
-                );
-                if (!isCurrentNavigation(navigationId)) { return; }
+                    await Promise.all(
+                        getDoublePageInitialProbePages(targetPage, maxPage).map((probePage) => loadImage(probePage))
+                    );
+                    if (!isCurrentNavigation(navigationId)) { return; }
 
-                const probedDisplayWindow = getDisplayWindow(targetPage, getSpreadState({
-                    currentPage: targetPage,
-                }));
-                const displayWindow = displayWindowOverride && !displayWindowHasWidePage(displayWindowOverride)
-                    ? displayWindowOverride
-                    : probedDisplayWindow;
-                const displayStart = displayWindow.start;
+                    const probedDisplayWindow = getDisplayWindow(targetPage, getSpreadState({
+                        currentPage: targetPage,
+                    }));
+                    const displayWindow = displayWindowOverride && !displayWindowHasWidePage(displayWindowOverride)
+                        ? displayWindowOverride
+                        : probedDisplayWindow;
+                    const displayStart = displayWindow.start;
 
-                if (displayWindow.end > displayWindow.start) {
-                    const img1 = await loadImage(displayStart);
-                    if (!isCurrentNavigation(navigationId)) { return; }
-                    const img1Filename = getFilename(displayStart);
-                    const img2 = await loadImage(displayWindow.end);
-                    if (!isCurrentNavigation(navigationId)) { return; }
-                    const img2Filename = getFilename(displayWindow.end);
-                    await Promise.all([decodeImage(img1), decodeImage(img2)]);
-                    if (!isCurrentNavigation(navigationId)) { return; }
-                    activeDisplayWindow = displayWindow;
-                    activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
-                    activeDisplayWindowStride = displayWindowStrideOverride || 2;
-                    if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
-                    if (mangaMode) {
-                        $("#img").attr("src", img2);
-                        $("#img").attr("data-filename", img2Filename);
-                        $("#img_doublepage").attr("src", img1);
-                        $("#img_doublepage").attr("data-filename", img1Filename);
+                    if (displayWindow.end > displayWindow.start) {
+                        const img1 = await loadImage(displayStart);
+                        if (!isCurrentNavigation(navigationId)) { return; }
+                        const img1Filename = getFilename(displayStart);
+                        const img2 = await loadImage(displayWindow.end);
+                        if (!isCurrentNavigation(navigationId)) { return; }
+                        const img2Filename = getFilename(displayWindow.end);
+                        await Promise.all([decodeImage(img1), decodeImage(img2)]);
+                        if (!isCurrentNavigation(navigationId)) { return; }
+                        activeDisplayWindow = displayWindow;
+                        activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
+                        activeDisplayWindowStride = displayWindowStrideOverride || 2;
+                        if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
+                        if (mangaMode) {
+                            $("#img").attr("src", img2);
+                            $("#img").attr("data-filename", img2Filename);
+                            $("#img_doublepage").attr("src", img1);
+                            $("#img_doublepage").attr("data-filename", img1Filename);
+                        } else {
+                            $("#img").attr("src", img1);
+                            $("#img").attr("data-filename", img1Filename);
+                            $("#img_doublepage").attr("src", img2);
+                            $("#img_doublepage").attr("data-filename", img2Filename);
+                        }
+                        $("#display").addClass("double-mode");
                     } else {
-                        $("#img").attr("src", img1);
-                        $("#img").attr("data-filename", img1Filename);
-                        $("#img_doublepage").attr("src", img2);
-                        $("#img_doublepage").attr("data-filename", img2Filename);
+                        const img = await loadImage(displayStart);
+                        if (!isCurrentNavigation(navigationId)) { return; }
+                        const imgFilename = getFilename(displayStart);
+                        await decodeImage(img);
+                        if (!isCurrentNavigation(navigationId)) { return; }
+                        activeDisplayWindow = displayWindow;
+                        activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
+                        activeDisplayWindowStride = displayWindowStrideOverride || 2;
+                        if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
+                        $("#img").attr("src", img);
+                        $("#img").attr("data-filename", imgFilename);
+                        $("#img_doublepage").attr("src", "");
+                        $("#img_doublepage").attr("data-filename", "");
+                        $("#display").removeClass("double-mode");
+                        showingSinglePage = true;
                     }
-                    $("#display").addClass("double-mode");
                 } else {
-                    const img = await loadImage(displayStart);
+                    const img = await loadImage(targetPage);
                     if (!isCurrentNavigation(navigationId)) { return; }
-                    const imgFilename = getFilename(displayStart);
+                    const imgFilename = getFilename(targetPage);
                     await decodeImage(img);
                     if (!isCurrentNavigation(navigationId)) { return; }
-                    activeDisplayWindow = displayWindow;
-                    activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
-                    activeDisplayWindowStride = displayWindowStrideOverride || 2;
-                    if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
+                    if (!commitCurrentNavigation(navigationId, targetPage)) { return; }
                     $("#img").attr("src", img);
                     $("#img").attr("data-filename", imgFilename);
                     $("#img_doublepage").attr("src", "");
@@ -2070,44 +2168,42 @@ async function goToPage(page, { resetScroll = true, preserveDisplayWindow = fals
                     $("#display").removeClass("double-mode");
                     showingSinglePage = true;
                 }
-            } else {
-                const img = await loadImage(targetPage);
+
+                applyContainerWidth();
+
+                // update full image link
+                $("#imgLink").attr("href", pages[currentPage]);
+
                 if (!isCurrentNavigation(navigationId)) { return; }
-                const imgFilename = getFilename(targetPage);
-                await decodeImage(img);
-                if (!isCurrentNavigation(navigationId)) { return; }
-                if (!commitCurrentNavigation(navigationId, targetPage)) { return; }
-                $("#img").attr("src", img);
-                $("#img").attr("data-filename", imgFilename);
-                $("#img_doublepage").attr("src", "");
-                $("#img_doublepage").attr("data-filename", "");
-                $("#display").removeClass("double-mode");
-                showingSinglePage = true;
+                if (resetScroll) {
+                    window.scrollTo(0, 0);
+                }
             }
-
-            applyContainerWidth();
-
-            currentPageLoaded = false;
-            // display overlay if it takes too long to load a page
-            setTimeout(() => {
-                if (!currentPageLoaded) { $("#i3").addClass("loading"); }
-            }, 500);
-
-            // update full image link
-            $("#imgLink").attr("href", pages[currentPage]);
 
             if (!isCurrentNavigation(navigationId)) { return; }
-            if (resetScroll) {
-                window.scrollTo(0, 0);
+            if ($("#archivePagesOverlay").attr("loaded") === "true") updateArchiveOverlay();
+            updateProgress();
+            if (infiniteScroll) {
+                $("#i3").removeClass("loading").attr("aria-busy", "false");
             }
-        }
-
-        if (!isCurrentNavigation(navigationId)) { return; }
-        updateArchiveOverlay();
-        updateProgress();
-        const ranQueuedNavigation = runQueuedReaderNavigation();
-        if (!ranQueuedNavigation && !infiniteScroll) {
-            preloadImages();
+            const ranQueuedNavigation = runQueuedReaderNavigation();
+            if (!ranQueuedNavigation && !infiniteScroll) {
+                preloadImages();
+            }
+        } catch (error) {
+            if (isCurrentNavigation(navigationId)) {
+                navigationFailed = true;
+                cancelReaderNavigation(readerCursor);
+                $("#reader-load-error")
+                    .attr("data-page", targetPage)
+                    .css("display", "flex");
+                $("#reader-load-error-detail").text(error?.message || String(error));
+                console.error(`Failed to load reader page ${targetPage + 1}`, error);
+            }
+        } finally {
+            if (navigationFailed) {
+                $("#i3").removeClass("loading").attr("aria-busy", "false");
+            }
         }
     });
 }
@@ -2135,11 +2231,11 @@ function preloadImages() {
 
     for (let i = 1; i <= preloadNext; i++) {
         if (currentPage + i > maxPage) { break; }
-        loadImage(currentPage + i);
+        loadImage(currentPage + i).catch(() => {});
     }
     for (let i = 1; i <= preloadPrev; i++) {
         if (currentPage - i < 0) { break; }
-        loadImage(currentPage - i);
+        loadImage(currentPage - i).catch(() => {});
     }
 }
 
@@ -2177,7 +2273,11 @@ window.addEventListener("pagehide", () => {
 async function decodeImage(src) {
     const img = new Image();
     img.src = src;
-    return img.decode().catch(() => {});
+    if (typeof img.decode === "function") return img.decode();
+    return new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error("Image decode failed"));
+    });
 }
 
 function getReaderPreloadStrategy() {
@@ -2253,7 +2353,7 @@ async function preloadImageWithBlobUrl(index, src) {
 async function preloadImageWithBrowserCache(index, src) {
     if (!preloadedImg[src]) {
         if (!preloadedPromises[src]) {
-            preloadedPromises[src] = new Promise((resolve) => {
+            preloadedPromises[src] = new Promise((resolve, reject) => {
                 const img = new Image();
                 img.fetchPriority = index === currentPage ? "high" : "low";
                 img.decoding = "async";
@@ -2264,7 +2364,7 @@ async function preloadImageWithBrowserCache(index, src) {
                     };
                     resolve(src);
                 };
-                img.onerror = () => resolve(src);
+                img.onerror = () => reject(new Error(`Could not load ${src}`));
                 img.src = src;
             }).finally(() => {
                 delete preloadedPromises[src];
@@ -2290,23 +2390,38 @@ function toggleFitMode(e) {
     applyContainerWidth();
 }
 
-function registerContainerWidth() {
+function registerContainerWidth(e) {
+    e?.preventDefault();
     // Examples of allowed values: 1200, 1200px, 90%
     // Default value: 1200px
-    const raw = $("#container-width-input").val().trim();
+    const input = document.getElementById("container-width-input");
+    const raw = input.value.trim();
     if (!raw) { // fall back to default
+        input.setCustomValidity("");
         delete state.containerWidth;
         localStorage.removeItem("containerWidth");
     } else {
-        let value, type;
-
-        [, value, type] = /^(\d+)(px|%)?$/.exec(raw);
-        value = value || 1200;
+        const match = /^(\d+)(px|%)?$/.exec(raw);
+        if (!match) {
+            input.setCustomValidity("Use pixels such as 1200px or a percentage such as 90%.");
+            input.reportValidity();
+            return false;
+        }
+        let [, value, type] = match;
+        value = Number(value);
         type = type || "px";
+        const valid = type === "%" ? value >= 25 && value <= 100 : value >= 320 && value <= 4000;
+        if (!valid) {
+            input.setCustomValidity(type === "%" ? "Use a value from 25% to 100%." : "Use a value from 320px to 4000px.");
+            input.reportValidity();
+            return false;
+        }
+        input.setCustomValidity("");
 
         state.containerWidth = localStorage.containerWidth = `${value}${type}`;
     }
     applyContainerWidth();
+    return false;
 }
 
 function getContainerLayoutSignature(fullscreen) {
@@ -2363,7 +2478,8 @@ function registerPreload() {
     const inputVal = rawInputVal === "" ? null : rawInputVal;
     const storageVal = (localStorage.preloadCount === "" ? null : localStorage.preloadCount);
 
-    preloadCount = inputVal ?? storageVal ?? 2;
+    const requested = Number(inputVal ?? storageVal ?? 2);
+    preloadCount = Number.isFinite(requested) ? Math.max(0, Math.min(MAX_PRELOADED_IMAGES, Math.trunc(requested))) : 2;
     $("#preload-input").val(preloadCount);
     localStorage.preloadCount = preloadCount;
 }
@@ -2555,18 +2671,20 @@ function findChapterForPage(page, chapters) {
     return null;
 }
 
-function updateArchiveOverlay(forceUpdate = false) {
+function updateArchiveOverlay(forceUpdate = false, requestedStartPage = null) {
     $("#extract-spinner").hide();
 
-    // Check if the overlay actually needs to be updated
-    // If it's already loaded and we're still in the same chapter (or no chapter), do nothing
-    if ($("#archivePagesOverlay").attr("loaded") === "true" && !forceUpdate) {
-
-        if ((currentChapter === null) ||
-            (currentPage + 1 >= currentChapter.startPage &&
-             currentPage + 1 <= currentChapter.endPage)) {
-            return;
-        }
+    const overlay = $("#archivePagesOverlay");
+    const nextChapter = getCurrentChapter();
+    const sameChapter = (currentChapter === null && nextChapter === null)
+        || (currentChapter !== null && nextChapter !== null
+            && currentChapter.startPage === nextChapter.startPage
+            && currentChapter.endPage === nextChapter.endPage);
+    const visibleFirst = Number(overlay.attr("data-first-page"));
+    const visibleLast = Number(overlay.attr("data-last-page"));
+    if (overlay.attr("loaded") === "true" && !forceUpdate && sameChapter
+        && currentPage + 1 >= visibleFirst && currentPage + 1 <= visibleLast) {
+        return;
     }
 
     // Reset stamp filter state when the overlay is rebuilt for a new chapter
@@ -2576,9 +2694,18 @@ function updateArchiveOverlay(forceUpdate = false) {
     }
 
     // Otherwise, update chapter and overlay -- If there are no chapters defined, just show all pages
-    currentChapter = getCurrentChapter();
-    let firstPage = currentChapter ? currentChapter.startPage : 1;
-    let lastPage = currentChapter ? currentChapter.endPage : pages.length;
+    currentChapter = nextChapter;
+    const firstPage = currentChapter ? currentChapter.startPage : 1;
+    const lastPage = currentChapter ? currentChapter.endPage : pages.length;
+    const latestWindowStart = Math.max(firstPage, lastPage - OVERLAY_PAGE_WINDOW_SIZE + 1);
+    const centeredWindowStart = Math.max(
+        firstPage,
+        Math.min(latestWindowStart, currentPage + 1 - Math.floor(OVERLAY_PAGE_WINDOW_SIZE / 2)),
+    );
+    const windowStart = Number.isInteger(requestedStartPage)
+        ? Math.max(firstPage, Math.min(latestWindowStart, requestedStartPage))
+        : centeredWindowStart;
+    const windowEnd = Math.min(lastPage, windowStart + OVERLAY_PAGE_WINDOW_SIZE - 1);
 
     $("#overlay-section").text(currentChapter ? currentChapter.name : I18N.ReaderPages);
 
@@ -2613,9 +2740,19 @@ function updateArchiveOverlay(forceUpdate = false) {
         $(".chapter-selector").html("");
     }
 
-    // For each link in the pages array, craft a div and jam it in the overlay.
-    let htmlBlob = "";
-    for (let page = firstPage; page < lastPage + 1; ++page) {
+    // Render a bounded window instead of creating six DOM nodes per page for
+    // the entire archive. Previous/next controls keep every page reachable.
+    let htmlBlob = `<div class="overlay-window-controls">`;
+    if (windowStart > firstPage) {
+        htmlBlob += `<button type="button" class="stdbtn overlay-window-button" data-start-page="${Math.max(firstPage, windowStart - OVERLAY_PAGE_WINDOW_SIZE)}">${I18N.ReaderPreviousPages || "Previous pages"}</button>`;
+    }
+    htmlBlob += `<span>${windowStart}–${windowEnd} / ${lastPage}</span>`;
+    if (windowEnd < lastPage) {
+        htmlBlob += `<button type="button" class="stdbtn overlay-window-button" data-start-page="${windowEnd + 1}">${I18N.ReaderNextPages || "Next pages"}</button>`;
+    }
+    htmlBlob += `</div><div class="overlay-window-pages">`;
+
+    for (let page = windowStart; page <= windowEnd; ++page) {
         const index = page - 1;
 
         const thumbCss = (localStorage.cropthumbs === "true") ? "id3" : "id3 nocrop";
@@ -2625,7 +2762,7 @@ function updateArchiveOverlay(forceUpdate = false) {
         let thumbnail = `
             <div class='${thumbCss} quick-thumbnail' page='${index}' style='display: inline-block; cursor: pointer'>
                 <span class='page-number'>${I18N.ReaderPage(page)}</span>
-                <img src="${thumbnailUrl}" id="${index}_thumb" loading="lazy" />`;
+                <img src="${thumbnailUrl}" id="${index}_thumb" loading="lazy" alt="${I18N.ReaderPage(page)}" />`;
 
         if (LRR.isUserLogged())
             thumbnail += `<a href="#" style="padding:12px; top:2%; left:72%;"
@@ -2643,12 +2780,16 @@ function updateArchiveOverlay(forceUpdate = false) {
 
         htmlBlob += thumbnail;
     }
+    htmlBlob += `</div>`;
 
     // NOTE: This can be slow on huge archives and on slower devices, due to the huge DOM change.
     Perf.measure("reader.overlay", () => {
         $("#pages-section").html(htmlBlob);
     });
-    $("#archivePagesOverlay").attr("loaded", "true");
+    overlay
+        .attr("loaded", "true")
+        .attr("data-first-page", windowStart)
+        .attr("data-last-page", windowEnd);
     checkStampedPages();
 }
 
@@ -3075,11 +3216,16 @@ function returnToIndex() {
  * @returns {boolean}
  */
 function toggleOverlay(selector) {
-    updateArchiveOverlay();
+    if (selector === "#archivePagesOverlay") updateArchiveOverlay();
     const overlay = $(selector);
-    overlay.is(":visible")
-        ? LRR.closeOverlay()
-        : $("#overlay-shade").fadeTo(150, 0.6, () => overlay.show());
+    if (overlay.is(":visible")) {
+        closeReaderOverlay();
+    } else {
+        overlayReturnFocus = document.activeElement;
+        $("#overlay-shade").fadeTo(150, 0.6, () => {
+            overlay.attr("aria-hidden", "false").show().trigger("focus");
+        });
+    }
 
     return false; // needs to return false to prevent scrolling to top
 }

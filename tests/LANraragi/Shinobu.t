@@ -26,6 +26,14 @@ package ShinobuCoverDedupRedis {
     sub quit { 1 }
 }
 
+package ShinobuIngestRedis {
+    our @deleted;
+    sub new { bless {}, shift }
+    sub set { return 1 }
+    sub del { shift; push @deleted, @_; return 1 }
+    sub quit { 1 }
+}
+
 package ShinobuCoverDedupMinion {
     our @enqueued;
     sub new { bless {}, shift }
@@ -37,6 +45,28 @@ package ShinobuCoverDedupMinion {
 }
 
 package main;
+
+note('new file events enqueue ingestion without waiting for archive stability');
+{
+    my ( $fh, $filename ) = tempfile( SUFFIX => '.cbz', UNLINK => 1 );
+    print {$fh} "partial archive";
+    close $fh;
+
+    @ShinobuCoverDedupMinion::enqueued = ();
+    @ShinobuIngestRedis::deleted = ();
+    my $config_mod = Test::MockModule->new('LANraragi::Model::Config');
+    $config_mod->redefine('get_redis_config', sub { ShinobuIngestRedis->new });
+    $config_mod->redefine('get_minion', sub { ShinobuCoverDedupMinion->new });
+
+    my $start = time;
+    Shinobu::new_file_callback($filename);
+    my $elapsed = time - $start;
+
+    cmp_ok( $elapsed, '<', 0.5, 'watcher callback returns without polling file size' );
+    is( $ShinobuCoverDedupMinion::enqueued[0][0], 'ingest_archive_file', 'archive ingestion moved to Minion' );
+    is( $ShinobuCoverDedupMinion::enqueued[0][1][0], $filename, 'queued job keeps the exact file path' );
+    is( $ShinobuCoverDedupMinion::enqueued[0][2]{attempts}, 3, 'transient ingest failures can retry' );
+}
 
 package ShinobuPageCacheLogger {
     sub new { bless {}, shift }

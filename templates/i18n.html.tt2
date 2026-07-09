@@ -185,6 +185,8 @@ I18N.AutoNextPageFailHeader = "[% c.lh("Starting auto next page failed!") %]";
 I18N.AutoNextPageFailBody = "[% c.lh("Please set the auto next page interval to a positive number.") %]";
 I18N.ReaderChapters = "[% c.lh("Chapters") %]";
 I18N.ReaderPages = "[% c.lh("Pages") %]";
+I18N.ReaderPreviousPages = "[% c.lh("Previous pages") %]";
+I18N.ReaderNextPages = "[% c.lh("Next pages") %]";
 I18N.ReaderAddToc = "[% c.lh("Add Chapter at this Page") %]";
 I18N.ReaderEditToc = "[% c.lh("Edit Chapter name") %]";
 I18N.ReaderDeleteToc = "[% c.lh("Delete Chapter") %]";
@@ -200,6 +202,35 @@ I18N.GoToPage = "[% c.lh("Go to page:") %]";
 I18N.StampName = "[% c.lh("Enter Stamp name:") %]"
 I18N.StampPlaceholder = "[% c.lh("Stamp name") %]"
 I18N.StampError = "[% c.lh("Error setting up the Stamp") %]"
+
+I18N.DuplicatesNew = "[% c.lh("New") %]";
+I18N.DuplicatesSameCover = "[% c.lh("Same Cover") %]";
+I18N.DuplicatesVariant = "[% c.lh("Variant") %]";
+I18N.DuplicatesNotDuplicate = "[% c.lh("Not Duplicate") %]";
+I18N.DuplicatesNeedsReview = "[% c.lh("Needs Review") %]";
+I18N.DuplicatesResolved = "[% c.lh("Resolved") %]";
+I18N.DuplicatesLeft = "[% c.lh("Left") %]";
+I18N.DuplicatesRight = "[% c.lh("Right") %]";
+I18N.DuplicatesPages = "[% c.lh("Pages") %]";
+I18N.DuplicatesSize = "[% c.lh("Size") %]";
+I18N.DuplicatesTags = "[% c.lh("Tags") %]";
+I18N.DuplicatesResolution = "[% c.lh("Resolution") %]";
+I18N.DuplicatesDate = "[% c.lh("Date") %]";
+I18N.DuplicatesUnknown = "[% c.lh("unknown") %]";
+I18N.DuplicatesKorean = "[% c.lh("Korean") %]";
+I18N.DuplicatesReviewed = (count) => `${count} [% c.lh("reviewed") %]`;
+I18N.DuplicatesLoadingPairs = "[% c.lh("Loading pairs...") %]";
+I18N.DuplicatesFailedLoadPairs = "[% c.lh("Failed to load pairs") %]";
+I18N.DuplicatesQueueEmpty = "[% c.lh("Queue empty") %]";
+I18N.DuplicatesKeep = (side) => `[% c.lh("Keep") %] ${side}`;
+I18N.DuplicatesDelete = (side) => `[% c.lh("Delete") %] ${side}`;
+I18N.DuplicatesImmediateDelete = (keep, remove) => `[% c.lh("Keeping") %] ${keep} [% c.lh("deletes") %] ${remove} [% c.lh("immediately without confirmation.") %]`;
+I18N.DuplicatesRefreshFailed = "[% c.lh("Refresh failed") %]";
+I18N.DuplicatesQueueFailed = "[% c.lh("Could not queue cover pass") %]";
+I18N.DuplicatesStatusFailed = "[% c.lh("Status update failed") %]";
+I18N.DuplicatesDeleteFailed = "[% c.lh("Delete failed") %]";
+I18N.DuplicatesArchiveMissing = "[% c.lh("Archive missing") %]";
+I18N.DuplicatesArchiveMissingDetail = "[% c.lh("Refresh the duplicate deck to remove this stale pair.") %]";
 
 I18N.ScriptRunning = "[% c.lh("A script is already running.") %]";
 I18N.ScriptRunningDesc = "[% c.lh("Please wait for it to finish before starting a new one.") %]";

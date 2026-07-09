@@ -80,4 +80,29 @@ note('testing lock names...');
     is( $lock_key ne "" ? decode_utf8($lock_key) : "", "upload:한글.zip", "unicode lock key preserves its text" );
 }
 
+note('testing bounded Minion and nested MCE concurrency...');
+
+{
+    local $ENV{LRR_CPU_COUNT};
+    local $ENV{LRR_MINION_JOBS};
+    local $ENV{LRR_MCE_WORKERS};
+    is( LANraragi::Utils::Generic::get_effective_cpu_count( 16, '0,2-4,7-9,11', 'max 100000' ), 8,
+        'cpuset restriction wins over host CPU count' );
+    is( LANraragi::Utils::Generic::get_effective_cpu_count( 16, '0-15', '400000 100000' ), 4,
+        'cgroup quota wins over host and cpuset counts' );
+    is( LANraragi::Utils::Generic::get_effective_cpu_count( 16, '0-15', '50000 100000' ), 1,
+        'fractional CPU quota still permits one worker' );
+    is( LANraragi::Utils::Generic::get_minion_job_count(8), 2, 'defaults to two concurrent Minion jobs' );
+    is( LANraragi::Utils::Generic::get_minion_mce_worker_count( 8, 2 ), 4, 'splits the CPU budget across nested MCE workers' );
+    is( LANraragi::Utils::Generic::get_minion_job_count(1), 1, 'single-CPU hosts stay single-job' );
+
+    local $ENV{LRR_CPU_COUNT} = 6;
+    is( LANraragi::Utils::Generic::get_effective_cpu_count( 16, '0-3', '200000 100000' ), 6,
+        'explicit CPU budget override remains authoritative' );
+    local $ENV{LRR_MINION_JOBS} = 3;
+    local $ENV{LRR_MCE_WORKERS} = 2;
+    is( LANraragi::Utils::Generic::get_minion_job_count(8), 3, 'LRR_MINION_JOBS overrides the safe default' );
+    is( LANraragi::Utils::Generic::get_minion_mce_worker_count( 8, 3 ), 2, 'LRR_MCE_WORKERS overrides the derived nested budget' );
+}
+
 done_testing();

@@ -4,6 +4,7 @@
  * Uses the cover-only API endpoints backed by LRR_COVER_DUPLICATE_PAIRS.
  */
 import * as LRR from "./mod/common.js";
+import I18N from "i18n";
 
 const Duplicates = {};
 
@@ -15,12 +16,12 @@ const REVIEW_BATCH_SIZE = 24;
 const TOP_UP_THRESHOLD = 6;
 
 const STATUS_LABELS = {
-    new: "New",
-    same_cover: "Same Cover",
-    variant: "Variant",
-    not_duplicate: "Not Duplicate",
-    needs_review: "Needs Review",
-    resolved: "Resolved",
+    new: I18N.DuplicatesNew,
+    same_cover: I18N.DuplicatesSameCover,
+    variant: I18N.DuplicatesVariant,
+    not_duplicate: I18N.DuplicatesNotDuplicate,
+    needs_review: I18N.DuplicatesNeedsReview,
+    resolved: I18N.DuplicatesResolved,
 };
 
 function loadStoredThreshold() {
@@ -105,7 +106,7 @@ function formatResolution(archive) {
     const width = numericValue(archive.cover_width);
     const height = numericValue(archive.cover_height);
     if (width > 0 && height > 0) return `${width}x${height}`;
-    return "unknown";
+    return I18N.DuplicatesUnknown;
 }
 
 function compareArchiveSignals(archive, otherArchive) {
@@ -126,14 +127,14 @@ function compareArchiveSignals(archive, otherArchive) {
 
 function buildResolutionChips(archive, otherArchive) {
     const signals = compareArchiveSignals(archive, otherArchive);
-    const language = archive.language || "unknown";
+    const language = archive.language || I18N.DuplicatesUnknown;
     return [
-        { kind: "pages", label: "Pages", value: String(numericValue(archive.pagecount)), highlighted: signals.pages },
-        { kind: "size", label: "Size", value: formatSize(numericValue(archive.arcsize)), highlighted: signals.size },
-        { kind: "tags", label: "Tags", value: String(numericValue(archive.tag_count)), highlighted: signals.tags },
-        { kind: "language", label: "KR", value: isKoreanLanguage(language) ? "Korean" : language, highlighted: signals.language },
-        { kind: "resolution", label: "Resolution", value: formatResolution(archive), highlighted: signals.resolution },
-        { kind: "recent", label: "Date", value: formatDate(archive.date_added) || "unknown", highlighted: signals.recent },
+        { kind: "pages", label: I18N.DuplicatesPages, value: String(numericValue(archive.pagecount)), highlighted: signals.pages },
+        { kind: "size", label: I18N.DuplicatesSize, value: formatSize(numericValue(archive.arcsize)), highlighted: signals.size },
+        { kind: "tags", label: I18N.DuplicatesTags, value: String(numericValue(archive.tag_count)), highlighted: signals.tags },
+        { kind: "language", label: "KR", value: isKoreanLanguage(language) ? I18N.DuplicatesKorean : language, highlighted: signals.language },
+        { kind: "resolution", label: I18N.DuplicatesResolution, value: formatResolution(archive), highlighted: signals.resolution },
+        { kind: "recent", label: I18N.DuplicatesDate, value: formatDate(archive.date_added) || I18N.DuplicatesUnknown, highlighted: signals.recent },
     ];
 }
 
@@ -150,7 +151,7 @@ function pairIncludesArchive(pair, archiveId) {
 }
 
 function sideLabel(side) {
-    return side === "a" ? "Left" : "Right";
+    return side === "a" ? I18N.DuplicatesLeft : I18N.DuplicatesRight;
 }
 
 function oppositeSide(side) {
@@ -173,7 +174,7 @@ Duplicates.state = {
 Duplicates._poller = null;
 
 Duplicates.updateReviewMetrics = function () {
-    $("#dupes-review-count").text(`${Duplicates.state.reviewedCount} reviewed`);
+    $("#dupes-review-count").text(I18N.DuplicatesReviewed(Duplicates.state.reviewedCount));
     const queueTotal = Duplicates.state.total || Duplicates.state.pairs.length;
     $("#dupes-queue-count").text(`${Duplicates.state.pairs.length}/${queueTotal}`);
 };
@@ -229,7 +230,7 @@ Duplicates.fetchPairs = function (limit = Duplicates.state.limit) {
 };
 
 Duplicates.loadPairs = function () {
-    $("#dupes-list").html("<div class=\"dupes-loading\"><i class=\"fas fa-spinner fa-spin\"></i> Loading pairs...</div>");
+    $("#dupes-list").html(`<div class="dupes-loading"><i class="fas fa-spinner fa-spin"></i> ${I18N.DuplicatesLoadingPairs}</div>`);
     $("#dupes-queue-list").empty();
     return Duplicates.fetchPairs(Duplicates.state.limit)
         .then((data) => {
@@ -243,7 +244,7 @@ Duplicates.loadPairs = function () {
             Duplicates.updateReviewMetrics();
         })
         .catch(() => {
-            $("#dupes-list").html("<div class=\"dupes-empty-state\">failed to load pairs</div>");
+            $("#dupes-list").html(`<div class="dupes-empty-state">${I18N.DuplicatesFailedLoadPairs}</div>`);
             Duplicates.renderQueueRail();
             Duplicates.updateReviewMetrics();
         });
@@ -323,13 +324,13 @@ Duplicates.renderSide = function (side, archive, otherArchive) {
             <div class="dupe-resolution-chips">${Duplicates.renderResolutionChips(archive, otherArchive)}</div>
             <div class="dupe-side-actions">
                 <button class="stdbtn dupe-action" type="button" data-action="keep-side" data-side="${side}" data-delete-arcid="${otherArchiveId}">
-                    Keep ${sideName}
+                    ${I18N.DuplicatesKeep(sideName)}
                 </button>
                 <button class="stdbtn dupe-action dupe-delete-action" type="button" data-action="delete-side" data-side="${side}" data-delete-arcid="${archiveId}">
-                    Delete ${sideName}
+                    ${I18N.DuplicatesDelete(sideName)}
                 </button>
             </div>
-            <div class="dupe-side-action-note">Keep ${sideName} deletes ${otherName} after confirmation.</div>
+            <div class="dupe-side-action-note dupe-immediate-delete-note">${I18N.DuplicatesImmediateDelete(sideName, otherName)}</div>
         </section>
     `;
 };
@@ -338,10 +339,10 @@ Duplicates.renderActionRail = function (pair) {
     const member = pairMember(pair);
     return `
         <div class="dupe-action-rail">
-            <button class="stdbtn dupe-action" type="button" data-action="mark-status" data-pair="${member}" data-status="same_cover">Same Cover</button>
-            <button class="stdbtn dupe-action" type="button" data-action="mark-status" data-pair="${member}" data-status="variant">Variant</button>
-            <button class="stdbtn dupe-action" type="button" data-action="mark-status" data-pair="${member}" data-status="not_duplicate">Not Duplicate</button>
-            <button class="stdbtn dupe-action" type="button" data-action="mark-status" data-pair="${member}" data-status="needs_review">Needs Review</button>
+            <button class="stdbtn dupe-action" type="button" data-action="mark-status" data-pair="${member}" data-status="same_cover">${I18N.DuplicatesSameCover}</button>
+            <button class="stdbtn dupe-action" type="button" data-action="mark-status" data-pair="${member}" data-status="variant">${I18N.DuplicatesVariant}</button>
+            <button class="stdbtn dupe-action" type="button" data-action="mark-status" data-pair="${member}" data-status="not_duplicate">${I18N.DuplicatesNotDuplicate}</button>
+            <button class="stdbtn dupe-action" type="button" data-action="mark-status" data-pair="${member}" data-status="needs_review">${I18N.DuplicatesNeedsReview}</button>
         </div>
     `;
 };
@@ -399,7 +400,7 @@ Duplicates.renderActivePair = function () {
 Duplicates.renderQueueRail = function () {
     const $queue = $("#dupes-queue-list").empty();
     if (!Duplicates.state.pairs.length) {
-        $queue.html("<div class=\"dupes-empty-state\">Queue empty</div>");
+        $queue.html(`<div class="dupes-empty-state">${I18N.DuplicatesQueueEmpty}</div>`);
         Duplicates.updateReviewMetrics();
         return;
     }
@@ -619,7 +620,7 @@ Duplicates.applyStatusToActivePair = function (status, inputMethod = "keyboard")
     Duplicates.performReviewAction({
         pair,
         action: () => Duplicates.updateStatus(member, status, Duplicates.reviewLogPayload(pair, inputMethod)),
-        errorTitle: "Status update failed",
+        errorTitle: I18N.DuplicatesStatusFailed,
     });
 };
 
@@ -675,7 +676,7 @@ $(function () {
             })
             .catch((err) => {
                 $btn.prop("disabled", false);
-                LRR.showPopUp({ title: "Refresh failed", text: String(err), icon: "error" });
+                LRR.showPopUp({ title: I18N.DuplicatesRefreshFailed, text: String(err), icon: "error" });
             });
     });
 
@@ -691,7 +692,7 @@ $(function () {
             })
             .catch((err) => {
                 $btn.prop("disabled", false);
-                LRR.showPopUp({ title: "Could not queue cover pass", text: String(err), icon: "error" });
+                LRR.showPopUp({ title: I18N.DuplicatesQueueFailed, text: String(err), icon: "error" });
             });
     });
 
@@ -706,21 +707,21 @@ $(function () {
             Duplicates.performReviewAction({
                 pair,
                 action: () => Duplicates.updateStatus(pairMember(pair), status, Duplicates.reviewLogPayload(pair, "button")),
-                errorTitle: "Status update failed",
+                errorTitle: I18N.DuplicatesStatusFailed,
             });
             return;
         }
 
         const archiveId = $button.attr("data-delete-arcid");
         if (!archiveId) {
-            LRR.showPopUp({ title: "Archive missing", text: "Refresh the duplicate deck to remove this stale pair.", icon: "error" });
+            LRR.showPopUp({ title: I18N.DuplicatesArchiveMissing, text: I18N.DuplicatesArchiveMissingDetail, icon: "error" });
             return;
         }
         Duplicates.performReviewAction({
             pair,
             archiveId,
             action: () => Duplicates.deleteArchive(archiveId),
-            errorTitle: "Delete failed",
+            errorTitle: I18N.DuplicatesDeleteFailed,
         });
     });
 

@@ -7,12 +7,43 @@ use Test::More;
 
 BEGIN { use_ok( 'LANraragi::Utils::PageCache', qw(fetch put clear_by_id) ); }
 
+note('PageCache mmap geometry never exceeds the configured cap');
 {
-    package FakePageCacheLogger;
+    local $ENV{LRR_PAGECACHE_PAGE_SIZE_MB} = 32;
+    my $page_size = LANraragi::Utils::PageCache::calc_page_size_bytes(3000);
+    my $page_count = LANraragi::Utils::PageCache::calc_page_count( 3000, $page_size );
+
+    is( $page_size, 32 * 1024 * 1024, 'keeps a power-of-two 32 MiB page' );
+    is( $page_count, 93, 'uses floor division instead of FastMmap page-count expansion' );
+    cmp_ok( $page_count * $page_size, '<=', 3000 * 1024 * 1024, 'effective mmap stays within tempmaxsize' );
+
+    local $ENV{LRR_PAGECACHE_PAGE_SIZE_MB} = 3;
+    $page_size = LANraragi::Utils::PageCache::calc_page_size_bytes(64);
+    is( $page_size, 2 * 1024 * 1024, 'normalizes non-power-of-two overrides before sizing the cache' );
+}
+
+{
+package FakePageCacheLogger;
 
     sub new   { return bless {}, shift }
     sub debug { return 1 }
     sub warn  { return 1 }
+}
+
+note('PageCache creates a backing file within the configured cap');
+{
+    my $tmpdir = tempdir( CLEANUP => 1 );
+    no warnings 'redefine';
+    local $ENV{LRR_PAGECACHE_PAGE_SIZE_MB} = 32;
+    local *LANraragi::Utils::PageCache::get_temp = sub { return $tmpdir };
+    local *LANraragi::Utils::PageCache::get_logger = sub { return FakePageCacheLogger->new };
+    local *LANraragi::Utils::PageCache::calc_max_size = sub { return 100 };
+
+    LANraragi::Utils::PageCache::initialize();
+    my @backing_files = glob "$tmpdir/*.dat";
+    is( scalar @backing_files, 1, 'FastMmap created one backing file' );
+    is( -s $backing_files[0], 96 * 1024 * 1024, 'backing file uses three 32 MiB pages, not FastMmap automatic expansion' );
+    cmp_ok( -s $backing_files[0], '<=', 100 * 1024 * 1024, 'actual backing file stays below the cap' );
 }
 
 note('PageCache stores image-sized blobs in the mmap cache');

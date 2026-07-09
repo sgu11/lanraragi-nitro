@@ -709,6 +709,13 @@ sub find_cover_duplicate_pairs_in_memory {
     my $pair_meta    = $config->{pair_meta_key}         // "LRR_DUPLICATE_PAIR_META";
     my $dismissed    = $config->{dismissed_key}         // "LRR_DEDUP_DISMISSED";
 
+    # The review deck is bounded, so load its membership once. The previous
+    # inner loop performed SISMEMBER + ZSCORE for every O(N²) candidate before
+    # even computing Hamming distance (tens of millions of Redis round trips on
+    # a large library).
+    my %dismissed_members = map { $_ => 1 } $redis->smembers($dismissed);
+    my %existing_members  = map { $_ => 1 } $redis->zrange( $pair_key, 0, -1 );
+
     # Stable id order so cursor resumes mean what they meant last run.
     my @ids = sort keys %$cover_data;
     my $n_total = scalar @ids;
@@ -733,13 +740,13 @@ sub find_cover_duplicate_pairs_in_memory {
             }
             $candidates_seen++;
 
-            my ($a, $b) = sort ($ids[$i], $ids[$j]);
-            my $member = "$a|$b";
-            next if $redis->sismember($dismissed, $member);
-            next if defined $redis->zscore($pair_key, $member);
-
             my $d = hamming_hex($hash_i, $cover_data->{$ids[$j]});
             next if $d > $max_hamming;
+
+            my ($a, $b) = sort ($ids[$i], $ids[$j]);
+            my $member = "$a|$b";
+            next if $dismissed_members{$member};
+            next if $existing_members{$member};
 
             $redis->zadd($pair_key, $d, $member);
             $redis->hset($pair_meta, $member,
@@ -749,6 +756,7 @@ sub find_cover_duplicate_pairs_in_memory {
                     cover_algo_version => $algo,
                     ts                 => time(),
                 }));
+            $existing_members{$member} = 1;
             $stored++;
 
             if ($target_pairs && $stored >= $target_pairs) {

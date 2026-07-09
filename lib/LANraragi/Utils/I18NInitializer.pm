@@ -83,6 +83,20 @@ sub initialize {
         }
     );
 
+    $app->helper(
+        language_tag => sub {
+            my ($c) = @_;
+            my $language = $c->stash('forced_language');
+            if ( !$language || $language eq 'auto' ) {
+                ($language) = split /,/, ( $c->req->headers->accept_language // 'en' );
+                $language =~ s/;.*//;
+            }
+            $language =~ s/_/-/g;
+            $language =~ s/^\s+|\s+$//g;
+            return $language =~ /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/ ? $language : 'en';
+        }
+    );
+
     $app->LRR_LOGGER->debug("I18N system initialized.");
 }
 

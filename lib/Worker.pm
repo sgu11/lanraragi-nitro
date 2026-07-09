@@ -19,6 +19,7 @@ use LANraragi::Utils::Logging    qw(get_logger);
 
 use LANraragi::Utils::Minion;
 use LANraragi::Model::Config;
+use LANraragi::Model::Metrics;
 
 # Logger and Database objects
 my $logger = get_logger( "Minion Worker", "minion" );
@@ -51,6 +52,7 @@ sub initialize_from_new_process {
 
     my $last_heartbeat = 0; 
     my $last_repair = 0;
+    my $last_metrics = 0;
     while ($running) {
         local $SIG{INT} = sub { $running = 0 };
 
@@ -62,6 +64,11 @@ sub initialize_from_new_process {
             }
         }
         $worker->register and $last_heartbeat = steady_time if ($last_heartbeat + 300) < steady_time;
+
+        if ( LANraragi::Model::Config->enable_metrics && ( $last_metrics + 30 ) < steady_time ) {
+            LANraragi::Model::Metrics::collect_process_metrics("minion");
+            $last_metrics = steady_time;
+        }
 
         if (($last_repair + 21600) < steady_time) {
             $minion->repair;

@@ -20,6 +20,7 @@ use MCE::Loop;
 use Sys::CpuAffinity;
 use Storable   qw(lock_store);
 use Mojo::JSON qw(to_json);
+use Digest::SHA qw(sha256_hex);
 use Config;
 
 #As this is a new process, reloading the LRR libs into INC is needed.
@@ -33,7 +34,7 @@ use Encode;
 use LANraragi::Utils::Archive    qw(extract_thumbnail);
 use LANraragi::Utils::Database   qw(invalidate_cache compute_id change_archive_id get_arcsize add_timestamp_tag add_archive_to_redis add_arcsize add_pagecount);
 use LANraragi::Utils::Logging    qw(get_logger);
-use LANraragi::Utils::Generic    qw(is_archive exec_with_lock_pure);
+use LANraragi::Utils::Generic    qw(is_archive exec_with_lock_pure get_minion_mce_worker_count);
 use LANraragi::Utils::Redis      qw(redis_encode);
 use LANraragi::Utils::Path       qw(create_path open_path find_path get_archive_path);
 use LANraragi::Utils::PageCache  qw(clear_by_id);
@@ -271,7 +272,7 @@ sub update_filemap {
     eval {
         if ( IS_UNIX ) {
             # Now that we have all new files, process them...with multithreading!
-            MCE::Loop->init( { max_workers => $ENV{LRR_MCE_WORKERS} } ) if $ENV{LRR_MCE_WORKERS};
+        MCE::Loop->init( { max_workers => get_minion_mce_worker_count() } );
             mce_loop {
                 add_new_files(@{ $_ });
             } \@newfiles;
@@ -486,15 +487,28 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
 sub new_file_callback ($name) {
 
     $logger->debug("New file detected: $name");
-    unless ( -d $name ) {
+    return if -d $name || !is_archive($name);
 
-        my $redis = LANraragi::Model::Config->get_redis_config;
-        eval { add_to_filemap( $redis, $name ); };
-        $redis->quit();
+    # A create/modify burst must not block File::ChangeNotify while an archive
+    # is still being copied. Coalesce events with a short Redis lease and move
+    # stability checks, hashing, thumbnails and plugins into Minion.
+    my $lock_key = "LRR_INGEST_PENDING:" . sha256_hex( Encode::encode_utf8($name) );
+    my $redis = LANraragi::Model::Config->get_redis_config;
+    my $acquired = eval { $redis->set( $lock_key, time(), "NX", "EX", 900 ) };
+    $redis->quit();
+    return if !$acquired;
 
-        if ($@) {
-            $logger->error("Error while handling new file: $@");
-        }
+    my $job_id = eval {
+        LANraragi::Model::Config->get_minion->enqueue(
+            ingest_archive_file => [ $name, $lock_key ] => { priority => 5, attempts => 3 }
+        );
+    };
+    if ( !$job_id ) {
+        my $error = $@ || "Minion did not return a job id";
+        my $cleanup = LANraragi::Model::Config->get_redis_config;
+        $cleanup->del($lock_key);
+        $cleanup->quit();
+        $logger->error("Error queueing new file $name: $error");
     }
 }
 

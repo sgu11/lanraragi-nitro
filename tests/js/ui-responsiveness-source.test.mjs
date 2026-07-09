@@ -50,6 +50,19 @@ test("carousel uses exported DataTables search state", async () => {
 
     assert.match(index, /IndexTable\.getCurrentSearch\(\)/);
     assert.doesNotMatch(index, /IndexTable\.currentSearch/);
+    assert.match(index, /encodeURIComponent\(currentSearch\)/);
+});
+
+test("index cold load applies URL state with one search and one category fetch", async () => {
+    const table = await source("public/js/mod/index_datatables.js");
+    const index = await source("public/js/mod/index.js");
+
+    assert.match(table, /deferLoading: 0/);
+    assert.match(table, /currentSearch = params\.get\("q"\) \|\| ""/);
+    assert.doesNotMatch(table, /decodeURIComponent\(params\.get\("q"\)\)/);
+    const doSearch = table.slice(table.indexOf("export function doSearch"), table.indexOf("// #region Compact View"));
+    assert.doesNotMatch(doSearch, /Index\.loadCategories\(\)/);
+    assert.equal((index.match(/\.then\(\(\) => loadCategories\(\)\)/g) || []).length, 1);
 });
 
 test("reader infinite scroll creates a lazy window instead of waiting for every image", async () => {
@@ -59,6 +72,7 @@ test("reader infinite scroll creates a lazy window instead of waiting for every 
     assert.match(reader, /function materializeInfiniteScrollImage/);
     assert.match(reader, /data-src/);
     assert.match(reader, /rootMargin: "1200px"/);
+    assert.match(reader, /rootMargin: "-49% 0px -49% 0px"/);
     assert.match(reader, /allImagesLoaded/);
     assert.doesNotMatch(reader, /if \(loaded === images\.length\) \{[\s\S]*allImagesLoaded = true;[\s\S]*goToPage\(currentPage\);[\s\S]*\}/);
 });
@@ -72,6 +86,9 @@ test("reader overlay uses render containment and reader preload has an A/B strat
     assert.match(reader, /localStorage\.readerPreloadStrategy/);
     assert.match(reader, /preloadImageWithBrowserCache/);
     assert.match(reader, /preloadImageWithBlobUrl/);
+    assert.match(reader, /const OVERLAY_PAGE_WINDOW_SIZE = 60/);
+    assert.match(reader, /overlay-window-button/);
+    assert.match(reader, /if \(\$\("#archivePagesOverlay"\)\.attr\("loaded"\) === "true"\) updateArchiveOverlay\(\)/);
 });
 
 test("reader wheel page navigation debounce is tuned for low-latency service", async () => {

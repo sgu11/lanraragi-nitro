@@ -30,8 +30,8 @@ test("versioned module paths also include deploy-specific asset cache busting", 
     assert.match(importmap, /\/js\/\$version\/vendor\/preact\.module\.js\?\$asset_version/);
     assert.match(reader, /\/css\/lrr\.css\?\$asset_version/);
     assert.match(reader, /\/js\/reader\.js\?\$asset_version/);
-    assert.match(duplicatesCustom, /duplicates_custom\.css"\) %]\?\[% asset_version %]-no-delete-confirm/);
-    assert.match(duplicatesCustom, /duplicates_custom\.js"\) %]\?\[% asset_version %]-no-delete-confirm/);
+    assert.match(duplicatesCustom, /duplicates_custom\.css\?\$asset_version/);
+    assert.match(duplicatesCustom, /duplicates_custom\.js\?\$asset_version/);
     assert.match(generic, /eval \{ \$self->LRR_ASSET_VERSION \}/);
     assert.match(generic, /\/themes\/\$css_file\?\$asset_version/);
 });
@@ -67,7 +67,12 @@ test("classic vendor scripts in index and reader are deferred and cache-busted",
     // The src URL is wrapped in [% c.url_for("...?$asset_version") %], so the
     // cache-bust query sits inside the template helper and defer follows the
     // closing %].
-    assert.match(index, /swiper-bundle\.min\.js\?\$asset_version"\) %\]"\s+defer/);
+    assert.doesNotMatch(index, /swiper-bundle\.min\.js/);
+    const indexModule = await source("public/js/mod/index.js");
+    assert.match(indexModule, /function ensureSwiperAssets\(\)/);
+    assert.match(index, /data-asset-version="\[% asset_version %\]"/);
+    assert.match(indexModule, /document\.documentElement\.dataset\.assetVersion/);
+    assert.match(indexModule, /\/js\/vendor\/swiper-bundle\.min\.js/);
     assert.match(index, /jquery\.min\.js\?\$asset_version"\) %\]"\s+defer/);
 
     for (const attrs of extractVendorScriptAttrs(reader)) {
