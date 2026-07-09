@@ -445,4 +445,22 @@ note('testing per-query search cache writes (nfreeze precedence regression)...')
         'do_search writes its per-query cache entry' );
 }
 
+note('sortkey metacharacters are treated as literal tag namespaces...');
+
+{
+    # Before \Q...\E, qr/$sortkey/ with an open paren would fail to compile.
+    my $ok = eval {
+        LANraragi::Model::Search::do_search( "", "", -1, 'artist(', 0, 0, 0, 0, 0 );
+        1;
+    };
+    my $err = $@ || '';
+    ok( $ok, "sortkey with regex metacharacters does not die: $err" );
+
+    # A real namespace with a metacharacter suffix should still return the full set
+    # (no matching tags => unkeyed partition, not a crash).
+    my ( $total, $filtered, @ids ) =
+      LANraragi::Model::Search::do_search( "", "", -1, 'artist(', 0, 0, 0, 0, 0 );
+    is( $filtered, 13, 'metacharacter sortkey still returns full archive set' );
+}
+
 done_testing();

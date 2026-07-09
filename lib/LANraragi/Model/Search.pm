@@ -716,7 +716,8 @@ LUA
         return cjson.encode(result)
 LUA
 
-        my $re   = qr/$sortkey/;
+        # Treat user-controlled sort namespaces as literals (ReDoS / unintended match).
+        my $re   = qr/\Q$sortkey\E/;
         my $data = eval { decode_json( _evalsha_cached( $redis, "tag_sort", $script, @filtered ) ) };
         if ($@) {
             $logger->debug("Lua unavailable or failed for tag sort, falling back to per-ID queries. ($@)");

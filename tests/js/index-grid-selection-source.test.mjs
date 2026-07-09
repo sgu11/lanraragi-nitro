@@ -23,6 +23,7 @@ test("fork grid selection is isolated behind a context-menu seam", async () => {
     assert.match(gridSelection, /menuEvent\.gridSelectionLongClick = true;/);
     assert.match(gridSelection, /trigger\.dispatchEvent\(menuEvent\)/);
     assert.match(gridSelection, /localStorage\.setItem\("msmSelection", JSON\.stringify\(ids\)\)/);
+    assert.match(gridSelection, /do NOT re-wire #msm-toggle/);
     assert.match(gridSelection, /id\.startsWith\("TANK_"\)/);
     assert.match(gridSelection, /\.grid-selection-enabled #msm-toggle,\s*\.grid-selection-enabled #msm-carousel-controls,\s*\.grid-selection-enabled #carousel-mode-menu/);
 });

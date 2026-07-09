@@ -300,6 +300,16 @@ sub can_replacetitles    { return &get_redis_conf( "replacetitles",   "1" ) }
 sub get_language         { return &get_redis_conf( "language",        "auto" ) }
 sub get_excludednamespaces { return &get_redis_conf( "excludednamespaces", "source, date_added" ) }
 
+# Fork: which Minion dedup signals to auto-enqueue for new / replaced archives.
+# Values: cover_only (default) | all | none
+# Env LRR_DEDUP_AUTO_SIGNALS overrides Redis when set.
+sub get_dedup_auto_signals {
+    my $raw = $ENV{LRR_DEDUP_AUTO_SIGNALS} // &get_redis_conf( "dedup_auto_signals", "cover_only" );
+    $raw = lc( $raw // "cover_only" );
+    return $raw if $raw eq "cover_only" || $raw eq "all" || $raw eq "none";
+    return "cover_only";
+}
+
 # DPI used by GhostScript when rendering PDF pages. Env var LRR_PDF_DPI overrides the Redis config.
 # Default 200 matches the previous hardcoded value.
 sub get_pdfdpi {

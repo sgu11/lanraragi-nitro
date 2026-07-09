@@ -33,7 +33,8 @@ sub _dedup_config_from_redis {
         loose_max_score      => ($h{loose_max_score}      // 40) + 0,
         candidate_pair_cap   => ($h{candidate_pair_cap}   // 10_000_000) + 0,
         cover_algo_version   => ($h{cover_algo_version}   // LANraragi::Model::Dedup::COVER_HASH_ALGO_VERSION()) + 0,
-        cover_max_hamming    => ($h{cover_max_hamming}    // 12) + 0,
+        cover_max_hamming    => ($h{cover_max_hamming}
+            // LANraragi::Model::Dedup::CoverIndex::DEFAULT_COVER_MAX_HAMMING()) + 0,
         matcher_version                     => ($h{matcher_version}                     // 2)    + 0,
         lead_algo_version                   => ($h{lead_algo_version}                   // 2)    + 0,
         lead_pages_sampled                  => ($h{lead_pages_sampled}                  // 3)    + 0,

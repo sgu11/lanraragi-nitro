@@ -1,0 +1,12 @@
+# Incomplete inventory: missing reader-nav-keys.js on purpose
+./LANraragi/tools/openapi.yaml:/home/koyomi/lanraragi/tools/openapi.yaml:ro
+./LANraragi/public/js/mod/reader-spread.js:/home/koyomi/lanraragi/public/js/mod/reader-spread.js:ro
+./LANraragi/public/js/mod/progress-migration.js:/home/koyomi/lanraragi/public/js/mod/progress-migration.js:ro
+./LANraragi/public/js/mod/reader-chrome.js:/home/koyomi/lanraragi/public/js/mod/reader-chrome.js:ro
+./LANraragi/public/js/mod/reader-crop.js:/home/koyomi/lanraragi/public/js/mod/reader-crop.js:ro
+./LANraragi/public/js/mod/perf.js:/home/koyomi/lanraragi/public/js/mod/perf.js:ro
+./LANraragi/public/js/mod/index_contextmenu.js:/home/koyomi/lanraragi/public/js/mod/index_contextmenu.js:ro
+./LANraragi/public/js/mod/index_grid_selection.js:/home/koyomi/lanraragi/public/js/mod/index_grid_selection.js:ro
+./LANraragi/public/css/reader-chrome.css:/home/koyomi/lanraragi/public/css/reader-chrome.css:ro
+./LANraragi/public/js/duplicates_custom.js:/home/koyomi/lanraragi/public/js/duplicates_custom.js:ro
+./LANraragi/public/css/duplicates_custom.css:/home/koyomi/lanraragi/public/css/duplicates_custom.css:ro

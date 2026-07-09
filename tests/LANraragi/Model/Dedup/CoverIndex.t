@@ -43,6 +43,11 @@ package CoverTestRedis {
         my ($self, $k) = @_;
         scalar keys %{$CoverTestData::zset{$k} // {}};
     }
+    sub zscore {
+        my ($self, $k, $m) = @_;
+        return undef unless exists $CoverTestData::zset{$k} && exists $CoverTestData::zset{$k}{$m};
+        return $CoverTestData::zset{$k}{$m};
+    }
     # Parse Redis-style range: "(" prefix means exclusive, "+inf"/"-inf" are infinity.
     sub _parse_range {
         my ($val, $default) = @_;
@@ -195,6 +200,80 @@ reset_state();
 {
     my $cfg = LANraragi::Model::Dedup::CoverIndex::cover_config_from_redis($redis_cfg);
     is($cfg->{cover_algo_version}, 2, "default cover hash algorithm version invalidates stale v1 hashes");
+    is($cfg->{cover_max_hamming}, 22, "default cover Hamming threshold matches product default");
+    is($cfg->{cover_sweep_mode}, 'legacy', "default cover sweep is legacy O(N²)");
+    is(LANraragi::Model::Dedup::CoverIndex::DEFAULT_COVER_MAX_HAMMING(), 22,
+        "DEFAULT_COVER_MAX_HAMMING constant is 22");
+}
+
+note("=== build_band_buckets indexes current-version (v2) coverhashes only ===");
+reset_state();
+{
+    $CoverTestData::hash{'id1'}{'coverhash'}   = 'a1b2c3d4e5f6a1b2';
+    $CoverTestData::hash{'id1'}{'coverhash_v'} = '2';
+    $CoverTestData::hash{'id2'}{'coverhash'}   = 'ffffffffffffffff';
+    $CoverTestData::hash{'id2'}{'coverhash_v'} = '1';  # stale algo
+    $CoverTestData::hash{'id3'}{'coverhash'}   = '1234567890abcdef';
+    $CoverTestData::hash{'id3'}{'coverhash_v'} = '2';
+
+    my $r = LANraragi::Model::Dedup::CoverIndex::build_band_buckets($redis_cfg, $redis);
+    is($r->{archives_indexed}, 2, "only current-version coverhashes enter band buckets");
+    # id1 and id3 sadd'ed into 4 bands each => 8 sadd calls
+    cmp_ok(scalar @CoverTestData::sadd_seen, '>=', 8, "band sadd calls for current-version archives");
+    my %indexed_ids = map { $_->[1] => 1 } @CoverTestData::sadd_seen;
+    ok($indexed_ids{'id1'}, "id1 (v2) indexed");
+    ok($indexed_ids{'id3'}, "id3 (v2) indexed");
+    ok(!$indexed_ids{'id2'}, "id2 (v1) not indexed");
+}
+
+note("=== generate_band_candidates uses current-version hashes ===");
+reset_state();
+{
+    # Two archives sharing first band of pHash
+    $CoverTestData::hash{'id1'}{'coverhash'}   = 'aaaa000011112222';
+    $CoverTestData::hash{'id1'}{'coverhash_v'} = '2';
+    $CoverTestData::hash{'id2'}{'coverhash'}   = 'aaaabbbbccccdddd';
+    $CoverTestData::hash{'id2'}{'coverhash_v'} = '2';
+    $CoverTestData::hash{'id3'}{'coverhash'}   = 'zzzzzzzzzzzzzzzz';
+    $CoverTestData::hash{'id3'}{'coverhash_v'} = '1';
+
+    # Pre-build band membership as if build_band_buckets ran for v2 only
+    my $b0 = LANraragi::Model::Dedup::CoverIndex::band_key(0, 'aaaa');
+    $CoverTestData::set{$b0}{'id1'} = 1;
+    $CoverTestData::set{$b0}{'id2'} = 1;
+
+    my $gen = LANraragi::Model::Dedup::CoverIndex::generate_band_candidates(
+        $redis_cfg, $redis, { band_cursor => 0, candidate_bucket_cap => 100 }
+    );
+    ok(exists $gen->{cover_data}{'id1'}, "v2 id1 in cover_data");
+    ok(exists $gen->{cover_data}{'id2'}, "v2 id2 in cover_data");
+    ok(!exists $gen->{cover_data}{'id3'}, "v1 id3 excluded from cover_data");
+}
+
+note("=== run_cover_candidate_sweep respects cover_sweep_mode flag ===");
+reset_state();
+{
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'cover_sweep_mode'} = 'legacy';
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'cover_algo_version'} = '2';
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'cover_cursor_threshold'} = '22';
+    $CoverTestData::hash{'id1'}{'coverhash'}   = 'a1b2c3d4e5f6a1b2';
+    $CoverTestData::hash{'id1'}{'coverhash_v'} = '2';
+    $CoverTestData::hash{'id2'}{'coverhash'}   = 'a1b2c3d4aaaaaaaa';
+    $CoverTestData::hash{'id2'}{'coverhash_v'} = '2';
+    $CoverTestData::hash{'id3'}{'coverhash'}   = 'fffeeedddcccbbaa';
+    $CoverTestData::hash{'id3'}{'coverhash_v'} = '2';
+
+    my $legacy = LANraragi::Model::Dedup::CoverIndex::run_cover_candidate_sweep($redis, $redis_cfg, 22);
+    ok(defined $legacy->{sweep_done} || defined $legacy->{deck_full} || defined $legacy->{stored},
+        "legacy mode runs without error");
+
+    # Banded mode with empty buckets still returns a structured result.
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'cover_sweep_mode'} = 'banded';
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'band_buckets_built'} = '0';
+    my $banded = LANraragi::Model::Dedup::CoverIndex::run_cover_candidate_sweep($redis, $redis_cfg, 22);
+    ok(defined $banded, "banded mode entrypoint returns a result");
+    ok(defined $banded->{stored} || defined $banded->{deck_full} || defined $banded->{candidates},
+        "banded result has expected keys");
 }
 
 note("=== cover_stats returns cover-only data ===");

@@ -1,3 +1,11 @@
+/**
+ * Fork grid bulk selection (active user path).
+ *
+ * Upstream MSM (multi-select mode) code stays in index.js / index templates for
+ * merge compatibility — do NOT re-wire #msm-toggle, #msm-carousel-controls,
+ * #msm-batch-ops, #msm-merge, #msm-clear, or #msm-select-page for the fork UX.
+ * This module hides those controls and owns short-right-click selection instead.
+ */
 import * as LRR from "lrr-common";
 import * as IndexTable from "lrr-index-table";
 import I18N from "i18n";

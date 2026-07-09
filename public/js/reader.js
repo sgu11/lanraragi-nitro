@@ -14,6 +14,10 @@ import {
     shouldWheelNavigatePages,
 } from "lrr-reader-chrome";
 import {
+    isReaderNavKeydownSuppress,
+    shouldHideReaderCursorForKeyCode,
+} from "lrr-reader-nav-keys";
+import {
     beginReaderNavigation,
     cancelReaderNavigation,
     commitReaderNavigation,
@@ -332,7 +336,10 @@ function setReaderCursorIdle(idle) {
     document.body.classList.toggle("reader-cursor-idle", idle);
 }
 
-function hideReaderCursorForNavigationInput() {
+function hideReaderCursorForNavigationInput(which) {
+    if (which !== undefined && !shouldHideReaderCursorForKeyCode(which)) {
+        return;
+    }
     setReaderCursorIdle(true);
 }
 
@@ -432,8 +439,10 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
 
     // Bind events to DOM
     $(document).on("keyup", (e) => handleShortcuts(e));
-    // Restrict keydown to keys that need browser-default suppression.
-    $(document).on("keydown", (e) => { if ([32, 33, 34, 35, 36, 38, 40, 83, 87].includes(e.which)) handleShortcuts(e); });
+    // Restrict keydown to keys that need browser-default suppression (see reader-nav-keys).
+    $(document).on("keydown", (e) => {
+        if (isReaderNavKeydownSuppress(e.which)) handleShortcuts(e);
+    });
     $(document).on("wheel", handleWheel);
 
     $(document).on("click.toggle-fit-mode", "#fit-mode input", toggleFitMode);

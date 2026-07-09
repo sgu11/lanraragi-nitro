@@ -90,12 +90,15 @@ test("reader dependencies resolve through asset-versioned import map entries", a
     assert.match(importmap, /"lrr-perf": "\[% c\.url_for\("\/js\/\$version\/mod\/perf\.js\?\$asset_version"\) %\]"/);
     assert.match(importmap, /"lrr-reader-chrome": "\[% c\.url_for\("\/js\/\$version\/mod\/reader-chrome\.js\?\$asset_version"\) %\]"/);
     assert.match(importmap, /"lrr-reader-spread": "\[% c\.url_for\("\/js\/\$version\/mod\/reader-spread\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-reader-nav-keys": "\[% c\.url_for\("\/js\/\$version\/mod\/reader-nav-keys\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-archive-data-cache": "\[% c\.url_for\("\/js\/\$version\/mod\/archive-data-cache\.js\?\$asset_version"\) %\]"/);
 
     assert.match(reader, /from "lrr-server"/);
     assert.match(reader, /from "lrr-common"/);
     assert.match(reader, /from "lrr-perf"/);
     assert.match(reader, /from "lrr-reader-chrome"/);
     assert.match(reader, /from "lrr-reader-spread"/);
+    assert.match(reader, /from "lrr-reader-nav-keys"/);
     assert.doesNotMatch(reader, /from "\.\/mod\/reader-spread\.js"/);
 
     assert.match(server, /from "lrr-common"/);

@@ -357,13 +357,22 @@ note("POST /api/duplicates/cover/status logs a review decision");
     LANraragi::Controller::Api::Coverduplicates::update_status($c_fail);
     my $fail_body = decode_json($c_fail->res->body);
     my $failed_meta = decode_json($CoverStatusState::meta{'LRR_COVER_DUPLICATE_PAIR_META'}{$pair});
-    is($c_fail->res->code, 500, "log failure returns 500");
-    like($fail_body->{error}, qr/status updated but review event logging failed: append failed/, "log failure explains partial success");
+    is($c_fail->res->code, 200, "log failure still returns HTTP 200 (status committed)");
+    ok($fail_body->{success}, "log failure response is still a client success for queue advance");
+    ok(exists $fail_body->{event_logged} && !$fail_body->{event_logged}, "event_logged is false");
+    like($fail_body->{warning} // '', qr/status updated but review event logging failed: append failed/,
+        "log failure warning explains partial success");
     is($fail_body->{status}, 'variant', "log failure response includes updated status");
     is($failed_meta->{status}, 'variant', "status update is not rolled back after log failure");
     is(scalar @CoverStatusState::events, 0, "failed append stores no event");
     is($CoverStatusState::cfg_quit, 1, "config redis quit after log failure");
     is($CoverStatusState::data_quit, 1, "archive redis quit after log failure");
+}
+
+note("cover pairs API default threshold matches DEFAULT_COVER_MAX_HAMMING");
+{
+    is(LANraragi::Model::Dedup::CoverIndex::DEFAULT_COVER_MAX_HAMMING(), 22,
+        "API/UI shared default cover threshold is 22");
 }
 
 note("GET /api/duplicates/cover/review-events exports review event pages");

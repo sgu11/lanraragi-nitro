@@ -14,6 +14,8 @@ use LANraragi::Model::Dedup    ();
 use constant DECK_TARGET => 100;
 use constant NUM_BANDS   => 4;       # split 64-bit pHash into 4x16-bit bands
 use constant BAND_WIDTH  => 4;       # 4 hex chars per band
+# Single product default for cover Hamming threshold (UI, API, Redis config).
+use constant DEFAULT_COVER_MAX_HAMMING => 22;
 
 # Band bucket key pattern: cover:band:<band_index>:<hex_value>
 sub band_key {
@@ -46,13 +48,15 @@ sub cover_config_from_redis {
     eval { %h = $redis_cfg->hgetall(CONFIG_KEY); };
     return {
         cover_algo_version => ($h{cover_algo_version} // LANraragi::Model::Dedup::COVER_HASH_ALGO_VERSION()) + 0,
-        cover_max_hamming  => ($h{cover_max_hamming}  // 12) + 0,
+        cover_max_hamming  => ($h{cover_max_hamming}  // DEFAULT_COVER_MAX_HAMMING()) + 0,
         candidate_pair_cap => ($h{candidate_pair_cap} // 10_000_000) + 0,
         cover_cursor_i     => ($h{cover_cursor_i}     // 0) + 0,
         cover_cursor_j     => ($h{cover_cursor_j}     // 0) + 0,
         cover_cursor_threshold => defined $h{cover_cursor_threshold}
             ? $h{cover_cursor_threshold} + 0
             : undef,
+        # legacy (default) = O(N²) upper-triangle; banded = LSH band buckets (opt-in).
+        cover_sweep_mode   => (($h{cover_sweep_mode} // 'legacy') eq 'banded') ? 'banded' : 'legacy',
     };
 }
 
@@ -238,6 +242,7 @@ sub cover_stats {
         archives_cover_pending    => $pending,
         archives_cover_errored    => $errored,
         cover_algo_version        => $algo,
+        cover_max_hamming         => ($config->{cover_max_hamming} // DEFAULT_COVER_MAX_HAMMING()) + 0,
         last_scan_ts              => defined $last_scan ? $last_scan + 0 : 0,
         cover_cursor_i            => $cursor_i,
         cover_cursor_j            => $cursor_j,
@@ -245,8 +250,9 @@ sub cover_stats {
         cover_sweep_done          => $sweep_done,
         config => {
             cover_algo_version  => $algo,
-            cover_max_hamming   => ($config->{cover_max_hamming}   // 12) + 0,
+            cover_max_hamming   => ($config->{cover_max_hamming}   // DEFAULT_COVER_MAX_HAMMING()) + 0,
             candidate_pair_cap  => ($config->{candidate_pair_cap}  // 10_000_000) + 0,
+            cover_sweep_mode    => $config->{cover_sweep_mode} // 'legacy',
         },
     };
 }
@@ -416,12 +422,14 @@ sub build_band_buckets {
     }
     $redis->wait_all_responses;
 
+    my $algo = LANraragi::Model::Dedup::COVER_HASH_ALGO_VERSION();
     my $added = 0;
     for my $r (@results) {
         my ($id, $reply) = @$r;
         my ($ch, $cv) = @{ $reply // [] };
         next unless defined $ch && length($ch) == 16;
-        next unless defined $cv && $cv eq '1';   # current coverhash version
+        # Accept only hashes written at the current algorithm version.
+        next unless defined $cv && length($cv) && ($cv + 0) == $algo;
 
         my @bands = _hash_bands($ch);
         for my $band_idx (0 .. $#bands) {
@@ -458,12 +466,13 @@ sub generate_band_candidates {
     }
     $redis->wait_all_responses;
 
+    my $algo = LANraragi::Model::Dedup::COVER_HASH_ALGO_VERSION();
     my %cover_data;
     for my $r (@results) {
         my ($id, $reply) = @$r;
         my ($ch, $cv) = @{ $reply // [] };
         next unless defined $ch && length($ch) == 16;
-        next unless defined $cv && $cv eq '1';
+        next unless defined $cv && length($cv) && ($cv + 0) == $algo;
         $cover_data{$id} = $ch;
     }
 
@@ -577,10 +586,14 @@ sub run_cover_candidate_sweep_banded {
         $logger->info("cover sweep: band buckets built for " . ($r->{archives_indexed} // 0) . " archives");
     }
 
-    $cfg->{band_cursor}  = ($redis_cfg->hget(CONFIG_KEY, "band_cursor")  // 0) + 0;
+    my $band_cursor_raw = $redis_cfg->hget(CONFIG_KEY, "band_cursor");
+    $band_cursor_raw = 0 if !defined $band_cursor_raw || $band_cursor_raw eq '';
+    $cfg->{band_cursor}  = $band_cursor_raw + 0;
     $cfg->{target_pairs} = $room;
     $cfg->{cover_max_hamming} = $threshold;
-    $cfg->{candidate_bucket_cap} = ($redis_cfg->hget(CONFIG_KEY, "candidate_bucket_cap") // 100) + 0;
+    my $bucket_cap_raw = $redis_cfg->hget(CONFIG_KEY, "candidate_bucket_cap");
+    $bucket_cap_raw = 100 if !defined $bucket_cap_raw || $bucket_cap_raw eq '';
+    $cfg->{candidate_bucket_cap} = $bucket_cap_raw + 0;
 
     # Phase 2: generate candidates from band buckets
     my $gen = generate_band_candidates($redis_cfg, $redis, $cfg);
@@ -653,8 +666,16 @@ sub run_cover_candidate_sweep_banded {
         sweep_done  => $gen->{bands_done},
     };
 }
+# Public entry: default remains the reliable O(N²) legacy sweep.
+# Opt into banded LSH with LRR_COVER_DEDUP_CONFIG cover_sweep_mode=banded
+# (or the equivalent field returned by cover_config_from_redis).
 sub run_cover_candidate_sweep {
-    return run_cover_candidate_sweep_legacy(@_);
+    my ($redis, $redis_cfg, $threshold, $logger) = @_;
+    my $cfg = cover_config_from_redis($redis_cfg);
+    if (($cfg->{cover_sweep_mode} // 'legacy') eq 'banded') {
+        return run_cover_candidate_sweep_banded($redis, $redis_cfg, $threshold, $logger);
+    }
+    return run_cover_candidate_sweep_legacy($redis, $redis_cfg, $threshold, $logger);
 }
 
 # O(N²) upper-triangle Hamming sweep with cover-only storage. Reliable default

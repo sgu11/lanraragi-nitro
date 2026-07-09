@@ -65,13 +65,33 @@ sub _invalidate_and_enqueue_cover_dedup_signals ($redis_arc, $id) {
     LANraragi::Model::Dedup::CoverIndex::invalidate_cover_dedup_signals($redis_arc, $redis_cfg, $id);
     $redis_cfg->quit;
 
+    # cover_fp is not used for pair scoring yet — do not auto-enqueue fingerprint
+    # dual-write on replacement. coverhash alone rebuilds the active cover deck.
+    _enqueue_dedup_signals_for_archive( $id, mode => "replacement" );
+}
+
+# Enqueue Minion dedup work for an archive according to get_dedup_auto_signals():
+#   cover_only (default) — compute_coverhash only
+#   all                  — pagehashes + coverhash + fingerprint + relation signals
+#   none                 — no auto dedup jobs
+# Replacement mode never auto-enqueues fingerprint (M2: dual-write paused).
+sub _enqueue_dedup_signals_for_archive ( $id, %opts ) {
+    my $mode   = $opts{mode} // "new";
+    my $policy = LANraragi::Model::Config->get_dedup_auto_signals;
+    return if $policy eq "none";
+
     my $minion = LANraragi::Model::Config->get_minion;
-    $minion->enqueue(
-        compute_coverhash => [ $id ] => { priority => 0 }
-    );
-    $minion->enqueue(
-        compute_cover_fingerprint => [ $id ] => { priority => 0 }
-    );
+    if ( $policy eq "all" ) {
+        $minion->enqueue( compute_pagehashes => [ $id ] => { priority => 0 } );
+        $minion->enqueue( compute_coverhash  => [ $id ] => { priority => 0 } );
+        # Fingerprint scoring is not production-active; skip dual-write cost.
+        $minion->enqueue( compute_dedup_signals => [ $id ] => { priority => 0 } )
+          if $mode eq "new";
+        return;
+    }
+
+    # cover_only (default product path for /duplicates_custom)
+    $minion->enqueue( compute_coverhash => [ $id ] => { priority => 0 } );
 }
 
 #Subroutine for new and deleted files that takes inotify events
@@ -550,22 +570,9 @@ sub add_new_file ( $id, $file ) {
         my $thumbdir = LANraragi::Model::Config->get_thumbdir;
         extract_thumbnail( $thumbdir, $id, 1, 1, 1 );
 
-        # Enqueue page-hash and cover-hash computation for the new deduplicator.
+        # Enqueue dedup signals per get_dedup_auto_signals (default cover_only).
         # Lowest priority so it never delays user-visible work.
-        eval {
-            LANraragi::Model::Config->get_minion->enqueue(
-                compute_pagehashes => [ $id ] => { priority => 0 }
-            );
-            LANraragi::Model::Config->get_minion->enqueue(
-                compute_coverhash => [ $id ] => { priority => 0 }
-            );
-            LANraragi::Model::Config->get_minion->enqueue(
-                compute_cover_fingerprint => [ $id ] => { priority => 0 }
-            );
-            LANraragi::Model::Config->get_minion->enqueue(
-                compute_dedup_signals => [ $id ] => { priority => 0 }
-            );
-        };
+        eval { _enqueue_dedup_signals_for_archive( $id, mode => "new" ); };
         if ($@) {
             $logger->warn("Failed to enqueue dedup hashes for $id: $@");
         }

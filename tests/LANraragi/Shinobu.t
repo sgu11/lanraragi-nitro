@@ -109,7 +109,7 @@ note('wait_for_stable_size short-circuits when the file disappears');
     cmp_ok( $elapsed, '<', 2, "exited promptly when file is missing" );
 }
 
-note('same-ID replacement cover dedup refresh enqueues legacy and v2 cover work');
+note('same-ID replacement cover dedup refresh enqueues coverhash only by default');
 {
     @ShinobuCoverDedupMinion::enqueued = ();
     my @invalidated;
@@ -117,6 +117,7 @@ note('same-ID replacement cover dedup refresh enqueues legacy and v2 cover work'
     my $config_mod = Test::MockModule->new('LANraragi::Model::Config');
     $config_mod->redefine('get_redis_config', sub { ShinobuCoverDedupRedis->new });
     $config_mod->redefine('get_minion',       sub { ShinobuCoverDedupMinion->new });
+    $config_mod->redefine('get_dedup_auto_signals', sub { 'cover_only' });
 
     my $cover_mod = Test::MockModule->new('LANraragi::Model::Dedup::CoverIndex');
     $cover_mod->redefine('invalidate_cover_dedup_signals', sub {
@@ -130,9 +131,38 @@ note('same-ID replacement cover dedup refresh enqueues legacy and v2 cover work'
     is_deeply(\@invalidated, [ 'id1' ], "cover dedup signals invalidated");
     is_deeply(
         [ map { $_->[0] } @ShinobuCoverDedupMinion::enqueued ],
-        [ 'compute_coverhash', 'compute_cover_fingerprint' ],
-        "replacement path enqueues both coverhash and v2 fingerprint computation"
+        [ 'compute_coverhash' ],
+        "cover_only replacement path enqueues coverhash only (no fingerprint dual-write)"
     );
+}
+
+note('dedup auto-signal policy: cover_only / all / none');
+{
+    my $config_mod = Test::MockModule->new('LANraragi::Model::Config');
+    $config_mod->redefine('get_minion', sub { ShinobuCoverDedupMinion->new });
+
+    @ShinobuCoverDedupMinion::enqueued = ();
+    $config_mod->redefine('get_dedup_auto_signals', sub { 'cover_only' });
+    Shinobu::_enqueue_dedup_signals_for_archive('new1', mode => 'new');
+    is_deeply(
+        [ map { $_->[0] } @ShinobuCoverDedupMinion::enqueued ],
+        [ 'compute_coverhash' ],
+        "cover_only new-archive path enqueues only compute_coverhash"
+    );
+
+    @ShinobuCoverDedupMinion::enqueued = ();
+    $config_mod->redefine('get_dedup_auto_signals', sub { 'all' });
+    Shinobu::_enqueue_dedup_signals_for_archive('new2', mode => 'new');
+    is_deeply(
+        [ map { $_->[0] } @ShinobuCoverDedupMinion::enqueued ],
+        [ 'compute_pagehashes', 'compute_coverhash', 'compute_dedup_signals' ],
+        "all mode enqueues pagehashes + coverhash + relation signals (no fingerprint)"
+    );
+
+    @ShinobuCoverDedupMinion::enqueued = ();
+    $config_mod->redefine('get_dedup_auto_signals', sub { 'none' });
+    Shinobu::_enqueue_dedup_signals_for_archive('new3', mode => 'new');
+    is(scalar @ShinobuCoverDedupMinion::enqueued, 0, "none mode enqueues nothing");
 }
 
 note('same-ID arcsize mismatch clears stale page-cache variants');

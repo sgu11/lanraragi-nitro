@@ -92,8 +92,9 @@ test("reader navigation inputs hide cursor and ws mirrors up down navigation", a
     assert.notEqual(initEnd, -1);
     assert.notEqual(wheelStart, -1);
     assert.notEqual(wheelEnd, -1);
-    assert.match(js, /function hideReaderCursorForNavigationInput\(\) \{\s*setReaderCursorIdle\(true\);\s*\}/);
-    assert.match(init, /\[32, 33, 34, 35, 36, 38, 40, 83, 87\]\.includes\(e\.which\)/);
+    assert.match(js, /from "lrr-reader-nav-keys"/);
+    assert.match(js, /function hideReaderCursorForNavigationInput\(which\) \{[\s\S]*setReaderCursorIdle\(true\);/);
+    assert.match(init, /isReaderNavKeydownSuppress\(e\.which\)/);
     assert.match(shortcuts, /case 38: \/\/ up arrow[\s\S]*case 87: \/\/ w[\s\S]*slideSpreadBySinglePage\(-1\)/);
     assert.match(shortcuts, /case 40: \/\/ down arrow[\s\S]*case 83: \/\/ s[\s\S]*slideSpreadBySinglePage\(1\)/);
     assert.doesNotMatch(shortcuts, /case 83: \/\/ s[\s\S]*addStamp\(\);/);
@@ -218,7 +219,7 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
     assert.match(shiftRequestedSpread, /const numericStep = Number\(step\);[\s\S]*if \(!Number\.isFinite\(numericStep\) \|\| Math\.abs\(numericStep\) !== 1\) \{[\s\S]*return false;[\s\S]*numericStep > 0 \? stride : -stride/);
     assert.match(shortcut, /case 38: \/\/ up arrow[\s\S]*slideSpreadBySinglePage\(-1\)/);
     assert.match(shortcut, /case 40: \/\/ down arrow[\s\S]*slideSpreadBySinglePage\(1\)/);
-    assert.match(init, /if \(\[32, 33, 34, 35, 36, 38, 40, 83, 87\]\.includes\(e\.which\)\) handleShortcuts\(e\);/);
+    assert.match(init, /isReaderNavKeydownSuppress\(e\.which\)/);
 });
 
 test("explicit page reload restores double-spread navigation stride", async () => {

@@ -26,7 +26,9 @@ sub pairs {
     my $req  = $self->req;
 
     my $opts = {
-        max_score => ($req->param('max_score') // $req->param('threshold') // 25) + 0,
+        max_score => ($req->param('max_score')
+            // $req->param('threshold')
+            // LANraragi::Model::Dedup::CoverIndex::DEFAULT_COVER_MAX_HAMMING()) + 0,
         offset    => ($req->param('offset')    // 0) + 0,
         limit     => ($req->param('limit')     // 100) + 0,
         status    => $req->param('status')     // 'new',
@@ -146,10 +148,14 @@ sub update_status {
 
     if ($log_error) {
         chomp $log_error;
+        # Status write already committed — do not imply full failure/rollback.
+        # Clients advance the review queue; event logging is best-effort.
         return $self->render(
-            status => 500,
+            status => 200,
             json => {
-                error => "status updated but review event logging failed: $log_error",
+                success => \1,
+                event_logged => \0,
+                warning => "status updated but review event logging failed: $log_error",
                 pair => $pair,
                 status => $status,
             }
@@ -158,6 +164,7 @@ sub update_status {
 
     $self->render(json => {
         success => \1,
+        event_logged => \1,
         pair => $pair,
         status => $status,
         event_id => $event->{event_id},
