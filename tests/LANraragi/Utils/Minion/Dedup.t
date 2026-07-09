@@ -183,6 +183,8 @@ reset_cover_rebuild_state();
 
     is($CoverRebuildTestData::hash{'LRR_COVER_HASH_INFLIGHT'}{id1}, undef, "in-flight marker removed");
     is_deeply($CoverRebuildTestData::hdel_seen[-1], [ 'LRR_COVER_HASH_INFLIGHT', 'id1' ], "marker cleanup uses the expected Redis hash");
+    is($CoverRebuildTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{band_buckets_built}, 0,
+        "successful coverhash write marks band buckets stale");
     is($job->{finished}{rc}, 1, "job result preserved");
 }
 

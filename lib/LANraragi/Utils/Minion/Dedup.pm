@@ -369,6 +369,9 @@ sub add_tasks {
             my ($rc, $err);
             eval { $rc = LANraragi::Model::Dedup::compute_coverhash_for_archive($redis, $id, $cfg); 1 }
                 or $err = $@ || "compute_coverhash failed";
+            if (defined $rc && $rc > 0) {
+                eval { LANraragi::Model::Dedup::CoverIndex::mark_band_buckets_stale($redis_cfg); };
+            }
             eval { _clear_coverhash_inflight($redis_cfg, $id); };
             $redis->quit;
             $redis_cfg->quit;

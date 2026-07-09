@@ -218,6 +218,8 @@ reset_state();
 
     my $r = LANraragi::Model::Dedup::CoverIndex::build_band_buckets($redis_cfg, $redis);
     is($r->{archives_indexed}, 2, "only current-version coverhashes enter band buckets");
+    is($CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'band_buckets_algo_version'}, 2,
+        "band bucket build records the coverhash algorithm version");
     # id1 and id3 sadd'ed into 4 bands each => 8 sadd calls
     cmp_ok(scalar @CoverTestData::sadd_seen, '>=', 8, "band sadd calls for current-version archives");
     my %indexed_ids = map { $_->[1] => 1 } @CoverTestData::sadd_seen;
@@ -274,6 +276,27 @@ reset_state();
     ok(defined $banded, "banded mode entrypoint returns a result");
     ok(defined $banded->{stored} || defined $banded->{deck_full} || defined $banded->{candidates},
         "banded result has expected keys");
+}
+
+note("=== banded sweep rebuilds stale algorithm bucket indexes ===");
+reset_state();
+{
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'cover_sweep_mode'} = 'banded';
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'cover_algo_version'} = '2';
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'cover_cursor_threshold'} = '22';
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'band_buckets_built'} = '1';
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'band_buckets_algo_version'} = '1';
+    $CoverTestData::hash{'id1'}{'coverhash'}   = 'aaaa000011112222';
+    $CoverTestData::hash{'id1'}{'coverhash_v'} = '2';
+    $CoverTestData::hash{'id2'}{'coverhash'}   = 'aaaabbbbccccdddd';
+    $CoverTestData::hash{'id2'}{'coverhash_v'} = '2';
+    $CoverTestData::hash{'id3'}{'coverhash'}   = 'ffffffffffffffff';
+    $CoverTestData::hash{'id3'}{'coverhash_v'} = '2';
+
+    LANraragi::Model::Dedup::CoverIndex::run_cover_candidate_sweep($redis, $redis_cfg, 22);
+    ok(scalar @CoverTestData::sadd_seen, "stale band bucket algo triggers a rebuild");
+    is($CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'band_buckets_algo_version'}, 2,
+        "rebuild stamps the current algorithm version");
 }
 
 note("=== cover_stats returns cover-only data ===");
@@ -421,6 +444,7 @@ reset_state();
     $CoverTestData::zset{'LRR_COVER_DUPLICATE_PAIRS'}{'id1|id2'} = 5;
     $CoverTestData::zset{'LRR_DUPLICATE_PAIRS'}{'id1|id3'} = 3;
     $CoverTestData::hash{'LRR_DUPLICATE_PAIR_META'}{'id1|id3'} = encode_json({ pass => 'cover', cover_hamming => 3 });
+    $CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'band_buckets_built'} = 1;
 
     LANraragi::Model::Dedup::CoverIndex::invalidate_cover_dedup_signals($redis, $redis_cfg, 'id1');
 
@@ -429,6 +453,8 @@ reset_state();
     ok(!defined $CoverTestData::hash{'id1'}{'cover_fp'}, "cover_fp cleared");
     ok(!exists $CoverTestData::zset{'LRR_COVER_DUPLICATE_PAIRS'}{'id1|id2'}, "cover pair removed from cover keys");
     ok(!exists $CoverTestData::zset{'LRR_DUPLICATE_PAIRS'}{'id1|id3'}, "cover pair removed from legacy keys");
+    is($CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'band_buckets_built'}, 0,
+        "cover signal invalidation marks band buckets stale");
 }
 
 note("=== run_cover_candidate_sweep (legacy O(N²)) generates candidates ===");

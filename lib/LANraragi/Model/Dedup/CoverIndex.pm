@@ -346,6 +346,11 @@ sub remove_stale_cover_pairs {
     return scalar @to_remove;
 }
 
+sub mark_band_buckets_stale {
+    my ($redis_cfg) = @_;
+    $redis_cfg->hset(CONFIG_KEY, "band_buckets_built", 0);
+}
+
 # --- (Phase 0) Cleanup: remove pass=cover entries from legacy keys ------
 sub cleanup_legacy_cover_pairs {
     my ($redis_cfg) = @_;
@@ -379,6 +384,7 @@ sub invalidate_cover_dedup_signals {
 
     # Remove affected pairs from cover-specific keys
     remove_pairs_for_archive($redis_cfg, $id);
+    mark_band_buckets_stale($redis_cfg);
 
     # Also remove from legacy keys during transition
     my @legacy_members = $redis_cfg->zrange(LEGACY_PAIR_KEY, 0, -1);
@@ -441,6 +447,7 @@ sub build_band_buckets {
 
     $redis_cfg->hset(CONFIG_KEY, "band_buckets_built", 1);
     $redis_cfg->hset(CONFIG_KEY, "band_buckets_count", $added);
+    $redis_cfg->hset(CONFIG_KEY, "band_buckets_algo_version", $algo);
 
     return { buckets_built => 1, archives_indexed => $added };
 }
@@ -580,7 +587,13 @@ sub run_cover_candidate_sweep_banded {
 
     # Check if band buckets need (re)building
     my $buckets_built = $redis_cfg->hget(CONFIG_KEY, "band_buckets_built") // 0;
-    unless ($buckets_built) {
+    my $buckets_algo  = $redis_cfg->hget(CONFIG_KEY, "band_buckets_algo_version");
+    my $algo          = $cfg->{cover_algo_version} // LANraragi::Model::Dedup::COVER_HASH_ALGO_VERSION();
+    my $buckets_stale = !$buckets_built
+        || !defined $buckets_algo
+        || $buckets_algo eq ''
+        || ($buckets_algo + 0) != ($algo + 0);
+    if ($buckets_stale) {
         $logger->info("cover sweep: building band bucket indexes...");
         my $r = build_band_buckets($redis_cfg, $redis);
         $logger->info("cover sweep: band buckets built for " . ($r->{archives_indexed} // 0) . " archives");
@@ -610,7 +623,6 @@ sub run_cover_candidate_sweep_banded {
     $cfg->{pair_meta_key} = PAIR_META_KEY;
     $cfg->{dismissed_key} = DISMISSED_KEY;
 
-    my $algo   = $cfg->{cover_algo_version} // LANraragi::Model::Dedup::COVER_HASH_ALGO_VERSION();
     my $stored = 0;
     my $scored = 0;
 
