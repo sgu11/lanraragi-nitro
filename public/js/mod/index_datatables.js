@@ -121,14 +121,12 @@ export function initializeAll() {
         drawCallback: drawCallback,
         createdRow: createdRow,
         columns,
-        initComplete() {
-            // The constructor's deferred draw only clears bDeferLoading. Apply
-            // URL state after that draw has fully finished so this first
-            // explicit draw performs the single server request.
-            dataTable = this.api();
-            consumeURLParameters();
-        },
     });
+
+    // DataTables ignores a nested draw while its deferred constructor draw is
+    // still unwinding. Apply URL state after this call stack, when the next
+    // draw can perform the one real server request.
+    queueMicrotask(consumeURLParameters);
 }
 
 export function getCurrentSearch() {
