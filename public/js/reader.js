@@ -2290,7 +2290,8 @@ async function loadImage(index) {
     const src = getReaderImageSource(index);
 
     const displayedImage = index === currentPage ? $("#img").get(0) : null;
-    if (!preloadedImg[src] && displayedImage?.getAttribute("src") === src && displayedImage.complete) {
+    if (!preloadedImg[src] && displayedImage?.getAttribute("src") === src
+        && displayedImage.complete && displayedImage.naturalWidth > 0) {
         preloadedDimensions[index] = {
             width: displayedImage.naturalWidth,
             height: displayedImage.naturalHeight,

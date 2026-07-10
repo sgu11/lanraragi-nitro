@@ -41,6 +41,7 @@ test("reader crop preload falls back to the original page when the crop response
     assert.notEqual(preloadEnd, -1);
     assert.match(loadImage, /const rawSrc = pages\[index\];/);
     assert.match(loadImage, /const src = getReaderImageSource\(index\);/);
+    assert.match(loadImage, /displayedImage\.complete && displayedImage\.naturalWidth > 0/);
     assert.match(loadImage, /try \{[\s\S]*preloadImageWithBlobUrl\(index, src\);[\s\S]*\} catch \(e\) \{/);
     assert.match(loadImage, /if \(src !== rawSrc\) \{[\s\S]*const fallback = await preloadImageWithBlobUrl\(index, rawSrc\);[\s\S]*preloadedImg\[src\] = fallback;[\s\S]*touchPreloadedImage\(src\);[\s\S]*return fallback;/);
     assert.match(loadImage, /throw e;/);
