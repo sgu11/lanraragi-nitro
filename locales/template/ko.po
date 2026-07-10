@@ -2116,3 +2116,149 @@ msgstr "캐러셀 숨기기"
 
 msgid "Show Carousel"
 msgstr "캐러셀 표시"
+
+# ------Start of P1 performance and UX additions (fork)------
+msgid "Primary navigation"
+msgstr "기본 탐색"
+
+msgid "Previous pages"
+msgstr "이전 페이지"
+
+msgid "Next pages"
+msgstr "다음 페이지"
+
+msgid "This page could not be loaded."
+msgstr "이 페이지를 불러오지 못했습니다."
+
+msgid "Retry"
+msgstr "다시 시도"
+
+msgid "Reader page"
+msgstr "리더 페이지"
+
+msgid "Reader page navigation"
+msgstr "리더 페이지 탐색"
+
+msgid "Previous archive"
+msgstr "이전 아카이브"
+
+msgid "First page"
+msgstr "첫 페이지"
+
+msgid "Previous page"
+msgstr "이전 페이지"
+
+msgid "Next page"
+msgstr "다음 페이지"
+
+msgid "Last page"
+msgstr "마지막 페이지"
+
+msgid "Next archive"
+msgstr "다음 아카이브"
+
+msgid "0 reviewed"
+msgstr "검토 완료: 0건"
+
+msgid "Refresh deck"
+msgstr "목록 새로고침"
+
+msgid "Find cover matches"
+msgstr "표지 일치 항목 찾기"
+
+msgid "Cover Hamming threshold:"
+msgstr "표지 해밍 거리 임계값:"
+
+msgid "strict"
+msgstr "엄격"
+
+msgid "loose"
+msgstr "느슨"
+
+msgid "Status:"
+msgstr "상태:"
+
+msgid "New"
+msgstr "신규"
+
+msgid "All"
+msgstr "전체"
+
+msgid "Same Cover"
+msgstr "동일한 표지"
+
+msgid "Variant"
+msgstr "변형"
+
+msgid "Not Duplicate"
+msgstr "중복 아님"
+
+msgid "Needs Review"
+msgstr "검토 필요"
+
+msgid "Resolved"
+msgstr "처리 완료"
+
+msgid "Loading pairs..."
+msgstr "비교 쌍을 불러오는 중..."
+
+msgid "Review queue"
+msgstr "검토 대기열"
+
+msgid "Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review"
+msgstr "키보드: n/p=다음/이전 · s=동일 표지 · v=변형 · x=중복 아님 · r=검토 필요"
+
+msgid "Left"
+msgstr "왼쪽"
+
+msgid "Right"
+msgstr "오른쪽"
+
+msgid "Size"
+msgstr "파일 크기"
+
+msgid "Resolution"
+msgstr "해상도"
+
+msgid "unknown"
+msgstr "알 수 없음"
+
+msgid "Korean"
+msgstr "한국어"
+
+msgid "\${count} reviewed"
+msgstr "검토 완료: ${count}건"
+
+msgid "Failed to load pairs"
+msgstr "비교 쌍을 불러오지 못했습니다"
+
+msgid "Queue empty"
+msgstr "대기열이 비었습니다"
+
+msgid "Keep \${side}"
+msgstr "${side} 유지"
+
+msgid "Delete \${side}"
+msgstr "${side} 삭제"
+
+msgid "Keeping \${keep} deletes \${remove} immediately without confirmation."
+msgstr "유지: ${keep} · 확인 없이 즉시 삭제: ${remove}"
+
+msgid "Refresh failed"
+msgstr "새로고침에 실패했습니다"
+
+msgid "Could not queue cover pass"
+msgstr "표지 검색 작업을 대기열에 추가하지 못했습니다"
+
+msgid "Status update failed"
+msgstr "상태를 변경하지 못했습니다"
+
+msgid "Delete failed"
+msgstr "삭제하지 못했습니다"
+
+msgid "Archive missing"
+msgstr "아카이브를 찾을 수 없음"
+
+msgid "Refresh the duplicate deck to remove this stale pair."
+msgstr "오래된 비교 쌍을 제거하려면 중복 검토 목록을 새로고침하세요."
+# ------End of P1 performance and UX additions (fork)------

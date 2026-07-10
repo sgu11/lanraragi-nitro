@@ -2140,3 +2140,143 @@ msgid "Add to category"
 msgstr "Add to category"
 
 # ------End of index.html.tt2 (carousel + bulk actions)------
+
+# ------Start of P1 performance and UX additions (fork)------
+msgid "Primary navigation"
+msgstr "Primary navigation"
+
+msgid "Previous pages"
+msgstr "Previous pages"
+
+msgid "Next pages"
+msgstr "Next pages"
+
+msgid "This page could not be loaded."
+msgstr "This page could not be loaded."
+
+msgid "Retry"
+msgstr "Retry"
+
+msgid "Reader page"
+msgstr "Reader page"
+
+msgid "Reader page navigation"
+msgstr "Reader page navigation"
+
+msgid "Previous archive"
+msgstr "Previous archive"
+
+msgid "First page"
+msgstr "First page"
+
+msgid "Previous page"
+msgstr "Previous page"
+
+msgid "Next page"
+msgstr "Next page"
+
+msgid "Last page"
+msgstr "Last page"
+
+msgid "Next archive"
+msgstr "Next archive"
+
+msgid "0 reviewed"
+msgstr "0 reviewed"
+
+msgid "Find cover matches"
+msgstr "Find cover matches"
+
+msgid "Cover Hamming threshold:"
+msgstr "Cover Hamming threshold:"
+
+msgid "strict"
+msgstr "strict"
+
+msgid "loose"
+msgstr "loose"
+
+msgid "Status:"
+msgstr "Status:"
+
+msgid "New"
+msgstr "New"
+
+msgid "Same Cover"
+msgstr "Same Cover"
+
+msgid "Variant"
+msgstr "Variant"
+
+msgid "Not Duplicate"
+msgstr "Not Duplicate"
+
+msgid "Needs Review"
+msgstr "Needs Review"
+
+msgid "Resolved"
+msgstr "Resolved"
+
+msgid "Loading pairs..."
+msgstr "Loading pairs..."
+
+msgid "Review queue"
+msgstr "Review queue"
+
+msgid "Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review"
+msgstr "Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review"
+
+msgid "Left"
+msgstr "Left"
+
+msgid "Right"
+msgstr "Right"
+
+msgid "Size"
+msgstr "Size"
+
+msgid "Resolution"
+msgstr "Resolution"
+
+msgid "unknown"
+msgstr "unknown"
+
+msgid "Korean"
+msgstr "Korean"
+
+msgid "\${count} reviewed"
+msgstr "${count} reviewed"
+
+msgid "Failed to load pairs"
+msgstr "Failed to load pairs"
+
+msgid "Queue empty"
+msgstr "Queue empty"
+
+msgid "Keep \${side}"
+msgstr "Keep ${side}"
+
+msgid "Delete \${side}"
+msgstr "Delete ${side}"
+
+msgid "Keeping \${keep} deletes \${remove} immediately without confirmation."
+msgstr "Keeping ${keep} deletes ${remove} immediately without confirmation."
+
+msgid "Refresh failed"
+msgstr "Refresh failed"
+
+msgid "Could not queue cover pass"
+msgstr "Could not queue cover pass"
+
+msgid "Status update failed"
+msgstr "Status update failed"
+
+msgid "Delete failed"
+msgstr "Delete failed"
+
+msgid "Archive missing"
+msgstr "Archive missing"
+
+msgid "Refresh the duplicate deck to remove this stale pair."
+msgstr "Refresh the duplicate deck to remove this stale pair."
+# ------End of P1 performance and UX additions (fork)------

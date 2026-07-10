@@ -69,6 +69,7 @@ test("custom duplicate review actions do not reload the whole deck", async () =>
 
 test("custom duplicate delete actions skip the confirmation modal", async () => {
     const script = await source("public/js/duplicates_custom.js");
+    const i18n = await source("templates/i18n.html.tt2");
     const actionHandlerStart = script.indexOf("$(\"#dupes-active-stage\").on(\"click\", \".dupe-action\"");
     assert.notEqual(actionHandlerStart, -1);
     const nextHandlerStart = script.indexOf("$(\"#dupes-queue-list\").on(\"click\"", actionHandlerStart);
@@ -80,6 +81,39 @@ test("custom duplicate delete actions skip the confirmation modal", async () => 
     assert.match(script, /DuplicatesImmediateDelete/);
     assert.match(script, /dupe-immediate-delete-note/);
     assert.doesNotMatch(script, /after confirmation/);
+    assert.match(i18n, /c\.lh\("Keeping \\\${keep} deletes \\\${remove} immediately without confirmation\."\)/);
+    assert.doesNotMatch(i18n, /c\.lh\("Keeping"\)/);
+});
+
+test("new P1 UI labels have English and Korean Maketext entries", async () => {
+    const english = await source("locales/template/en.po");
+    const korean = await source("locales/template/ko.po");
+    const requiredKeys = [
+        "Primary navigation",
+        "This page could not be loaded.",
+        "Retry",
+        "Reader page navigation",
+        "Previous archive",
+        "Next archive",
+        "Find cover matches",
+        "Cover Hamming threshold:",
+        "Same Cover",
+        "Needs Review",
+        "Review queue",
+        "\\${count} reviewed",
+        "Keep \\${side}",
+        "Delete \\${side}",
+        "Keeping \\${keep} deletes \\${remove} immediately without confirmation.",
+        "Archive missing",
+    ];
+
+    for (const key of requiredKeys) {
+        const marker = `msgid "${key}"\nmsgstr "`;
+        assert.ok(english.includes(marker), `English locale includes ${key}`);
+        const koreanStart = korean.indexOf(marker);
+        assert.notEqual(koreanStart, -1, `Korean locale includes ${key}`);
+        assert.notEqual(korean.slice(koreanStart + marker.length).split("\n", 1)[0], "\"", `Korean locale translates ${key}`);
+    }
 });
 
 test("custom duplicate finder renders pair-relative comparison chips", async () => {
