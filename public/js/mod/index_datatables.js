@@ -316,6 +316,11 @@ export function createdRow(row, data, dataIndex, cells) {
  * (And handles pushing the search parameters to the URL)
  */
 export function drawCallback() {
+    // deferLoading performs one synchronous constructor draw before the
+    // DataTable() return value has been assigned to this module variable.
+    // That draw has no server data and must not enter API-dependent rendering.
+    if (!dataTable || typeof dataTable.rows !== "function") return;
+
     if (typeof (dataTable) !== "undefined") {
         Perf.measure("index.draw", () => {
             flushThumbnailCards();
