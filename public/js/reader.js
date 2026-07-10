@@ -483,7 +483,9 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
     $(document).on("click.toggle-help", "#toggle-help", toggleHelp);
     $(document).on("click.toggle-stamps", "#toggle-stamps", toggleStamps);
     $(document).on("click.toggle-bookmark", ".toggle-bookmark", toggleBookmark);
-    $(document).on("click.retry-reader-page", "#reader-load-retry", () => {
+    $("#reader-load-retry").on("click.retry-reader-page", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         const retryPage = Number($("#reader-load-error").attr("data-page"));
         if (Number.isInteger(retryPage)) goToPage(retryPage);
     });
@@ -945,7 +947,9 @@ export function loadImages() {
             //   | P | N | P |  N: Next
             //   +---+---+---+
             $(document).on("click", (event) => {
-                if ($("#overlay-shade").is(":visible") || !pageNaviState || $(event.target).closest(".absolute-options").length) return;
+                const isInteractiveTarget = $(event.target)
+                    .closest(".absolute-options, button, input, select, textarea, a[href]").length;
+                if ($("#overlay-shade").is(":visible") || !pageNaviState || isInteractiveTarget) return;
 
                 const container = document.getElementById("i3");
                 if (!container) return;

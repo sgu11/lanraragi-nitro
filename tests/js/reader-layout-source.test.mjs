@@ -179,7 +179,7 @@ test("hidden-header paginated reader uses fullscreen wheel page navigation unles
     assert.match(wheel, /changePage\(direction, true\);/);
 });
 
-test("paginated reader tap-zone navigation ignores reader chrome button clicks", async () => {
+test("paginated reader tap-zone navigation ignores interactive controls", async () => {
     const js = await source("public/js/reader.js");
     const navStart = js.indexOf("$(document).on(\"click\", (event) => {");
     const navEnd = js.indexOf("});", navStart);
@@ -187,7 +187,8 @@ test("paginated reader tap-zone navigation ignores reader chrome button clicks",
 
     assert.notEqual(navStart, -1);
     assert.notEqual(navEnd, -1);
-    assert.match(nav, /\$\(event\.target\)\.closest\("\.absolute-options"\)\.length/);
+    assert.match(nav, /\.closest\("\.absolute-options, button, input, select, textarea, a\[href\]"\)\.length/);
+    assert.match(nav, /\|\| !pageNaviState \|\| isInteractiveTarget/);
     assert.match(nav, /changePage\(-1, true\);/);
     assert.match(nav, /changePage\(1, true\);/);
 });
