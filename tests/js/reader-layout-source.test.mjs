@@ -187,10 +187,23 @@ test("paginated reader tap-zone navigation ignores interactive controls", async 
 
     assert.notEqual(navStart, -1);
     assert.notEqual(navEnd, -1);
-    assert.match(nav, /\.closest\("\.absolute-options, button, input, select, textarea, a\[href\]"\)\.length/);
-    assert.match(nav, /\|\| !pageNaviState \|\| isInteractiveTarget/);
+    assert.match(js, /const READER_INTERACTIVE_TARGET_SELECTOR = "\.absolute-options, button, input, select, textarea, a\[href\]";/);
+    assert.match(js, /function isReaderInteractiveTarget\(target\) \{[\s\S]*target\?\.closest\?\.\(READER_INTERACTIVE_TARGET_SELECTOR\)/);
+    assert.match(nav, /\|\| !pageNaviState \|\| isReaderInteractiveTarget\(event\.target\)/);
     assert.match(nav, /changePage\(-1, true\);/);
     assert.match(nav, /changePage\(1, true\);/);
+});
+
+test("reader first-click fullscreen ignores interactive controls", async () => {
+    const js = await source("public/js/reader.js");
+    const fullscreenStart = js.indexOf("function armAutoFullscreen()");
+    const fullscreenEnd = js.indexOf("function initFullscreen()", fullscreenStart);
+    const fullscreen = js.slice(fullscreenStart, fullscreenEnd);
+
+    assert.notEqual(fullscreenStart, -1);
+    assert.notEqual(fullscreenEnd, -1);
+    assert.match(fullscreen, /isReaderInteractiveTarget\(e\.target\)/);
+    assert.ok(fullscreen.indexOf("isReaderInteractiveTarget(e.target)") < fullscreen.indexOf("e.stopPropagation();"));
 });
 
 test("minimal double-spread reader uses vertical keys for single-page spread sliding", async () => {

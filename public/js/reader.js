@@ -115,6 +115,11 @@ let readerCursorIdleTimer = null;
 let readerCursorLastMousePosition = null;
 let appliedContainerLayoutSignature = null;
 let overlayReturnFocus = null;
+const READER_INTERACTIVE_TARGET_SELECTOR = ".absolute-options, button, input, select, textarea, a[href]";
+
+function isReaderInteractiveTarget(target) {
+    return Boolean(target?.closest?.(READER_INTERACTIVE_TARGET_SELECTOR));
+}
 
 function isCurrentNavigation(navigationId) {
     return isCurrentReaderNavigation(readerCursor, navigationId);
@@ -947,9 +952,7 @@ export function loadImages() {
             //   | P | N | P |  N: Next
             //   +---+---+---+
             $(document).on("click", (event) => {
-                const isInteractiveTarget = $(event.target)
-                    .closest(".absolute-options, button, input, select, textarea, a[href]").length;
-                if ($("#overlay-shade").is(":visible") || !pageNaviState || isInteractiveTarget) return;
+                if ($("#overlay-shade").is(":visible") || !pageNaviState || isReaderInteractiveTarget(event.target)) return;
 
                 const container = document.getElementById("i3");
                 if (!container) return;
@@ -1253,7 +1256,7 @@ function armAutoFullscreen() {
     const i3 = document.getElementById("i3");
     if (!i3) return;
     function autoFullscreen(e) {
-        if (fscreen.inFullscreen() || $("#overlay-shade").is(":visible")) return;
+        if (fscreen.inFullscreen() || $("#overlay-shade").is(":visible") || isReaderInteractiveTarget(e.target)) return;
         i3.removeEventListener("click", autoFullscreen, true);
         e.stopPropagation();
         toggleFullScreen();
