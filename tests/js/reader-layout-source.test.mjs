@@ -40,6 +40,8 @@ test("paginated reader can use minimal chrome without enabling infinite scroll",
     assert.match(baseCss, /body\.infinite-scroll #toggle-manga-mode,/);
     assert.match(baseCss, /body\.infinite-scroll #toggle-header,/);
     assert.match(baseCss, /body\.infinite-scroll #display img\s*\{[\s\S]*margin: 0 auto;[\s\S]*\}/);
+    assert.match(baseCss, /\.sni img\[src=""\]\s*\{\s*display: none;\s*\}/);
+    assert.doesNotMatch(baseCss, /div\.sni img\[src=""\]/);
     assert.match(template, /\/css\/reader-chrome\.css\?\$asset_version/);
     assert.match(template, /id="settingsOverlay"[\s\S]*\[% INCLUDE config %\]/);
     assert.match(js, /getFitHeightViewportPercent\(infiniteScroll, localStorage\.hideHeader === "true"\)/);

@@ -31,6 +31,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   reduced-motion preferences are respected.
 - **Large archive overview windowing** — thumbnail overview construction is
   deferred until opened and capped at 60 pages per navigable window.
+- **Single-page spread alignment** hides the empty secondary image slot after
+  an unpaired final page, keeping the page centered and preventing an RTL
+  ghost page at the end of odd-length archives.
 
 - **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
 - **Reader cursor auto-hide** hides the mouse cursor over the page area after

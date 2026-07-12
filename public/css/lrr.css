@@ -905,7 +905,7 @@ body.infinite-scroll .sb {
 
 /* Double Page & Fullscreen */
 
-div.sni img[src=""] {
+.sni img[src=""] {
   display: none;
 }
 
