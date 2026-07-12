@@ -335,7 +335,7 @@ test("reader fit modes upscale cropped pages to the selected viewport or contain
     assert.notEqual(applyEnd, -1);
     assert.match(applyContainerWidth, /height: \$\{height\}vh; max-height: \$\{height\}vh; width: auto; object-fit: contain;/);
     assert.doesNotMatch(applyContainerWidth, /`max-height: \$\{height\}vh;`/);
-    assert.match(applyContainerWidth, /"width: fit-content; width: -moz-fit-content; max-width: 100%"/);
+    assert.match(applyContainerWidth, /"width: fit-content; width: -moz-fit-content; max-width: 100%; margin-left: auto; margin-right: auto"/);
     assert.match(applyContainerWidth, /`width: \$\{state\.containerWidth\}; max-width: 100%`/);
     assert.match(applyContainerWidth, /"width: 90%; max-width: 90%"[\s\S]*"width: 100%"/);
 });

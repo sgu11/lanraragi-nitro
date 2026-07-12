@@ -2459,7 +2459,7 @@ function applyContainerWidth() {
         // Hidden-header paginated mode uses the full viewport because bottom chrome is hidden.
         const height = fullscreen ? 100 : getFitHeightViewportPercent(infiniteScroll, localStorage.hideHeader === "true");
         $(".reader-image").attr("style", `height: ${height}vh; max-height: ${height}vh; width: auto; object-fit: contain;`);
-        $(".sni").attr("style", "width: fit-content; width: -moz-fit-content; max-width: 100%");
+        $(".sni").attr("style", "width: fit-content; width: -moz-fit-content; max-width: 100%; margin-left: auto; margin-right: auto");
     } else if (fitMode === "fit-width") {
         $(".reader-image").attr("style", "width: 100%;");
         $(".sni").attr("style", "max-width: 98%");
