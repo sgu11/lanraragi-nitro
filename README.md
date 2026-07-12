@@ -22,6 +22,12 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - The legacy duplicate page now queues the fork's `find_duplicate_pairs` Minion
   task through the OpenAPI endpoint; the cover-only `/duplicates_custom` flow
   remains isolated.
+- Post-merge stabilization restores the generated Swiper carousel entrypoint,
+  native reader paginator controls, and thumbnail-link behavior, while removing
+  inactive reader modules that could drift from the deployed runtime.
+- CBW remote pages now use redirect-by-redirect public-address validation,
+  pinned peer checks, bounded raster decoding, and XML-content-keyed caches;
+  private-network CBW image URLs are intentionally rejected.
 
 ### Reader
 

@@ -4,6 +4,38 @@ import test from "node:test";
 
 const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
+test("reader paginator uses labeled native buttons without changing navigation values", async () => {
+    const template = await source("templates/reader.html.tt2");
+    const paginator = template.match(/<div class="sn paginator"[\s\S]*?<\/div>\n\[% END %\]/)?.[0] || "";
+
+    assert.match(paginator, /<div class="sn paginator" aria-label="\[% c\.lh\('Reader page navigation'\) %\]">/);
+    const controls = [
+        ["outermost-left", "Previous archive"],
+        ["outer-left", "First page"],
+        ["left", "Previous page"],
+        ["right", "Next page"],
+        ["outer-right", "Last page"],
+        ["outermost-right", "Next archive"],
+    ];
+    for (const [value, label] of controls) {
+        assert.match(paginator, new RegExp(`<button type="button"[^>]*value="${value}"[^>]*aria-label="\\[% c\\.lh\\('${label}'\\) %\\]"[^>]*><\\/button>`));
+    }
+    assert.doesNotMatch(paginator, /<a\b[^>]*page-link/);
+});
+
+test("active set-thumbnail handler prevents anchor navigation before updating the thumbnail", async () => {
+    const js = await source("public/js/mod/reader_common.js");
+    const start = js.indexOf('$(document).on("click.set-thumbnail"');
+    const end = js.indexOf('$(document).on("click.thumbnail"', start);
+    const handler = js.slice(start, end);
+
+    assert.notEqual(start, -1);
+    assert.notEqual(end, -1);
+    assert.match(handler, /\(e\) => \{\s*e\.preventDefault\(\);/);
+    assert.match(handler, /Server\.callAPI\(`\/api\/(?:tankoubons|archives)\/\$\{id\}\/thumbnail\?page=\$\{pageNumber\}`/);
+    assert.match(handler, /e\.stopPropagation\(\);/);
+});
+
 test("paginated reader can use minimal chrome without enabling infinite scroll", async () => {
     const js = await source("public/js/mod/reader_common.js");
     const css = await source("public/css/reader-chrome.css");

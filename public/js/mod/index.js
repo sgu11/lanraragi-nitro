@@ -450,7 +450,6 @@ export function toggleCarouselVisibility(e) {
 }
 
 function ensureSwiperAssets() {
-    if (window.Swiper) return Promise.resolve();
     if (swiperAssetsPromise) return swiperAssetsPromise;
 
     const assetVersion = encodeURIComponent(document.documentElement.dataset.assetVersion || "");
@@ -464,19 +463,10 @@ function ensureSwiperAssets() {
         stylesheet.onerror = () => reject(new Error("Failed to load carousel styles"));
     });
 
-    const scriptReady = new Promise((resolve, reject) => {
-        const script = document.createElement("script");
-        script.src = `${new LRR.ApiURL("/js/vendor/swiper-bundle.min.js")}${versionSuffix}`;
-        script.defer = true;
-        script.dataset.lrrSwiper = "true";
-        script.onload = resolve;
-        script.onerror = () => reject(new Error("Failed to load carousel assets"));
-        document.head.appendChild(script);
-    });
     document.head.appendChild(stylesheet);
 
-    swiperAssetsPromise = Promise.all([stylesheetReady, scriptReady])
-        .then(() => undefined)
+    swiperAssetsPromise = Promise.all([stylesheetReady, import("swiper")])
+        .then(([, swiperModule]) => swiperModule.default)
         .catch((error) => {
             document.querySelectorAll("[data-lrr-swiper]").forEach((asset) => asset.remove());
             swiperAssetsPromise = null;
@@ -490,8 +480,9 @@ export async function toggleCarousel(e, updateLocalStorage = true) {
         localStorage.carouselOpen = (localStorage.carouselOpen === "1") ? "0" : "1";
 
     if (!carouselInitialized) {
+        let Swiper;
         try {
-            await ensureSwiperAssets();
+            Swiper = await ensureSwiperAssets();
         } catch (error) {
             carouselDirty = true;
             LRR.showErrorToast(I18N.CarouselError, error);
@@ -501,7 +492,7 @@ export async function toggleCarousel(e, updateLocalStorage = true) {
         carouselInitialized = true;
         $("#reload-carousel").show();
 
-        swiper = new window.Swiper(".index-carousel-container", {
+        swiper = new Swiper(".index-carousel-container", {
             breakpoints: (() => {
                 const breakpoints = {
                     0: { // ensure every device have at least 1 slide

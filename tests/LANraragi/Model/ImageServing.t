@@ -179,6 +179,13 @@ sub make_page_blob {
     return $img->ImageToBlob( magick => "png" );
 }
 
+sub make_format_blob {
+    my ( $width, $height, $format ) = @_;
+    my $img = Image::Magick->new( size => "${width}x${height}" );
+    $img->Read("xc:#336699");
+    return $img->ImageToBlob( magick => $format );
+}
+
 sub make_noisy_blob {
     my ( $width, $height ) = @_;
     my $pixels = "";
@@ -301,6 +308,30 @@ note("tankoubon thumbnail placeholder is served inline with cache headers");
       ->header_like( "Content-Type", qr{^image/png}, "tank placeholder content type is image/png" )
       ->header_like( "Content-Disposition", qr{\binline\b}, "tank placeholder is displayed inline" )
       ->header_like( "Cache-Control", qr{public, max-age=86400}, "tank placeholder has cache headers" );
+}
+
+note("CBW pages use the raster bytes' authoritative MIME instead of the synthetic filename suffix");
+{
+    my $id = "abcdefabcdefabcdefabcdefabcdefabcdefabcd";
+    my $source = make_format_blob( 8, 6, "webp" );
+
+    no warnings 'redefine';
+    local *LANraragi::Model::Archive::_resolve_archive_path = sub { return "/tmp/example.cbw" };
+    local *LANraragi::Model::Archive::is_cbw = sub { return 1 };
+    local *LANraragi::Model::Archive::cbw_content_digest = sub { return "d" x 64 };
+    local *LANraragi::Model::Archive::get_page_data = sub {
+        my ( undef, undef, $metrics ) = @_;
+        $metrics->{cache_status} = "miss" if defined $metrics;
+        return $source;
+    };
+    local *LANraragi::Model::Archive::get_logger = sub { return FakeImageLogger->new };
+    local *LANraragi::Model::Metrics::record_image_serving_metrics = sub { return 1 };
+
+    my $t = build_image_app();
+    $t->get_ok("/archives/$id/page?path=page-001.jpg")
+      ->status_is(200)
+      ->header_like( "Content-Type", qr{^image/webp}, "CBW WebP is rendered with image/webp despite the .jpg page name" )
+      ->header_like( "Content-Disposition", qr{\binline\b}, "CBW WebP remains inline" );
 }
 
 note("archive page crop=border serves and reuses a cropped page variant");

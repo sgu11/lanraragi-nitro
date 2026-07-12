@@ -40,9 +40,6 @@ my @vendor_js = (
     [ "/dompurify/dist/purify.es.mjs", "purify.js" ],
     "/sortablejs/Sortable.min.js",
     [ "/htm/dist/htm.mjs", "htm.js" ],
-    '/@preact/signals/dist/signals.module.js',
-    '/@preact/signals/utils/dist/utils.module.js',
-    '/@preact/signals-core/dist/signals-core.module.js',
 );
 
 my @vendor_bundle = (
@@ -214,6 +211,14 @@ if ( $front || $full ) {
     if ( system( "npm ci" ) != 0 ) {
         die "Something went wrong while obtaining node modules - Bailing out.";
     }
+
+    # Do not leave removed dependency outputs behind in an existing source
+    # checkout. Docker builds start without host vendor trees via .dockerignore.
+    unlink map { getcwd . "/public/js/vendor/" . $_ } (
+        "signals.module.js",
+        "signals-core.module.js",
+        "utils.module.js",
+    );
 
     say("\r\nBundling web dependencies...\r\n");
     my @bundle_args = ("npm", "exec", "esbuild",

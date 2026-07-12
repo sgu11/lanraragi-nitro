@@ -8,8 +8,8 @@
  *   node tools/audit-public-mounts.mjs --mounts-file path/to/mounts.txt
  *   node tools/audit-public-mounts.mjs --mounts-file fixtures/complete.txt
  *
- * Mounts file format: one host-relative path per line (comments # ok).
- * Paths may be compose-style "host:container" — the host side is used.
+ * Mounts file format: one compose-style "host:container[:mode]" mount per
+ * line (comments # ok). Required mounts must use the exact runtime destination.
  *
  * Exit 0 if every required path is covered; non-zero otherwise.
  */
@@ -29,9 +29,6 @@ export const FORK_PUBLIC_MOUNT_PATHS = Object.freeze([
     "public/js/mod/reader-crop.js",
     "public/js/mod/reader-nav-keys.js",
     "public/js/mod/reader_common.js",
-    "public/js/mod/reader_archive_overlay.js",
-    "public/js/mod/reader_options.js",
-    "public/js/mod/reader_stamps.js",
     "public/js/mod/archive-data-cache.js",
     "public/js/mod/perf.js",
     "public/js/mod/index_contextmenu.js",
@@ -41,36 +38,67 @@ export const FORK_PUBLIC_MOUNT_PATHS = Object.freeze([
     "public/css/duplicates_custom.css",
 ]);
 
+export const OBSOLETE_PUBLIC_MOUNT_PATHS = Object.freeze([
+    "public/js/mod/reader_archive_overlay.js",
+    "public/js/mod/reader_options.js",
+    "public/js/mod/reader_stamps.js",
+]);
+
+const CONTAINER_ROOT = "/home/koyomi/lanraragi";
+
+function normalizeHostPath(hostSide) {
+    const normalized = hostSide.trim()
+        .replace(/^\.\//, "")
+        .replace(/^LANraragi\//, "")
+        .replace(/\\/g, "/");
+    const repoPath = normalized.match(/(public\/.+|tools\/openapi\.yaml)$/);
+    return repoPath ? repoPath[1] : normalized;
+}
+
+export function requiredDestination(path) {
+    return `${CONTAINER_ROOT}/${path}`;
+}
+
 export function parseMountsInventory(text) {
-    const paths = new Set();
+    const mounts = [];
     for (const rawLine of text.split(/\r?\n/)) {
         const line = rawLine.replace(/#.*$/, "").trim();
         if (!line) continue;
-        // compose: "./LANraragi/public/js/foo.js:/home/.../foo.js:ro"
-        const hostSide = line.split(":")[0].trim();
-        const normalized = hostSide
-            .replace(/^\.\//, "")
-            .replace(/^LANraragi\//, "")
-            .replace(/\\/g, "/");
-        // Keep trailing path from public/ or tools/
-        const pub = normalized.match(/(public\/.+|tools\/openapi\.yaml)$/);
-        if (pub) {
-            paths.add(pub[1]);
-        } else {
-            paths.add(normalized);
-        }
+        const [hostSide, destination = ""] = line.split(":");
+        mounts.push({
+            source: normalizeHostPath(hostSide),
+            destination: destination.trim().replace(/\\/g, "/"),
+        });
     }
-    return paths;
+    return mounts;
 }
 
-export function auditMounts(mountedPaths, required = FORK_PUBLIC_MOUNT_PATHS) {
+export function auditMounts(mounts, required = FORK_PUBLIC_MOUNT_PATHS) {
+    const bySource = new Map(mounts.map((mount) => [mount.source, mount]));
     const missing = [];
+    const wrongDestinations = [];
     for (const req of required) {
-        if (!mountedPaths.has(req)) {
+        const mount = bySource.get(req);
+        if (!mount) {
             missing.push(req);
+        } else if (mount.destination !== requiredDestination(req)) {
+            wrongDestinations.push({
+                source: req,
+                expected: requiredDestination(req),
+                actual: mount.destination,
+            });
         }
     }
-    return { ok: missing.length === 0, missing, required: [...required] };
+    const obsolete = mounts
+        .filter((mount) => OBSOLETE_PUBLIC_MOUNT_PATHS.includes(mount.source))
+        .map((mount) => mount.source);
+    return {
+        ok: missing.length === 0 && wrongDestinations.length === 0 && obsolete.length === 0,
+        missing,
+        wrongDestinations,
+        obsolete,
+        required: [...required],
+    };
 }
 
 function main(argv = process.argv.slice(2)) {
@@ -90,11 +118,15 @@ function main(argv = process.argv.slice(2)) {
         process.exit(2);
     }
     const text = readFileSync(abs, "utf8");
-    const mounted = parseMountsInventory(text);
-    const result = auditMounts(mounted);
+    const mounts = parseMountsInventory(text);
+    const result = auditMounts(mounts);
 
-    // Also warn if required files missing from repo (structural).
-    const absentOnDisk = FORK_PUBLIC_MOUNT_PATHS.filter((p) => !existsSync(join(REPO_ROOT, p)));
+    // Reverse direction: every repo-scoped source named by the inventory must
+    // still exist. This catches stale mounts after upstream deletes/renames.
+    const absentOnDisk = mounts
+        .map((mount) => mount.source)
+        .filter((path) => /^(public\/|tools\/openapi\.yaml$)/.test(path))
+        .filter((path) => !existsSync(join(REPO_ROOT, path)));
 
     if (result.ok && absentOnDisk.length === 0) {
         console.log(JSON.stringify({ ok: true, checked: result.required.length, mountsFile: abs }, null, 2));
@@ -104,6 +136,8 @@ function main(argv = process.argv.slice(2)) {
     console.error(JSON.stringify({
         ok: false,
         missing_mounts: result.missing,
+        wrong_destinations: result.wrongDestinations,
+        obsolete_mounts: result.obsolete,
         missing_on_disk: absentOnDisk,
         mountsFile: abs,
     }, null, 2));

@@ -1,11 +1,11 @@
-# Complete fork public mount inventory (fixture for audit-public-mounts.mjs)
+# Complete host sources, but reader_common.js points to the wrong runtime name.
 ./LANraragi/tools/openapi.yaml:/home/koyomi/lanraragi/tools/openapi.yaml:ro
 ./LANraragi/public/js/mod/reader-spread.js:/home/koyomi/lanraragi/public/js/mod/reader-spread.js:ro
 ./LANraragi/public/js/mod/progress-migration.js:/home/koyomi/lanraragi/public/js/mod/progress-migration.js:ro
 ./LANraragi/public/js/mod/reader-chrome.js:/home/koyomi/lanraragi/public/js/mod/reader-chrome.js:ro
 ./LANraragi/public/js/mod/reader-crop.js:/home/koyomi/lanraragi/public/js/mod/reader-crop.js:ro
 ./LANraragi/public/js/mod/reader-nav-keys.js:/home/koyomi/lanraragi/public/js/mod/reader-nav-keys.js:ro
-./LANraragi/public/js/mod/reader_common.js:/home/koyomi/lanraragi/public/js/mod/reader_common.js:ro
+./LANraragi/public/js/mod/reader_common.js:/home/koyomi/lanraragi/public/js/mod/reader-common.js:ro
 ./LANraragi/public/js/mod/archive-data-cache.js:/home/koyomi/lanraragi/public/js/mod/archive-data-cache.js:ro
 ./LANraragi/public/js/mod/perf.js:/home/koyomi/lanraragi/public/js/mod/perf.js:ro
 ./LANraragi/public/js/mod/index_contextmenu.js:/home/koyomi/lanraragi/public/js/mod/index_contextmenu.js:ro

@@ -22,6 +22,12 @@ English version: [`README.md`](README.md).
 - Legacy duplicate page는 OpenAPI endpoint를 통해 fork의
   `find_duplicate_pairs` Minion task를 queue함. Cover-only
   `/duplicates_custom` flow는 계속 분리 유지함.
+- Merge 후 안정화로 생성된 Swiper carousel entrypoint, native reader
+  paginator control, thumbnail link 동작을 복원하고 deployed runtime과
+  달라질 수 있던 비활성 reader module을 제거함.
+- CBW remote page는 redirect별 public-address 검증, pinned peer 확인,
+  bounded raster decode, XML content 기반 cache key를 사용함. Private-network
+  CBW image URL은 의도적으로 거부함.
 
 ### Reader
 

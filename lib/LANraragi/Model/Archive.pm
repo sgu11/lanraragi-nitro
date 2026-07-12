@@ -15,13 +15,12 @@ use File::Path  qw(remove_tree);
 use File::Basename;
 use File::Copy "cp";
 use File::Path qw(make_path);
-use Mojo::IOLoop;
 
 use LANraragi::Utils::Generic    qw(render_api_response);
 use LANraragi::Utils::String     qw(trim trim_CRLF);
 use LANraragi::Utils::TempFolder qw(get_temp);
 use LANraragi::Utils::Logging    qw(get_logger);
-use LANraragi::Utils::Archive    qw(extract_single_file extract_thumbnail is_cbw cbw_prefetch);
+use LANraragi::Utils::Archive    qw(extract_single_file extract_thumbnail is_cbw cbw_content_digest detect_cbw_image);
 use LANraragi::Utils::Database   qw(invalidate_cache set_title set_tags set_summary get_archive_json get_archive_json_multi);
 use LANraragi::Utils::ImageBorderCrop qw(CROP_ALGORITHM_VERSION crop_blank_borders);
 use LANraragi::Utils::ImageResponse qw(render_thumbnail_placeholder);
@@ -338,26 +337,27 @@ sub serve_thumbnail {
 }
 
 sub get_page_data ( $id, $path, $metrics = undef ) {
-    my $cachekey = "page/$id/$path";
+    my $archive = _resolve_archive_path($id);
+    my $cache_path = _content_cache_path( $archive, $path );
+    my $cachekey = "page/$id/$cache_path";
     my $content  = fetch($cachekey);
     if ( !defined($content) ) {
         $metrics->{cache_status} = "miss" if defined $metrics;
 
         # Extract the file from the parent archive if it doesn't exist
         my $extract_start = [gettimeofday];
-        my $archive = _resolve_archive_path($id);
         $content = extract_single_file( $archive, $path );
         $metrics->{extract_seconds} = tv_interval($extract_start) if defined $metrics;
         put( $cachekey, $content );
-        # For CBW archives, prefetch upcoming pages asynchronously so they're
-        # cache hits when the user navigates forward.
-        if ( is_cbw($archive) ) {
-            Mojo::IOLoop->next_tick( sub { cbw_prefetch( $archive, $id, $path, 3 ) } );
-        }
     } else {
         $metrics->{cache_status} = "hit" if defined $metrics;
     }
     return $content;
+}
+
+sub _content_cache_path ( $archive, $path ) {
+    return $path unless is_cbw($archive);
+    return cbw_content_digest($archive) . "/$path";
 }
 
 # Per-worker memo of id -> on-disk archive path.
@@ -649,6 +649,9 @@ sub serve_page {
 
     my ( $n, $p, $file_ext ) = fileparse( $path, qr/\.[^.]*/ );
     my $format = substr( $file_ext, 1 ) || "jpg";
+    my $archive = eval { _resolve_archive_path($id) };
+    my $is_cbw_page = defined($archive) && is_cbw($archive);
+    my $cache_path = $is_cbw_page ? _content_cache_path( $archive, $path ) : $path;
 
     # Apply resizing transformation if set in Settings
     if ( LANraragi::Model::Config->enable_resize ) {
@@ -659,15 +662,16 @@ sub serve_page {
         my $quality   = LANraragi::Model::Config->get_readquality;
 
         my $cachekey = $crop_borders
-          ? _crop_resize_cache_key( $id, $path, $threshold, $quality )
-          : "resize_page/$id/$path/$threshold/$quality";
+          ? _crop_resize_cache_key( $id, $cache_path, $threshold, $quality )
+          : "resize_page/$id/$cache_path/$threshold/$quality";
         my $content  = fetch($cachekey);
         if ( !defined($content) ) {
             $image_metrics{cache_status} = "miss";
             my %page_metrics;
             my $page_content = get_page_data( $id, $path, \%page_metrics );
+            $format = detect_cbw_image($page_content)->{format} if $is_cbw_page;
             if ($crop_borders) {
-                ( $page_content ) = _apply_border_crop( $id, $path, $format, $page_content, \%image_metrics );
+                ( $page_content ) = _apply_border_crop( $id, $cache_path, $format, $page_content, \%image_metrics );
             }
             my $resize_start = [gettimeofday];
             $content = LANraragi::Model::Reader::resize_image( $page_content, $quality, $threshold );
@@ -687,28 +691,36 @@ sub serve_page {
             bytes            => length($content)
         );
 
-        # resize_image always converts the image to jpg
-        $self->render_file(
+        my $response_info = $is_cbw_page ? detect_cbw_image($content) : undef;
+        my %render_args = (
             data                => $content,
-            content_disposition => "inline",
-            format              => "jpg"
+            content_disposition => "inline"
         );
+        if ($response_info) {
+            $render_args{content_type} = $response_info->{mime};
+        } else {
+            $render_args{format} = "jpg";
+        }
+        $self->render_file(%render_args);
     } else {
 
-        # Get the file extension to report content-type properly
-        my $cachekey = _crop_cache_key( $id, $path, $format );
-        my $content = $crop_borders ? fetch($cachekey) : undef;
+        # CBW response bytes, not URL suffixes, are authoritative for format.
+        my $content = $is_cbw_page ? get_page_data( $id, $path, \%image_metrics ) : undef;
+        my $response_info = $is_cbw_page ? detect_cbw_image($content) : undef;
+        $format = $response_info->{format} if $response_info;
+        my $cachekey = _crop_cache_key( $id, $cache_path, $format );
+        $content = $crop_borders ? fetch($cachekey) : $content;
         if ($crop_borders && defined($content)) {
             $image_metrics{variant}      = "cropped";
             $image_metrics{cache_status} = "hit";
         } else {
-            $content = get_page_data( $id, $path, \%image_metrics );
+            $content = get_page_data( $id, $path, \%image_metrics ) unless defined $content;
             if ($crop_borders) {
                 $image_metrics{variant}      = "cropped";
                 $image_metrics{cache_status} = "miss";
                 my $was_cropped;
                 ( $content, $was_cropped ) =
-                  _apply_border_crop_singleflight( $id, $path, $format, $content, \%image_metrics, $cachekey );
+                  _apply_border_crop_singleflight( $id, $cache_path, $format, $content, \%image_metrics, $cachekey );
             }
         }
         $logger->debug( "Data size:" . length($content) );
@@ -722,11 +734,16 @@ sub serve_page {
         );
 
         # Serve extracted file directly
-        $self->render_file(
+        my %render_args = (
             data                => $content,
-            content_disposition => "inline",
-            format              => substr( $file_ext, 1 )
+            content_disposition => "inline"
         );
+        if ($response_info) {
+            $render_args{content_type} = $response_info->{mime};
+        } else {
+            $render_args{format} = substr( $file_ext, 1 );
+        }
+        $self->render_file(%render_args);
     }
 }
 

@@ -339,19 +339,19 @@
 [% END %]
 <!-- -->
 [% BLOCK arrows %]
-<div class="sn paginator">
-    <a class="fa fa-backward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-left"></a>
-    <a class="fa fa-angle-double-left page-link" style="font-size: 1.5em;" value="outer-left"></a>
-    <a class="fa fa-angle-left page-link" style="font-size: 1.5em;" value="left"></a>
+<div class="sn paginator" aria-label="[% c.lh('Reader page navigation') %]">
+    <button type="button" class="fa fa-backward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-left" aria-label="[% c.lh('Previous archive') %]"></button>
+    <button type="button" class="fa fa-angle-double-left page-link" style="font-size: 1.5em;" value="outer-left" aria-label="[% c.lh('First page') %]"></button>
+    <button type="button" class="fa fa-angle-left page-link" style="font-size: 1.5em;" value="left" aria-label="[% c.lh('Previous page') %]"></button>
 
     <div class="pagecount">
         <span class="current-page">...</span> /
         <span class="max-page">...</span>
     </div>
 
-    <a class="fa fa-angle-right page-link" style="font-size: 1.5em;" value="right"></a>
-    <a class="fa fa-angle-double-right page-link" style="font-size: 1.5em;" value="outer-right"></a>
-    <a class="fa fa-forward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-right"></a>
+    <button type="button" class="fa fa-angle-right page-link" style="font-size: 1.5em;" value="right" aria-label="[% c.lh('Next page') %]"></button>
+    <button type="button" class="fa fa-angle-double-right page-link" style="font-size: 1.5em;" value="outer-right" aria-label="[% c.lh('Last page') %]"></button>
+    <button type="button" class="fa fa-forward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-right" aria-label="[% c.lh('Next archive') %]"></button>
 </div>
 [% END %]
 <!-- -->

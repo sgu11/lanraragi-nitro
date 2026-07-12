@@ -39,6 +39,7 @@ test("versioned module paths also include deploy-specific asset cache busting", 
 test("classic vendor scripts in index and reader are deferred and cache-busted", async () => {
     const index = await source("templates/index.html.tt2");
     const reader = await source("templates/reader.html.tt2");
+    const importmap = await source("templates/common/importmap.html.tt2");
 
     // Every classic vendor <script src> must be deferred (non-blocking) and
     // carry the deploy-specific cache-bust query, since after_static serves
@@ -72,7 +73,12 @@ test("classic vendor scripts in index and reader are deferred and cache-busted",
     assert.match(indexModule, /function ensureSwiperAssets\(\)/);
     assert.match(index, /data-asset-version="\[% asset_version %\]"/);
     assert.match(indexModule, /document\.documentElement\.dataset\.assetVersion/);
-    assert.match(indexModule, /\/js\/vendor\/swiper-bundle\.min\.js/);
+    assert.match(importmap, /"swiper": "\[% c\.url_for\("\/js\/\$version\/vendor\/swiper-bundle\.js\?\$asset_version"\) %\]"/);
+    assert.match(indexModule, /import\("swiper"\)/);
+    assert.match(indexModule, /swiperModule\.default/);
+    assert.doesNotMatch(indexModule, /window\.Swiper|swiper-bundle\.min\.js/);
+    assert.equal(indexModule.match(/import\("swiper"\)/g)?.length, 1);
+    assert.match(indexModule, /if \(localStorage\.carouselHidden !== "1"\) \{[\s\S]*?\.collapsible-title[\s\S]*?updateCarousel\(\);[\s\S]*?\}/);
     assert.match(index, /jquery\.min\.js\?\$asset_version"\) %\]"\s+defer/);
 
     for (const attrs of extractVendorScriptAttrs(reader)) {

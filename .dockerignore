@@ -2,3 +2,6 @@ tools/_screenshots
 tools/Documentation
 tools/build/windows
 tools/build/homebrew
+public/js/vendor
+public/css/vendor
+public/css/webfonts
