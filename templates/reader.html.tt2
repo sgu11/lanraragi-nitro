@@ -175,7 +175,9 @@
         </filter>
     </svg>
     <div id="settingsOverlay" class="id1 base-overlay small-overlay" style="display:none"
-        role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reader-options-title" tabindex="-1"></div>
+        role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reader-options-title" tabindex="-1">
+        [% INCLUDE config %]
+    </div>
 
     <div id="reader-help" style="display: none;">
         <div class="navigation-help-toast">
