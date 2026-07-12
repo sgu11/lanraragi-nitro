@@ -16,6 +16,7 @@
             "lrr-reader-chrome": "[% c.url_for("/js/$version/mod/reader-chrome.js?$asset_version") %]",
             "lrr-reader-spread": "[% c.url_for("/js/$version/mod/reader-spread.js?$asset_version") %]",
             "lrr-reader-nav-keys": "[% c.url_for("/js/$version/mod/reader-nav-keys.js?$asset_version") %]",
+            "lrr-reader-common": "[% c.url_for("/js/$version/mod/reader_common.js?$asset_version") %]",
             "fscreen": "[% c.url_for("/js/$version/vendor/fscreen.esm.js?$asset_version") %]",
 
             "preact": "[% c.url_for("/js/$version/vendor/preact.module.js?$asset_version") %]",
@@ -33,7 +34,7 @@
 
             "marked": "[% c.url_for("/js/$version/vendor/marked.esm.js?$asset_version") %]",
             "dompurify": "[% c.url_for("/js/$version/vendor/purify.js?$asset_version") %]",
-
+            "swiper": "[% c.url_for("/js/$version/vendor/swiper-bundle.js?$asset_version") %]",
             "sweetalert2": "[% c.url_for("/js/$version/vendor/sweetalert2.esm.min.js?$asset_version") %]"
         }
     }

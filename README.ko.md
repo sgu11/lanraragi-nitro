@@ -12,6 +12,17 @@ English version: [`README.md`](README.md).
 
 현재 merge-preservation 기준 문서는 [`docs/local-features/`](docs/local-features/README.md)에 있음. upstream sync 중 fork-only 구현 세부사항, route, Redis key, verification command 보존을 위해 해당 문서 우선 확인 필요.
 
+### Upstream sync (2026-07-12)
+
+- `.cbw` archive 지원, search initialization retry, Redocly OpenAPI 검증,
+  esbuild 기반 Swiper vendor bundle을 포함한 upstream `b94e4805`까지 병합함.
+  Fork reader 구현은 upstream-style `reader.js` entry 뒤의
+  `public/js/mod/reader_common.js`로 이동했으며 spread, crop, progress,
+  cache, chrome 계약은 유지함.
+- Legacy duplicate page는 OpenAPI endpoint를 통해 fork의
+  `find_duplicate_pairs` Minion task를 queue함. Cover-only
+  `/duplicates_custom` flow는 계속 분리 유지함.
+
 ### Reader
 
 - **Reader failure recovery 및 accessibility**: page fetch/decode 실패 시 pending navigation과 queued input을 정리하고 inline retry를 제공함. Overlay는 dialog/focus semantics를 사용하고 control target은 44px이며 reduced-motion 설정을 존중함.

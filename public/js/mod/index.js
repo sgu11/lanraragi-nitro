@@ -18,6 +18,7 @@ let carouselInitialized = false;
 // Carousel content is stale (searches ran while it was hidden/collapsed).
 // Revealing the carousel triggers a single refresh when this is set.
 let carouselDirty = true;
+let carouselGeneration = 0;
 let swiper = {};
 let serverVersion = "";
 let debugMode = false;
@@ -32,6 +33,9 @@ const RELEASE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 export let pageSize = 100;
 export let isMultiSelectMode = false;
 export let selectedArchives = new Set();
+
+const CAROUSEL_RETRY_DELAY_MS = 1500;
+const CAROUSEL_MAX_RETRIES = 10;
 
 /**
  * Initialize the Archive Index.
@@ -620,34 +624,70 @@ export function updateCarousel(e) {
 
     $("#reload-carousel").addClass("fa-spin");
 
-    Server.callAPISilent(endpoint, "GET")
-        .then((results) => {
-            Perf.measure("index.carousel", () => {
-                swiper.virtual.removeAllSlides();
-                const slides = results.data
-                    .map((archive) => LRR.buildThumbnailDiv(archive));
-                swiper.virtual.appendSlide(slides);
-                swiper.virtual.update();
-            });
-
-            if (results.data.length === 0) {
-                $("#carousel-empty").show();
-            }
-
-            $(".swiper-wrapper").show();
-        })
-        .catch((error) => {
-            carouselDirty = true;
-            LRR.showErrorToast(I18N.CarouselError, error);
-        })
-        .finally(() => {
-            $("#carousel-loading").hide();
-            $("#reload-carousel").removeClass("fa-spin");
-        });
+    carouselGeneration += 1;
+    loadCarousel(endpoint, carouselGeneration);
 }
 
 export function markCarouselDirty() {
     carouselDirty = true;
+}
+
+/**
+ * Fetch and render the carousel, retry nonblock while search engine initializes
+ * @param {string} endpoint Search API endpoint for the current carousel type
+ * @param {number} generation token identifying this carousel refresh
+ */
+async function loadCarousel(endpoint, generation) {
+    try {
+        for (let attempt = 0; attempt <= CAROUSEL_MAX_RETRIES; attempt++) {
+            if (attempt > 0) {
+                await new Promise((resolve) => setTimeout(resolve, CAROUSEL_RETRY_DELAY_MS));
+            }
+
+            const response = await fetch(new LRR.ApiURL(endpoint), { method: "GET" });
+
+            // Search engine still initializing: back off and retry
+            if (response.status === 204) { continue; }
+            if (!response.ok) {
+                throw new Error(`${response.status} ${response.statusText}`);
+            }
+
+            const results = await response.json();
+            // Only render if a newer load hasn't superseded this one
+            if (generation !== carouselGeneration) { return; }
+            renderCarousel(results);
+            return;
+        }
+
+        throw new Error(`Search engine not initialized after ${CAROUSEL_MAX_RETRIES * CAROUSEL_RETRY_DELAY_MS}ms`);
+    } catch (error) {
+        if (generation !== carouselGeneration) { return; }
+        LRR.showErrorToast(I18N.CarouselError, error);
+        $("#carousel-loading").hide();
+        $("#reload-carousel").removeClass("fa-spin");
+    }
+}
+
+/**
+ * Render carousel slides from a search API result.
+ * @param {{data: Array}} results Search API response payload.
+ */
+function renderCarousel(results) {
+    Perf.measure("index.carousel", () => {
+        swiper.virtual.removeAllSlides();
+        const slides = results.data
+            .map((archive) => LRR.buildThumbnailDiv(archive));
+        swiper.virtual.appendSlide(slides);
+        swiper.virtual.update();
+    });
+
+    if (results.data.length === 0) {
+        $("#carousel-empty").show();
+    }
+
+    $("#carousel-loading").hide();
+    $(".swiper-wrapper").show();
+    $("#reload-carousel").removeClass("fa-spin");
 }
 
 // #endregion

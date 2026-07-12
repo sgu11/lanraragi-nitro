@@ -148,6 +148,8 @@ sub _derive_opds_fields {
         $arcdata->{mimetype} = "application/x-cbr";
     } elsif ( $ext eq "epub" ) {
         $arcdata->{mimetype} = "application/epub+zip";
+    } elsif ( $ext eq "cbw" ) {
+        $arcdata->{mimetype} = "application/xml";
     } else {
         $arcdata->{mimetype} = "application/x-cbz";
     }

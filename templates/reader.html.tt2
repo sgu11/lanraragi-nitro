@@ -23,11 +23,6 @@
 
     [% INCLUDE common/importmap %]
 
-    <!-- Vendor scripts are deferred so they no longer block HTML parsing. The
-         reader module entry calls Reader.initializeAll on DOMContentLoaded,
-         which fires after deferred scripts execute, so defer is safe. raty is
-         only needed for the logged-in rating widget (rendered under IF
-         userlogged); jquery + contextMenu are needed for the stamp menu. -->
     <script src="[% c.url_for("/js/vendor/jquery.min.js?$asset_version") %]" defer></script>
     <script src="[% c.url_for("/js/vendor/jquery.contextMenu.min.js?$asset_version") %]" defer></script>
     [% IF userlogged %]
@@ -174,16 +169,13 @@
     </div>
     </div>
     </div>
-    <!-- fork: convolution filter used by Image Quality = "Sharp" -->
     <svg style="display:none; position:absolute; width:0; height:0">
         <filter id="sharpen">
             <feConvolveMatrix order="3" kernelMatrix="0 -0.5 0 -0.5 3 -0.5 0 -0.5 0" preserveAlpha="true"/>
         </filter>
     </svg>
     <div id="settingsOverlay" class="id1 base-overlay small-overlay" style="display:none"
-        role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reader-options-title" tabindex="-1">
-        [% INCLUDE config %]
-    </div>
+        role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reader-options-title" tabindex="-1"></div>
 
     <div id="reader-help" style="display: none;">
         <div class="navigation-help-toast">
@@ -345,19 +337,19 @@
 [% END %]
 <!-- -->
 [% BLOCK arrows %]
-<div class="sn paginator" aria-label="[% c.lh('Reader page navigation') %]">
-    <button type="button" class="fa fa-backward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-left" aria-label="[% c.lh('Previous archive') %]"></button>
-    <button type="button" class="fa fa-angle-double-left page-link" style="font-size: 1.5em;" value="outer-left" aria-label="[% c.lh('First page') %]"></button>
-    <button type="button" class="fa fa-angle-left page-link" style="font-size: 1.5em;" value="left" aria-label="[% c.lh('Previous page') %]"></button>
+<div class="sn paginator">
+    <a class="fa fa-backward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-left"></a>
+    <a class="fa fa-angle-double-left page-link" style="font-size: 1.5em;" value="outer-left"></a>
+    <a class="fa fa-angle-left page-link" style="font-size: 1.5em;" value="left"></a>
 
     <div class="pagecount">
         <span class="current-page">...</span> /
         <span class="max-page">...</span>
     </div>
 
-    <button type="button" class="fa fa-angle-right page-link" style="font-size: 1.5em;" value="right" aria-label="[% c.lh('Next page') %]"></button>
-    <button type="button" class="fa fa-angle-double-right page-link" style="font-size: 1.5em;" value="outer-right" aria-label="[% c.lh('Last page') %]"></button>
-    <button type="button" class="fa fa-forward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-right" aria-label="[% c.lh('Next archive') %]"></button>
+    <a class="fa fa-angle-right page-link" style="font-size: 1.5em;" value="right"></a>
+    <a class="fa fa-angle-double-right page-link" style="font-size: 1.5em;" value="outer-right"></a>
+    <a class="fa fa-forward-step page-link archive-nav-link" style="font-size: 1.5em; display: none;" value="outermost-right"></a>
 </div>
 [% END %]
 <!-- -->

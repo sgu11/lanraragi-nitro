@@ -88,6 +88,7 @@ test("classic vendor scripts in index and reader are deferred and cache-busted",
 test("reader dependencies resolve through asset-versioned import map entries", async () => {
     const importmap = await source("templates/common/importmap.html.tt2");
     const reader = await source("public/js/reader.js");
+    const readerCommon = await source("public/js/mod/reader_common.js");
     const server = await source("public/js/mod/server.js");
 
     assert.match(importmap, /"lrr-common": "\[% c\.url_for\("\/js\/\$version\/mod\/common\.js\?\$asset_version"\) %\]"/);
@@ -97,14 +98,16 @@ test("reader dependencies resolve through asset-versioned import map entries", a
     assert.match(importmap, /"lrr-reader-spread": "\[% c\.url_for\("\/js\/\$version\/mod\/reader-spread\.js\?\$asset_version"\) %\]"/);
     assert.match(importmap, /"lrr-reader-nav-keys": "\[% c\.url_for\("\/js\/\$version\/mod\/reader-nav-keys\.js\?\$asset_version"\) %\]"/);
     assert.match(importmap, /"lrr-archive-data-cache": "\[% c\.url_for\("\/js\/\$version\/mod\/archive-data-cache\.js\?\$asset_version"\) %\]"/);
+    assert.match(importmap, /"lrr-reader-common": "\[% c\.url_for\("\/js\/\$version\/mod\/reader_common\.js\?\$asset_version"\) %\]"/);
 
-    assert.match(reader, /from "lrr-server"/);
-    assert.match(reader, /from "lrr-common"/);
-    assert.match(reader, /from "lrr-perf"/);
-    assert.match(reader, /from "lrr-reader-chrome"/);
-    assert.match(reader, /from "lrr-reader-spread"/);
-    assert.match(reader, /from "lrr-reader-nav-keys"/);
-    assert.doesNotMatch(reader, /from "\.\/mod\/reader-spread\.js"/);
+    assert.match(reader, /from "lrr-reader-common"/);
+    assert.match(readerCommon, /from "lrr-server"/);
+    assert.match(readerCommon, /from "lrr-common"/);
+    assert.match(readerCommon, /from "lrr-perf"/);
+    assert.match(readerCommon, /from "lrr-reader-chrome"/);
+    assert.match(readerCommon, /from "lrr-reader-spread"/);
+    assert.match(readerCommon, /from "lrr-reader-nav-keys"/);
+    assert.doesNotMatch(readerCommon, /from "\.\/reader-spread\.js"/);
 
     assert.match(server, /from "lrr-common"/);
     assert.doesNotMatch(server, /from "\.\/common\.js"/);

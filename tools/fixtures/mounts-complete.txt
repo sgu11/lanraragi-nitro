@@ -5,6 +5,10 @@
 ./LANraragi/public/js/mod/reader-chrome.js:/home/koyomi/lanraragi/public/js/mod/reader-chrome.js:ro
 ./LANraragi/public/js/mod/reader-crop.js:/home/koyomi/lanraragi/public/js/mod/reader-crop.js:ro
 ./LANraragi/public/js/mod/reader-nav-keys.js:/home/koyomi/lanraragi/public/js/mod/reader-nav-keys.js:ro
+./LANraragi/public/js/mod/reader_common.js:/home/koyomi/lanraragi/public/js/mod/reader_common.js:ro
+./LANraragi/public/js/mod/reader_archive_overlay.js:/home/koyomi/lanraragi/public/js/mod/reader_archive_overlay.js:ro
+./LANraragi/public/js/mod/reader_options.js:/home/koyomi/lanraragi/public/js/mod/reader_options.js:ro
+./LANraragi/public/js/mod/reader_stamps.js:/home/koyomi/lanraragi/public/js/mod/reader_stamps.js:ro
 ./LANraragi/public/js/mod/archive-data-cache.js:/home/koyomi/lanraragi/public/js/mod/archive-data-cache.js:ro
 ./LANraragi/public/js/mod/perf.js:/home/koyomi/lanraragi/public/js/mod/perf.js:ro
 ./LANraragi/public/js/mod/index_contextmenu.js:/home/koyomi/lanraragi/public/js/mod/index_contextmenu.js:ro

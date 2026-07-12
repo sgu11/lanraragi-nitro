@@ -34,7 +34,7 @@ test("index and reader expose debug performance marks", async () => {
     const perf = await source("public/js/mod/perf.js");
     const indexTable = await source("public/js/mod/index_datatables.js");
     const index = await source("public/js/mod/index.js");
-    const reader = await source("public/js/reader.js");
+    const reader = await source("public/js/mod/reader_common.js");
 
     assert.match(perf, /localStorage\.lrrPerf === "1"/);
     assert.match(perf, /PerformanceObserver/);
@@ -68,7 +68,7 @@ test("index cold load applies URL state with one search and one category fetch",
 });
 
 test("reader infinite scroll creates a lazy window instead of waiting for every image", async () => {
-    const reader = await source("public/js/reader.js");
+    const reader = await source("public/js/mod/reader_common.js");
 
     assert.match(reader, /const INFINITE_SCROLL_WINDOW_RADIUS/);
     assert.match(reader, /function materializeInfiniteScrollImage/);
@@ -81,7 +81,7 @@ test("reader infinite scroll creates a lazy window instead of waiting for every 
 
 test("reader overlay uses render containment and reader preload has an A/B strategy switch", async () => {
     const css = await source("public/css/lrr.css");
-    const reader = await source("public/js/reader.js");
+    const reader = await source("public/js/mod/reader_common.js");
 
     assert.match(css, /\.quick-thumbnail\s*\{[\s\S]*content-visibility: auto;[\s\S]*contain-intrinsic-size:/);
     assert.match(reader, /function getReaderPreloadStrategy\(\)/);
@@ -94,7 +94,7 @@ test("reader overlay uses render containment and reader preload has an A/B strat
 });
 
 test("reader wheel page navigation debounce is tuned for low-latency service", async () => {
-    const reader = await source("public/js/reader.js");
+    const reader = await source("public/js/mod/reader_common.js");
 
     assert.match(reader, /setTimeout\(\(\) => \{ wheelDebounce = false; \}, 100\)/);
 });

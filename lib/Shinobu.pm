@@ -55,7 +55,7 @@ my $logger = get_logger( "Shinobu", "shinobu" );
 sub _watcher_args ($userdir) {
     return (
         directories     => [$userdir],
-        filter          => qr/\.(?:zip|rar|7z|tar|tar\.gz|lzma|xz|cbz|cbr|cb7|cbt|pdf|epub|tar\.zst|zst)$/i,
+        filter          => qr/\.(?:zip|rar|7z|tar|tar\.gz|lzma|xz|cbz|cbr|cb7|cbt|cbw|pdf|epub|tar\.zst|zst)$/i,
         follow_symlinks => 1,
         exclude         => [ 'thumb', '.' ],
     );

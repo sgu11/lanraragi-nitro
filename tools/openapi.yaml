@@ -1,8 +1,11 @@
 ---
 openapi: 3.1.0
 info:
-  version: 0.9.6
+  version: 0.9.8
   title: LANraragi API
+  license:
+    name: MIT
+    identifier: MIT
 tags:
   - name: search
     description: Perform searches.
@@ -30,6 +33,7 @@ tags:
 paths:
   /opds:
     get:
+      security: []
       operationId: getOpdsCatalog
       x-mojo-to: api-other#serve_opds_catalog
       summary: Get the OPDS Catalog
@@ -279,6 +283,7 @@ paths:
                     </feed>
   /opds/{id}:
     get:
+      security: []
       operationId: getOpdsItem
       x-mojo-to: api-other#serve_opds_item
       summary: Get a specific archive through OPDS
@@ -343,6 +348,7 @@ paths:
                     </entry>
   /opds/{id}/pse:
     get:
+      security: []
       operationId: getOpdsPage
       x-mojo-to: api-other#serve_opds_page
       summary: OPDS-PSE
@@ -371,6 +377,7 @@ paths:
 
   /info:
     get:
+      security: []
       operationId: getServerInfo
       x-mojo-to: api-other#serve_serverinfo
       summary: Get server info
@@ -714,6 +721,7 @@ paths:
 
   /archives:
     get:
+      security: []
       operationId: getAllArchives
       x-mojo-to: api-archive#serve_archivelist
       summary: Get all Archives
@@ -733,6 +741,7 @@ paths:
                   $ref: '#/components/schemas/ArchiveMetadataJson'
   /archives/untagged:
     get:
+      security: []
       operationId: getUntaggedArchives
       x-mojo-to: api-archive#serve_untagged_archivelist
       summary: Get all untagged archives
@@ -905,6 +914,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /archives/{id}:
     get:
+      security: []
       operationId: getArchive
       x-mojo-to: api-archive#serve_metadata
       deprecated: true
@@ -1000,6 +1010,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/metadata:
     get:
+      security: []
       operationId: getArchiveMetadata
       x-mojo-to: api-archive#serve_metadata
       summary: Get archive metadata
@@ -1091,6 +1102,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/thumbnail:
     get:
+      security: []
       operationId: getArchiveThumbnail
       x-mojo-to: api-archive#serve_thumbnail
       summary: Get archive thumbnail
@@ -1216,6 +1228,7 @@ paths:
                 success: 0
   /archives/{id}/categories:
     get:
+      security: []
       operationId: getArchiveCategories
       x-mojo-to: api-archive#get_categories
       summary: Get archive categories
@@ -1286,6 +1299,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/tankoubons:
     get:
+      security: []
       operationId: getArchiveTankoubons
       x-mojo-to: api-tankoubon#get_tankoubons_file
       summary: Get archive tankoubons
@@ -1445,6 +1459,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/download:
     get:
+      security: []
       operationId: downloadArchive
       x-mojo-to: api-archive#serve_file
       summary: Download archive
@@ -1480,6 +1495,7 @@ paths:
                 success: 0
   /archives/{id}/files:
     get:
+      security: []
       operationId: getFiles
       x-mojo-to: api-archive#get_file_list
       summary: Extract an Archive
@@ -1541,6 +1557,7 @@ paths:
                 success: 0
   /archives/{id}/files/thumbnails:
     post:
+      security: []
       operationId: queueArchivePageThumbnailExtraction
       x-mojo-to: api-archive#generate_page_thumbnails
       summary: Extract page thumbnails
@@ -1587,7 +1604,7 @@ paths:
                     enum:
                       - generate_page_thumbnails
                   success:
-                    type: string
+                    type: integer
                     description: Returns 1 if operation was successful, else 0
                     enum:
                       - 0
@@ -1613,6 +1630,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/page:
     get:
+      security: []
       operationId: getPage
       x-mojo-to: api-archive#serve_page
       summary: Get an archive page
@@ -1660,6 +1678,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/progress/{page}:
     put:
+      security: []
       operationId: updateArchiveProgress
       x-mojo-to: api-archive#update_progress
       summary: Update reading progression
@@ -1776,6 +1795,8 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/spreadstart:
     put:
+      security:
+        - api_key: []
       operationId: updateArchiveSpreadStart
       x-mojo-to: api-archive#update_spreadstart
       summary: Update double page spread start preference
@@ -1895,6 +1916,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/OperationResponse'
     delete:
+      security: []
       operationId: clearNewArchiveFlag
       x-mojo-to: api-archive#clear_new
       summary: Clear Archive New flag
@@ -1952,6 +1974,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/stamps:
     get:
+      security: []
       operationId: stampedPages
       x-mojo-to: api-stamp#get_stamped_pages
       summary: Get pages that contain at least one stamp in the archive
@@ -1980,6 +2003,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/stamps/{index}:
     get:
+      security: []
       operationId: stampsByPage
       x-mojo-to: api-stamp#get_stamps_by_page
       summary: Get the stamps linked to the page
@@ -2080,6 +2104,7 @@ paths:
 
   /search:
     get:
+      security: []
       operationId: searchArchives
       x-mojo-to: api-search#handle_api
       summary: Search Archives
@@ -2231,6 +2256,7 @@ paths:
                       title: Fate GO MEMO
                       filename: Fate GO MEMO
                       summary: null
+                      size: 0
                     - arcid: 28697b96f0ac5858be2614ed10ca47742c9522fd
                       isnew: false
                       extension: rar
@@ -2241,12 +2267,14 @@ paths:
                       title: Rohan Kishibe goes to Gucci
                       filename: Gucc
                       summary: cool summary
+                      size: 0
                   recordsFiltered: 2
                   recordsTotal: 2
         '204':
           description: Search engine is not initialized yet. Please wait a few seconds.
   /search/ids:
     get:
+      security: []
       operationId: searchArchiveIds
       x-mojo-to: api-search#handle_api_ids
       summary: Search Archive IDs
@@ -2363,6 +2391,7 @@ paths:
           description: Search engine is not initialized yet. Please wait a few seconds.
   /search/random:
     get:
+      security: []
       operationId: searchRandomArchives
       x-mojo-to: api-search#get_random_archives
       summary: Search random Archives
@@ -2417,7 +2446,6 @@ paths:
         - name: groupby_tanks
           in: query
           required: false
-          default: true
           description: >-
             Enable or disable Tankoubon grouping. Defaults to true.
 
@@ -2425,6 +2453,7 @@ paths:
             the archive IDs they contain.
           schema:
             type: boolean
+            default: true
       responses:
         '200':
           description: Search results
@@ -2452,6 +2481,7 @@ paths:
                     title: Rohan Kishibe goes to Gucci
                     filename: Gucc
                     summary: cool summary
+                    size: 0
                 recordsTotal: 2
   /search/cache:
     delete:
@@ -2479,6 +2509,7 @@ paths:
 
   /database/stats:
     get:
+      security: []
       operationId: getStatistics
       x-mojo-to: api-database#serve_tag_stats
       summary: Get Statistics
@@ -2585,7 +2616,7 @@ paths:
                       filename: FateGOMEMO
                     - arcid: d1858d5dc36925aa66be072a97817650d39de166
                       title: test title
-                      tags: null
+                      tags: ""
                       summary: null
                       thumbhash: 9846bb6d62949b56545c42e88d8010446b65702e
                       filename: (Memes)9B789D38B0784C5FBC9D59A9F24D20F2
@@ -2934,6 +2965,7 @@ paths:
 
   /minion/{jobid}:
     get:
+      security: []
       operationId: minionJobStatus
       x-mojo-to: api-minion#minion_job_status
       summary: Get the basic status of a Minion Job
@@ -3103,6 +3135,7 @@ paths:
 
   /categories:
     get:
+      security: []
       operationId: getCategoryList
       x-mojo-to: api-category#get_category_list
       summary: Get all Categories
@@ -3190,6 +3223,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /categories/bookmark_link:
     get:
+      security: []
       operationId: getBookmarkLink
       x-mojo-to: api-category#get_bookmark_link
       summary: Get bookmark-linked Category
@@ -3323,6 +3357,7 @@ paths:
           minLength: 14
           maxLength: 14
     get:
+      security: []
       operationId: getCategory
       x-mojo-to: api-category#get_category
       summary: Get a single Category
@@ -3505,6 +3540,7 @@ paths:
 
   /tankoubons:
     get:
+      security: []
       operationId: getTankoubonList
       x-mojo-to: api-tankoubon#get_tankoubon_list
       summary: Get all Tankoubons
@@ -3610,6 +3646,7 @@ paths:
         schema:
           type: string
     get:
+      security: []
       operationId: getTankoubon
       x-mojo-to: api-tankoubon#get_tankoubon
       summary: Get a single Tankoubon
@@ -3766,6 +3803,7 @@ paths:
         schema:
           type: string
     get:
+      security: []
       operationId: getTankoubonFull
       x-mojo-to: api-tankoubon#get_tankoubon_full
       summary: Get a single Tankoubon with full detail
@@ -3850,6 +3888,7 @@ paths:
         schema:
           type: string
     get:
+      security: []
       operationId: getTankoubonThumbnail
       x-mojo-to: api-tankoubon#serve_tankoubon_thumbnail
       summary: Get Tankoubon thumbnail
@@ -3945,6 +3984,7 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /tankoubons/{id}/progress/{page}:
     put:
+      security: []
       operationId: updateTankoubonProgress
       x-mojo-to: api-tankoubon#update_tank_progress
       summary: Update Tankoubon reading progression
@@ -4124,6 +4164,9 @@ paths:
                 $ref: '#/components/schemas/OperationResponse'
   /api/duplicates/pairs:
     get:
+      security:
+        - api_key: []
+      operationId: getDuplicatePairs
       summary: List ranked duplicate pairs
       tags: [Misc]
       parameters:
@@ -4167,6 +4210,9 @@ paths:
                 $ref: '#/components/schemas/DuplicatePairsResponse'
       x-mojo-to: 'api-duplicates#pairs'
     delete:
+      security:
+        - api_key: []
+      operationId: deleteDuplicatePair
       summary: Mark a pair as not-a-duplicate
       tags: [Misc]
       requestBody:
@@ -4186,6 +4232,9 @@ paths:
       x-mojo-to: 'api-duplicates#delete_pair'
   /api/duplicates/stats:
     get:
+      security:
+        - api_key: []
+      operationId: getDuplicateStats
       summary: Deduplicator stats and config
       tags: [Misc]
       responses:
@@ -4194,6 +4243,9 @@ paths:
       x-mojo-to: 'api-duplicates#stats'
   /api/duplicates/refresh:
     post:
+      security:
+        - api_key: []
+      operationId: refreshDuplicatePairs
       summary: Drop dismissed and orphan-archive pairs from the deck
       description: >-
         Sweeps LRR_DUPLICATE_PAIRS and removes any member that's already in
@@ -4207,6 +4259,9 @@ paths:
       x-mojo-to: 'api-duplicates#refresh'
   /api/duplicates/cover/stats:
     get:
+      security:
+        - api_key: []
+      operationId: getCoverDuplicateStats
       summary: Cover deduplicator stats and config
       tags: [Misc]
       responses:
@@ -4215,6 +4270,9 @@ paths:
       x-mojo-to: 'api-coverduplicates#stats'
   /api/duplicates/cover/pairs:
     get:
+      security:
+        - api_key: []
+      operationId: getCoverDuplicatePairs
       summary: List ranked cover duplicate pairs
       tags: [Misc]
       parameters:
@@ -4239,6 +4297,9 @@ paths:
           description: List of cover duplicate pairs
       x-mojo-to: 'api-coverduplicates#pairs'
     delete:
+      security:
+        - api_key: []
+      operationId: deleteCoverDuplicatePair
       summary: Mark a cover pair as not-a-duplicate
       tags: [Misc]
       requestBody:
@@ -4258,6 +4319,9 @@ paths:
       x-mojo-to: 'api-coverduplicates#delete_pair'
   /api/duplicates/cover/review-events:
     get:
+      security:
+        - api_key: []
+      operationId: getCoverDuplicateReviewEvents
       summary: Export cover duplicate review decision events
       description: >-
         Returns append-only human review decisions captured from the cover
@@ -4279,6 +4343,9 @@ paths:
       x-mojo-to: 'api-coverduplicates#review_events'
   /api/duplicates/cover/refresh:
     post:
+      security:
+        - api_key: []
+      operationId: refreshCoverDuplicatePairs
       summary: Drop dismissed and orphan-archive pairs from the cover deck
       tags: [Misc]
       responses:
@@ -4287,6 +4354,9 @@ paths:
       x-mojo-to: 'api-coverduplicates#refresh'
   /api/duplicates/cover/rebuild:
     post:
+      security:
+        - api_key: []
+      operationId: rebuildCoverDuplicatePairs
       summary: Clean up legacy cover pairs and rebuild the cover candidate deck
       description: >-
         One-shot composite operation: removes pass=cover entries from the
@@ -4300,6 +4370,9 @@ paths:
       x-mojo-to: 'api-coverduplicates#rebuild'
   /api/duplicates/cover/status:
     post:
+      security:
+        - api_key: []
+      operationId: updateCoverDuplicateStatus
       summary: Update review status for a cover pair
       tags: [Misc]
       requestBody:
@@ -4322,6 +4395,7 @@ paths:
       x-mojo-to: 'api-coverduplicates#update_status'
   /stamps/{id}:
     get:
+      security: []
       operationId: getStamp
       x-mojo-to: api-stamp#get_stamp
       summary: Get Stamp
@@ -4568,7 +4642,7 @@ components:
         namespace: trabant
         oneshot_arg: Chaika Gallery or Archive URL (Will attach matching tags to your archive)
         type: metadata
-        version: 2.1
+        version: '2.1'
         parameters:
           - desc: ipb_pass_hash cookie
             type: string
@@ -4594,7 +4668,7 @@ components:
             - int
             - string
         default_value:
-          type: [string, "null"]
+          type: [boolean, integer, string, "null"]
           description: Default value of the parameter
       example:
         default_value: 0
@@ -4947,8 +5021,7 @@ components:
           type: string
           description: Filename of the archive
         spreadstart:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: Adaptive offset mode
           enum:
             - "auto"

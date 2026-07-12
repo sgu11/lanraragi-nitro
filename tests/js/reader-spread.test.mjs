@@ -142,7 +142,7 @@ test("double-page cover navigation only probes the cover before rendering", () =
 
 test("double-page probe pages are loaded concurrently, not serially awaited", async () => {
     const { readFile } = await import("node:fs/promises");
-    const readerSrc = await readFile(new URL("../../public/js/reader.js", import.meta.url), "utf8");
+    const readerSrc = await readFile(new URL("../../public/js/mod/reader_common.js", import.meta.url), "utf8");
 
     // The probe pages don't depend on each other (they only populate
     // preloadedDimensions for wide-page detection), so they must be loaded

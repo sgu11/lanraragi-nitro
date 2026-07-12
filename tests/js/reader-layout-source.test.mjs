@@ -5,7 +5,7 @@ import test from "node:test";
 const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
 test("paginated reader can use minimal chrome without enabling infinite scroll", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const css = await source("public/css/reader-chrome.css");
     const baseCss = await source("public/css/lrr.css");
     const template = await source("templates/reader.html.tt2");
@@ -45,7 +45,7 @@ test("paginated reader can use minimal chrome without enabling infinite scroll",
 });
 
 test("reader hides the mouse cursor after inactivity", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const css = await source("public/css/lrr.css");
     const initStart = js.search(/export (async )?function initializeAll/);
     const initEnd = js.indexOf("function initializeSettings", initStart);
@@ -72,7 +72,7 @@ test("reader hides the mouse cursor after inactivity", async () => {
 });
 
 test("reader navigation inputs hide cursor and ws mirrors up down navigation", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const template = await source("templates/reader.html.tt2");
     const enLocale = await source("locales/template/en.po");
     const koLocale = await source("locales/template/ko.po");
@@ -130,7 +130,7 @@ test("reader navigation inputs hide cursor and ws mirrors up down navigation", a
 });
 
 test("reader chrome exposes border crop toggle instead of help button", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const cropJs = await source("public/js/mod/reader-crop.js");
     const template = await source("templates/reader.html.tt2");
     const leftOptionsStart = template.indexOf("<div class=\"absolute-options absolute-left\">");
@@ -166,7 +166,7 @@ test("reader border crop strings have English locale fallbacks", async () => {
 });
 
 test("hidden-header paginated reader uses fullscreen wheel page navigation unless reader options are open", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const wheelStart = js.indexOf("function handleWheel(e)");
     const wheelEnd = js.indexOf("function checkFiletypeSupport", wheelStart);
     const wheel = js.slice(wheelStart, wheelEnd);
@@ -180,7 +180,7 @@ test("hidden-header paginated reader uses fullscreen wheel page navigation unles
 });
 
 test("paginated reader tap-zone navigation ignores interactive controls", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const navStart = js.indexOf("$(document).on(\"click\", (event) => {");
     const navEnd = js.indexOf("});", navStart);
     const nav = js.slice(navStart, navEnd);
@@ -195,7 +195,7 @@ test("paginated reader tap-zone navigation ignores interactive controls", async 
 });
 
 test("reader first-click fullscreen ignores interactive controls", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const fullscreenStart = js.indexOf("function armAutoFullscreen()");
     const fullscreenEnd = js.indexOf("function initFullscreen()", fullscreenStart);
     const fullscreen = js.slice(fullscreenStart, fullscreenEnd);
@@ -207,7 +207,7 @@ test("reader first-click fullscreen ignores interactive controls", async () => {
 });
 
 test("minimal double-spread reader uses vertical keys for single-page spread sliding", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const shortcutStart = js.indexOf("function handleShortcuts(e)");
     const shortcutEnd = js.indexOf("function handleWheel(e)", shortcutStart);
     const shortcut = js.slice(shortcutStart, shortcutEnd);
@@ -237,7 +237,7 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
 });
 
 test("explicit page reload restores double-spread navigation stride", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const selectStart = js.indexOf("function selectInitialPage()");
     const selectEnd = js.indexOf("function shouldApplyInitialPageScroll", selectStart);
     const selectInitialPage = js.slice(selectStart, selectEnd);
@@ -251,7 +251,7 @@ test("explicit page reload restores double-spread navigation stride", async () =
 });
 
 test("border crop redraw preserves a shifted double-page spread", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const toggleStart = js.indexOf("function toggleBorderCrop()");
     const toggleEnd = js.indexOf("function toggleMobileFullscreen()", toggleStart);
     const goToStart = js.indexOf("async function goToPage");
@@ -269,7 +269,7 @@ test("border crop redraw preserves a shifted double-page spread", async () => {
 });
 
 test("queued reader navigation runs before stale-page readahead", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const runQueuedStart = js.indexOf("function runQueuedReaderNavigation()");
     const runQueuedEnd = js.indexOf("function markUserInteractionBeforeInitialPageScroll", runQueuedStart);
     const goToStart = js.indexOf("async function goToPage");
@@ -291,7 +291,7 @@ test("queued reader navigation runs before stale-page readahead", async () => {
 });
 
 test("reader fit modes upscale cropped pages to the selected viewport or container", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const applyStart = js.indexOf("function applyContainerWidth()");
     const applyEnd = js.indexOf("function registerPreload()", applyStart);
     const applyContainerWidth = js.slice(applyStart, applyEnd);
@@ -306,7 +306,7 @@ test("reader fit modes upscale cropped pages to the selected viewport or contain
 });
 
 test("reader fit-container and fullscreen modes upscale small pages", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const applyStart = js.indexOf("function applyContainerWidth()");
     const applyEnd = js.indexOf("function registerPreload()", applyStart);
     const applyContainerWidth = js.slice(applyStart, applyEnd);
@@ -318,7 +318,7 @@ test("reader fit-container and fullscreen modes upscale small pages", async () =
 });
 
 test("reader container layout skips unchanged style and marker rewrites", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const signatureStart = js.indexOf("function getContainerLayoutSignature(");
     const signatureEnd = js.indexOf("function applyContainerWidth()", signatureStart);
     const applyStart = js.indexOf("function applyContainerWidth()");
@@ -351,7 +351,7 @@ test("reader container layout skips unchanged style and marker rewrites", async 
 });
 
 test("explicit double-page reload revalidates restored windows after wide-page probe", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const helperStart = js.indexOf("function displayWindowHasWidePage(");
     const helperEnd = js.indexOf("async function goToPage", helperStart);
     const goToStart = js.indexOf("async function goToPage");

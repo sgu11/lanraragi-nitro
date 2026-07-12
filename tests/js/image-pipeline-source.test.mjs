@@ -19,7 +19,7 @@ test("thumbnail cards mark archive images as lazy", async () => {
 });
 
 test("reader Blob URL preloading dedupes in-flight fetches and revokes evicted URLs", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
 
     assert.match(js, /MAX_PRELOADED_IMAGES/);
     assert.match(js, /preloadedPromises/);
@@ -27,7 +27,7 @@ test("reader Blob URL preloading dedupes in-flight fetches and revokes evicted U
 });
 
 test("reader crop preload falls back to the original page when the crop response fails", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const loadStart = js.indexOf("async function loadImage(index)");
     const loadEnd = js.indexOf("async function preloadImageWithBlobUrl", loadStart);
     const loadImage = js.slice(loadStart, loadEnd);
@@ -49,7 +49,7 @@ test("reader crop preload falls back to the original page when the crop response
 });
 
 test("reader disabled progress tracking suppresses persistence while preserving stamps", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const start = js.indexOf("function updateProgress()");
     const end = js.indexOf("function preloadImages()");
     const updateProgress = js.slice(start, end);
@@ -64,7 +64,7 @@ test("reader disabled progress tracking suppresses persistence while preserving 
 });
 
 test("reader disabled progress tracking does not apply an implicit saved-progress jump", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const loadStart = js.indexOf("export function loadImages()");
     const loadEnd = js.indexOf("export function initializeSettings()");
     const loadImages = js.slice(loadStart, loadEnd);
@@ -83,7 +83,7 @@ test("reader disabled progress tracking does not apply an implicit saved-progres
 });
 
 test("reader cancels stale async page navigations before scrolling or saving progress", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const goStart = js.indexOf("async function goToPage(page");
     const goEnd = js.indexOf("function updateProgress()");
     const goToPage = js.slice(goStart, goEnd);
@@ -119,7 +119,7 @@ test("reader cancels stale async page navigations before scrolling or saving pro
 });
 
 test("reader progress persistence is latest-only and bypassed when tracking is disabled", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const updateStart = js.indexOf("function updateProgress()");
     const updateEnd = js.indexOf("function preloadImages()");
     const updateProgress = js.slice(updateStart, updateEnd);
@@ -137,7 +137,7 @@ test("reader progress persistence is latest-only and bypassed when tracking is d
 });
 
 test("reader session page survives reload independent of progress persistence", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const updateStart = js.indexOf("function updateProgress()");
     const updateEnd = js.indexOf("function preloadImages()");
     const updateProgress = js.slice(updateStart, updateEnd);
@@ -157,7 +157,7 @@ test("reader session page survives reload independent of progress persistence", 
 });
 
 test("reader explicit session page preserves shifted double-page window", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const selectStart = js.indexOf("function selectInitialPage()");
     const selectEnd = js.indexOf("function shouldApplyInitialPageScroll", selectStart);
     const selectInitialPage = js.slice(selectStart, selectEnd);
@@ -185,7 +185,7 @@ test("reader explicit session page preserves shifted double-page window", async 
 });
 
 test("reader progress resume restores shifted double-page spread windows", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const selectStart = js.indexOf("function selectInitialPage()");
     const selectEnd = js.indexOf("function shouldApplyInitialPageScroll", selectStart);
     const persistStart = js.indexOf("function persistProgress");
@@ -211,7 +211,7 @@ test("reader progress resume restores shifted double-page spread windows", async
 });
 
 test("reader Delete key confirms archive deletion before returning to library", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const shortcutStart = js.indexOf("function handleShortcuts(e)");
     const shortcutEnd = js.indexOf("function spaceScrollProcessInput(e)");
     const shortcuts = js.slice(shortcutStart, shortcutEnd);
@@ -237,7 +237,7 @@ test("reader Delete key confirms archive deletion before returning to library", 
 });
 
 test("reader blank-border crop setting maps readahead URLs and exposes k shortcut", async () => {
-    const js = await source("public/js/reader.js");
+    const js = await source("public/js/mod/reader_common.js");
     const cropJs = await source("public/js/mod/reader-crop.js");
     const template = await source("templates/reader.html.tt2");
     const importmap = await source("templates/common/importmap.html.tt2");

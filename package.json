@@ -15,6 +15,7 @@
         "smoke:quickfilter": "node tools/browser/quickfilter-smoke.mjs",
         "lanraragi-installer": "perl ./tools/install.pl",
         "lint": "eslint public/",
+        "lint-openapi": "redocly lint tools/openapi.yaml --config=redocly.yml",
         "start": "perl ./script/launcher.pl -f ./script/lanraragi",
         "dev-server": "perl ./script/launcher.pl -m -v ./script/lanraragi",
         "dev-server-verbose": "export LRR_DEVSERVER=1 && perl ./script/launcher.pl -m -v ./script/lanraragi",
@@ -59,12 +60,14 @@
         "react-toastify": "9.0.0-rc-2",
         "sortablejs": "1.15.6",
         "sweetalert2": "11.22.4",
-        "swiper": "12.1.2",
+        "swiper": "^14.0.2",
         "tippy.js": "6.3.7"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
+        "@redocly/cli": "^2.37.0",
         "@stylistic/eslint-plugin": "^4.0.0",
+        "esbuild": "^0.28.1",
         "eslint": "^10.6.0",
         "eslint-plugin-import-x": "^4.17.1",
         "globals": "16.5.0",

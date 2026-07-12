@@ -42,19 +42,15 @@ Duplicates.initializeAll = function () {
 };
 
 /**
- * Sends a POST request to queue a find_duplicates job,
+ * Sends a POST request to queue a find_duplicate_pairs job,
  * detecting archive duplicates based on their thumbnail hashes.
  */
 Duplicates.findDuplicates = function () {
 
-    let formData = new FormData();
-    formData.append("args", "[5]"); // threshold
-    formData.append("priority", 0);
-
     $(".find-duplicates").hide();
     $("#processing").show();
 
-    Server.callAPIBody("/api/minion/find_duplicates/queue", "POST", formData,
+    Server.callAPI("/api/minion/find_duplicate_pairs/queue?args=[5]&priority=0", "POST",
         "Queued up a job to find duplicates! Stay tuned for updates or check the Minion console.",
         I18N.MinionSendError,
         (data) => {

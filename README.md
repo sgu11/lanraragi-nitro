@@ -12,6 +12,17 @@ Korean version: [`README.ko.md`](README.ko.md).
 
 The current merge-preservation baseline lives in [`docs/local-features/`](docs/local-features/README.md). Use those feature documents during upstream syncs to preserve fork-only implementation details, routes, Redis keys, and verification commands.
 
+### Upstream sync (2026-07-12)
+
+- Merged upstream through `b94e4805`, including `.cbw` archive support, search
+  initialization retry behavior, Redocly OpenAPI validation, and the esbuild
+  Swiper vendor bundle. The fork reader implementation now lives behind the
+  upstream-style `reader.js` entry in `public/js/mod/reader_common.js`, while
+  retaining the documented spread, crop, progress, cache, and chrome contracts.
+- The legacy duplicate page now queues the fork's `find_duplicate_pairs` Minion
+  task through the OpenAPI endpoint; the cover-only `/duplicates_custom` flow
+  remains isolated.
+
 ### Reader
 
 - **Reader failure recovery and accessibility** — page fetch/decode failures
@@ -119,6 +130,8 @@ whether the first interior spread starts at **Pair 2-3** or **Pair 3-4**, with
 wide/landscape pages kept single and excluded from spread pairing.
 
 Persistent archive fields:
+
+* Stores your comics in archive format. (zip/rar/targz/lzma/7z/xz/cbz/cbr/cbw/pdf supported, barebones support for epub)
 
 - `spreadstart`: reader preference. `auto` enables adaptive detection; `pair2`
   disables it and always starts interior pairing at pages 2-3.
