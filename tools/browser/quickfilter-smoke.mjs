@@ -45,8 +45,8 @@ const dataTablesRequests = [];
 page.on("request", (req) => {
     const u = req.url();
     if (u.includes("/mod/index.js")) indexJsFetchUrls.add(u);
-    // DataTables search endpoint carries the category in its query/body.
-    if (/\/api\/search(?:\b|$)/.test(new URL(u, baseUrl).pathname)) {
+    // DataTables' /search endpoint carries the category in its query/body.
+    if (/\/search$/.test(new URL(u, baseUrl).pathname)) {
         dataTablesRequests.push(`${req.method()} ${u} ${req.postData() ?? ""}`);
     }
 });
@@ -75,6 +75,9 @@ try {
     });
 
     if (result.chipPresent) {
+        // Ignore the initial library load so the assertion below covers the
+        // request caused specifically by toggling the NEW_ONLY chip.
+        dataTablesRequests.length = 0;
         await page.click("#NEW_ONLY");
         // Allow the doSearch() -> DataTables AJAX round-trip to fire.
         await page.waitForTimeout(800);
@@ -94,7 +97,9 @@ try {
     if (!result.toggledClassAfter?.includes("toggled")) {
         failures.push(`chip class after click is "${result.toggledClassAfter}", expected to include "toggled"`);
     }
-    if (result.dataTablesRequestsCount > 0 && !result.dataTablesPayloadsIncludeNewOnly) {
+    if (result.dataTablesRequestsCount === 0) {
+        failures.push("NEW_ONLY did not trigger a DataTables /search request");
+    } else if (!result.dataTablesPayloadsIncludeNewOnly) {
         failures.push(`${result.dataTablesRequestsCount} DataTables search request(s) fired but none carried NEW_ONLY in the payload`);
     }
 } catch (error) {

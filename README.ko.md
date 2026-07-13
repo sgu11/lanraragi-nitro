@@ -19,9 +19,9 @@ English version: [`README.md`](README.md).
   Fork reader 구현은 upstream-style `reader.js` entry 뒤의
   `public/js/mod/reader_common.js`로 이동했으며 spread, crop, progress,
   cache, chrome 계약은 유지함.
-- Legacy duplicate page는 OpenAPI endpoint를 통해 fork의
-  `find_duplicate_pairs` Minion task를 queue함. Cover-only
-  `/duplicates_custom` flow는 계속 분리 유지함.
+- Legacy `/duplicates` URL은 fork의 canonical cover-focused
+  `/duplicates_custom` review flow로 redirect함. 호환되지 않는 upstream
+  duplicate-group과 fork pair-deck data model의 혼용을 방지함.
 - Merge 후 안정화로 생성된 Swiper carousel entrypoint, native reader
   paginator control, thumbnail link 동작을 복원하고 deployed runtime과
   달라질 수 있던 비활성 reader module을 제거함.
@@ -33,6 +33,7 @@ English version: [`README.md`](README.md).
 
 - **Reader failure recovery 및 accessibility**: page fetch/decode 실패 시 pending navigation과 queued input을 정리하고 inline retry를 제공함. Overlay는 dialog/focus semantics를 사용하고 control target은 44px이며 reduced-motion 설정을 존중함.
 - **대형 archive overview windowing**: thumbnail overview는 실제로 열 때 생성하고 한 번에 60 page만 render함.
+- **Single-page spread alignment**: 마지막 page가 짝 없이 남으면 빈 secondary image slot을 숨겨 page를 중앙에 유지하고 RTL mode의 끝에서 ghost page가 생기지 않도록 함.
 
 - **Auto-fullscreen**: archive open 시 자동 fullscreen 진입, reader 종료 시 정상 해제. 구형 browser 대응을 위해 `fscreen` polyfill 사용.
 - **Reader cursor auto-hide**: mouse movement 없는 1초 후 page area cursor를 숨김. `W/A/S/D`, arrow, wheel page navigation 입력 시 즉시 숨기고, 50px 이상 mouse 이동 시 다시 표시함.
@@ -125,7 +126,7 @@ Reader behavior:
 - **Comparison evidence chips**: 각 duplicate 쌍에 page count, archive size, tag count, 한국어 여부, cover resolution, 최신 날짜 등의 keep signal을 chip으로 강조 표시. resolution은 기존 `cover_fp` dimension에서 읽음.
 - **Duplicate review training log**: `/duplicates_custom` status decision이 pair snapshot, derived feature, UI context, label을 sanitize한 review event로 `LRR_COVER_DUPLICATE_REVIEW_EVENTS`에 append. `GET /api/duplicates/cover/review-events`로 export 가능.
 - **No-confirm duplicate deletes**: `/duplicates_custom`의 keep/delete action이 confirmation modal 없이 즉시 삭제하고 focused queue를 진행.
-- Fork duplicate finder는 `/duplicates_custom`에 있으며, `/duplicates`는 upstream duplicate-group page에 가깝게 유지해 upstream sync conflict를 줄임.
+- Fork duplicate finder는 `/duplicates_custom`에 있으며, legacy `/duplicates` bookmark는 해당 canonical review flow로 redirect함.
 - Technical baseline: [`docs/local-features/duplicate-detection.md`](docs/local-features/duplicate-detection.md).
 - Explainer: [`docs/deduplication-advancement-explainer-2026-06-19.md`](docs/deduplication-advancement-explainer-2026-06-19.md) 및 illustrated Korean HTML view 문서임.
 

@@ -19,9 +19,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   Swiper vendor bundle. The fork reader implementation now lives behind the
   upstream-style `reader.js` entry in `public/js/mod/reader_common.js`, while
   retaining the documented spread, crop, progress, cache, and chrome contracts.
-- The legacy duplicate page now queues the fork's `find_duplicate_pairs` Minion
-  task through the OpenAPI endpoint; the cover-only `/duplicates_custom` flow
-  remains isolated.
+- The legacy `/duplicates` URL now redirects to the fork's canonical
+  cover-focused `/duplicates_custom` review flow, avoiding the incompatible
+  upstream duplicate-group and fork pair-deck data models.
 - Post-merge stabilization restores the generated Swiper carousel entrypoint,
   native reader paginator controls, and thumbnail-link behavior, while removing
   inactive reader modules that could drift from the deployed runtime.
@@ -221,7 +221,7 @@ Reader behavior:
 - **Comparison evidence chips** — each side of the duplicate comparison highlights stronger keep signals for page count, archive size, tag count, Korean language, cover resolution, and newer date; resolution is read from the existing `cover_fp` dimensions.
 - **Duplicate review training log** — status decisions in `/duplicates_custom` append sanitized review events with pair snapshots, derived features, UI context, and labels to `LRR_COVER_DUPLICATE_REVIEW_EVENTS`; export pages with `GET /api/duplicates/cover/review-events`.
 - **No-confirm duplicate deletes** — keep/delete actions in `/duplicates_custom` delete immediately and advance the focused queue without a confirmation modal; the UI now states that destructive behavior explicitly instead of promising a confirmation.
-- The fork duplicate finder is mounted at `/duplicates_custom`; `/duplicates` is left close to upstream's duplicate-group page to reduce upstream-sync conflicts.
+- The fork duplicate finder is mounted at `/duplicates_custom`; legacy `/duplicates` bookmarks redirect to that canonical review flow.
 - Technical baseline: [`docs/local-features/duplicate-detection.md`](docs/local-features/duplicate-detection.md).
 - Explainer: [`docs/deduplication-advancement-explainer-2026-06-19.md`](docs/deduplication-advancement-explainer-2026-06-19.md) and illustrated Korean HTML view.
 
