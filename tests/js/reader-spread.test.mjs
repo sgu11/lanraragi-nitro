@@ -9,9 +9,31 @@ import {
     getSpreadWindowWithPageShift,
     getDoublePageInitialProbePages,
     normalizeSpreadStartMode,
+    resolveReaderNavigationInput,
     spreadStartFlags,
     shouldPairPageTwoWithThree,
 } from "../../public/js/mod/reader-spread.js";
+
+test("page-number jumps stay absolute in manga mode", () => {
+    const absoluteMangaNavigation = {
+        mangaMode: true,
+        respectReadingDirection: false,
+    };
+
+    assert.deepEqual(resolveReaderNavigationInput("first", 20, absoluteMangaNavigation), { destination: 0 });
+    assert.deepEqual(resolveReaderNavigationInput("last", 20, absoluteMangaNavigation), { destination: 20 });
+    assert.deepEqual(resolveReaderNavigationInput(-10, 20, absoluteMangaNavigation), { step: -10 });
+    assert.deepEqual(resolveReaderNavigationInput(10, 20, absoluteMangaNavigation), { step: 10 });
+});
+
+test("ordinary page turns still follow manga reading direction", () => {
+    const directionalMangaNavigation = { mangaMode: true };
+
+    assert.deepEqual(resolveReaderNavigationInput("first", 20, directionalMangaNavigation), { destination: 20 });
+    assert.deepEqual(resolveReaderNavigationInput("last", 20, directionalMangaNavigation), { destination: 0 });
+    assert.deepEqual(resolveReaderNavigationInput(-1, 20, directionalMangaNavigation), { step: 1 });
+    assert.deepEqual(resolveReaderNavigationInput(1, 20, directionalMangaNavigation), { step: -1 });
+});
 
 test("legacy spread-start modes normalize to the new first interior spread model", () => {
     assert.equal(normalizeSpreadStartMode("always"), "pair2");

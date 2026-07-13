@@ -40,6 +40,10 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 - **Single-page spread alignment** hides the empty secondary image slot after
   an unpaired final page, keeping the page centered and preventing an RTL
   ghost page at the end of odd-length archives.
+- **Page-number keyboard jumps** keep conventional behavior in manga mode:
+  `Home`/`End` select the first/final numbered page and `Page Up`/`Page Down`
+  move backward/forward 10 page numbers, while horizontal page-turn controls
+  remain reading-direction-aware.
 
 - **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
 - **Reader cursor auto-hide** hides the mouse cursor over the page area after
@@ -187,9 +191,9 @@ Reader behavior:
   `spreadstart`, `firstspreadstart`, current page, and known wide pages.
 - Page navigation follows those windows instead of applying a fixed `+/-2`
   offset.
-- Pressing `Home`/`End` jumps to the beginning/end of the reader, and
-  `Page Up`/`Page Down` jumps backward/forward 10 pages through the same
-  navigation path as ordinary page turns.
+- Pressing `Home`/`End` jumps to the first/final numbered page, and `Page Up`/
+  `Page Down` jumps backward/forward 10 page numbers. These page-number jumps
+  do not reverse in manga mode; horizontal page-turn controls still do.
 - Pressing `J` toggles adaptive offset between `auto` and `pair2`, persisted via
   `PUT /api/archives/{id}/spreadstart?value=<auto|pair2>`.
 - Hidden-header/minimal-reader chrome is isolated in

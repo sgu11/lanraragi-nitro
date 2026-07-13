@@ -33,6 +33,7 @@ import {
     isWidePage,
     normalizeSpreadStartMode,
     queueReaderNavigationStep,
+    resolveReaderNavigationInput,
     selectReaderOpeningPage,
     setReaderDisplayPage,
     spreadStartFlags,
@@ -142,7 +143,8 @@ function commitCurrentNavigation(navigationId, page) {
 function runQueuedReaderNavigation() {
     const queued = consumeQueuedReaderNavigationStep(readerCursor);
     if (queued) {
-        changePage(queued.step, queued.resetAuto);
+        // Queued steps are resolved for reading direction when captured.
+        changePage(queued.step, queued.resetAuto, { respectReadingDirection: false });
         return true;
     }
     return false;
@@ -1446,25 +1448,25 @@ function handleShortcuts(e) {
             hideReaderCursorForNavigationInput();
             e.preventDefault();
             if (e.type === "keydown") { break; }
-            changePage(-10, true);
+            changePage(-10, true, { respectReadingDirection: false });
             break;
         case 34: // page down
             hideReaderCursorForNavigationInput();
             e.preventDefault();
             if (e.type === "keydown") { break; }
-            changePage(10, true);
+            changePage(10, true, { respectReadingDirection: false });
             break;
         case 35: // end
             hideReaderCursorForNavigationInput();
             e.preventDefault();
             if (e.type === "keydown") { break; }
-            changePage("last", true);
+            changePage("last", true, { respectReadingDirection: false });
             break;
         case 36: // home
             hideReaderCursorForNavigationInput();
             e.preventDefault();
             if (e.type === "keydown") { break; }
-            changePage("first", true);
+            changePage("first", true, { respectReadingDirection: false });
             break;
         case 38: // up arrow
         case 87: // w
@@ -2921,8 +2923,10 @@ function generateThumbnails() {
  *
  * @param {number|"first"|"last"} targetPage    Page step or one of "first" or "last" page.
  * @param {boolean} resetAuto                   Whether to reset current slideshow counter.
+ * @param {object} options                      Navigation behavior options.
+ * @param {boolean} options.respectReadingDirection Whether manga mode reverses the command.
  */
-function changePage(targetPage, resetAuto = false) {
+function changePage(targetPage, resetAuto = false, { respectReadingDirection = true } = {}) {
 
     // Reset timer if user manually changes pages during slideshow
     if (resetAuto && autoNextPage) {
@@ -2930,8 +2934,13 @@ function changePage(targetPage, resetAuto = false) {
         $(".toggle-auto-next-page").text(autoNextPageCountdown);
     }
 
-    if (Number.isFinite(Number(targetPage)) && isReaderNavigationPending(readerCursor)) {
-        queueReaderNavigationStep(readerCursor, targetPage, { resetAuto });
+    const navigation = resolveReaderNavigationInput(targetPage, maxPage, {
+        mangaMode,
+        respectReadingDirection,
+    });
+
+    if ("step" in navigation && navigation.step !== 0 && isReaderNavigationPending(readerCursor)) {
+        queueReaderNavigationStep(readerCursor, navigation.step, { resetAuto });
         return;
     }
 
@@ -2940,12 +2949,11 @@ function changePage(targetPage, resetAuto = false) {
         syncInfiniteScrollCurrentPageFromViewport();
     }
     let destination;
-    if (targetPage === "first") {
-        destination = mangaMode ? maxPage : 0;
-    } else if (targetPage === "last") {
-        destination = mangaMode ? 0 : maxPage;
+    if ("destination" in navigation) {
+        const { destination: absoluteDestination } = navigation;
+        destination = absoluteDestination;
     } else {
-        const step = mangaMode ? -targetPage : targetPage;
+        const { step } = navigation;
         if (shiftRequestedSpreadByPageCount(step)) {
             return;
         }

@@ -115,7 +115,8 @@ test("reader cancels stale async page navigations before scrolling or saving pro
     assert.match(goToPage, /#reader-load-error/);
     assert.match(js, /\$\("#reader-load-retry"\)\.on\("click\.retry-reader-page", \(event\) => \{/);
     assert.match(js, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);\s*const retryPage/);
-    assert.match(changePage, /isReaderNavigationPending\(readerCursor\)[\s\S]*queueReaderNavigationStep\(readerCursor, targetPage, \{ resetAuto \}\);[\s\S]*return;/);
+    assert.match(changePage, /resolveReaderNavigationInput\(targetPage, maxPage,[\s\S]*isReaderNavigationPending\(readerCursor\)[\s\S]*queueReaderNavigationStep\(readerCursor, navigation\.step, \{ resetAuto \}\);[\s\S]*return;/);
+    assert.match(js, /changePage\(queued\.step, queued\.resetAuto, \{ respectReadingDirection: false \}\);/);
 });
 
 test("reader progress persistence is latest-only and bypassed when tracking is disabled", async () => {

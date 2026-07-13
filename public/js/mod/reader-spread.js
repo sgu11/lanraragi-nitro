@@ -17,6 +17,30 @@ export function normalizeReaderPage(page, maxPage = Number.MAX_SAFE_INTEGER) {
     return Math.max(0, Math.min(lastPage, pageNumber));
 }
 
+/**
+ * Resolve a reader navigation command into either an absolute destination or
+ * a relative step. Horizontal page turns follow manga reading direction;
+ * page-number jumps can opt out so keyboard conventions stay stable.
+ */
+export function resolveReaderNavigationInput(targetPage, maxPage, {
+    mangaMode = false,
+    respectReadingDirection = true,
+} = {}) {
+    const lastPage = Math.max(0, Number(maxPage) || 0);
+    const reverse = Boolean(mangaMode && respectReadingDirection);
+
+    if (targetPage === "first") {
+        return { destination: reverse ? lastPage : 0 };
+    }
+    if (targetPage === "last") {
+        return { destination: reverse ? 0 : lastPage };
+    }
+
+    const numericStep = Number(targetPage);
+    const step = Number.isFinite(numericStep) ? numericStep : 0;
+    return { step: reverse ? -step : step };
+}
+
 export function getDoublePageInitialProbePages(targetPage, maxPage) {
     const lastPage = Math.max(0, Number(maxPage) || 0);
     const page = normalizeReaderPage(targetPage, lastPage);

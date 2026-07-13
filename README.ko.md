@@ -34,6 +34,7 @@ English version: [`README.md`](README.md).
 - **Reader failure recovery 및 accessibility**: page fetch/decode 실패 시 pending navigation과 queued input을 정리하고 inline retry를 제공함. Overlay는 dialog/focus semantics를 사용하고 control target은 44px이며 reduced-motion 설정을 존중함.
 - **대형 archive overview windowing**: thumbnail overview는 실제로 열 때 생성하고 한 번에 60 page만 render함.
 - **Single-page spread alignment**: 마지막 page가 짝 없이 남으면 빈 secondary image slot을 숨겨 page를 중앙에 유지하고 RTL mode의 끝에서 ghost page가 생기지 않도록 함.
+- **Page-number keyboard jump**: manga mode에서도 `Home`/`End`는 첫 번째/마지막 번호 page로 이동하고 `Page Up`/`Page Down`은 page 번호 기준 -10/+10으로 이동함. Horizontal page-turn control만 reading direction에 따라 반전함.
 
 - **Auto-fullscreen**: archive open 시 자동 fullscreen 진입, reader 종료 시 정상 해제. 구형 browser 대응을 위해 `fscreen` polyfill 사용.
 - **Reader cursor auto-hide**: mouse movement 없는 1초 후 page area cursor를 숨김. `W/A/S/D`, arrow, wheel page navigation 입력 시 즉시 숨기고, 50px 이상 mouse 이동 시 다시 표시함.
@@ -99,6 +100,7 @@ Reader behavior:
 
 - `public/js/mod/reader-spread.js`가 `spreadstart`, `firstspreadstart`, current page, known wide pages로 display window를 구성함.
 - Navigation은 fixed `+/-2` offset이 아니라 display window 기준으로 이동함.
+- `Home`/`End`와 `Page Up`/`Page Down`은 manga mode와 무관하게 page 번호 기준 동작을 유지함. Horizontal page-turn control은 기존처럼 reading direction을 따름.
 - `J` key는 adaptive offset을 `auto` / `pair2` 사이에서 toggle하고 `PUT /api/archives/{id}/spreadstart?value=<auto|pair2>`로 저장함.
 - Hidden-header/minimal-reader chrome logic은 `public/js/mod/reader-chrome.js`와 `public/css/reader-chrome.css`로 격리함. Deployed reader 검증은 `npm run smoke:reader-chrome` 사용함.
 

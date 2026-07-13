@@ -136,10 +136,10 @@ test("reader navigation inputs hide cursor and ws mirrors up down navigation", a
     assert.doesNotMatch(js, /function addStamp\(/);
     assert.match(shortcuts, /case 37: \/\/ left arrow[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(-1, true\);/);
     assert.match(shortcuts, /case 39: \/\/ right arrow[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(1, true\);/);
-    assert.match(shortcuts, /case 33: \/\/ page up[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\(-10, true\);/);
-    assert.match(shortcuts, /case 34: \/\/ page down[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\(10, true\);/);
-    assert.match(shortcuts, /case 35: \/\/ end[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\("last", true\);/);
-    assert.match(shortcuts, /case 36: \/\/ home[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\("first", true\);/);
+    assert.match(shortcuts, /case 33: \/\/ page up[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\(-10, true, \{ respectReadingDirection: false \}\);/);
+    assert.match(shortcuts, /case 34: \/\/ page down[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\(10, true, \{ respectReadingDirection: false \}\);/);
+    assert.match(shortcuts, /case 35: \/\/ end[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\("last", true, \{ respectReadingDirection: false \}\);/);
+    assert.match(shortcuts, /case 36: \/\/ home[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*e\.preventDefault\(\);[\s\S]*if \(e\.type === "keydown"\) \{ break; \}[\s\S]*changePage\("first", true, \{ respectReadingDirection: false \}\);/);
     assert.match(shortcuts, /case 65: \/\/ a[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(-1, true\);/);
     assert.match(shortcuts, /case 68: \/\/ d[\s\S]*hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(1, true\);/);
     assert.match(wheel, /hideReaderCursorForNavigationInput\(\);[\s\S]*changePage\(direction, true\);/);
