@@ -57,7 +57,8 @@ sub add_tasks {
 
             eval {
                 require Shinobu;
-                Shinobu::add_to_filemap( $redis_cfg, $file ) if -e $file;
+                die "Archive disappeared before ingest: $file\n" unless -e $file;
+                Shinobu::add_to_filemap( $redis_cfg, $file );
                 1;
             } or $error = $@ || "Unknown ingest failure";
 

@@ -283,6 +283,8 @@ export function getPageNavigationDestination(targetPage, state) {
     const currentPage = Math.max(0, Number(state.currentPage) || 0);
 
     if (!state.doublePageMode) {
+        if (step < 0 && currentPage === 0) return -1;
+        if (step > 0 && currentPage === state.maxPage) return state.maxPage + 1;
         return Math.max(0, Math.min(state.maxPage, currentPage + step));
     }
 
@@ -293,6 +295,8 @@ export function getPageNavigationDestination(targetPage, state) {
     }
 
     if (Math.abs(step) === 1) {
+        if (step < 0 && currentIndex === 0) return -1;
+        if (step > 0 && currentIndex === windows.length - 1) return state.maxPage + 1;
         const nextIndex = Math.max(0, Math.min(windows.length - 1, currentIndex + (step > 0 ? 1 : -1)));
         return windows[nextIndex].start;
     }

@@ -40,9 +40,6 @@ sub apply_routes {
         $search_api = $search_api->under('/')->to('login#logged_in_api');
     }
 
-    # Keep this fork-only export route explicit; OpenAPI still documents it.
-    $api->get('/api/duplicates/cover/review-events')->to('api-coverduplicates#review_events');
-
     # All "/api/*" endpoints are passed to OpenAPI.
     $self->plugin(
         "OpenAPI" => {
@@ -166,6 +163,7 @@ sub apply_routes {
     $logged_in_api->post('/api/duplicates/cover/refresh')->to('api-coverduplicates#refresh');
     $logged_in_api->post('/api/duplicates/cover/rebuild')->to('api-coverduplicates#rebuild');
     $logged_in_api->post('/api/duplicates/cover/status')->to('api-coverduplicates#update_status');
+    $logged_in_api->get('/api/duplicates/cover/review-events')->to('api-coverduplicates#review_events');
 
     # Metrics API (not part of OpenAPI spec, serves Prometheus format)
     if ( $self->LRR_CONF->enable_metrics ) {

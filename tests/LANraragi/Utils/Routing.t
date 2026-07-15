@@ -8,6 +8,18 @@ use Mojo::Path;
 
 BEGIN { use_ok('LANraragi::Utils::Routing'); }
 
+note('cover review export is registered only on the authenticated API router');
+{
+    open my $fh, '<', 'lib/LANraragi/Utils/Routing.pm' or die $!;
+    local $/;
+    my $source = <$fh>;
+    close $fh;
+    my $route = q{$logged_in_api->get('/api/duplicates/cover/review-events')};
+    my $route_count = () = $source =~ /\Q$route\E/g;
+    is( $route_count, 1, 'review export has one authenticated route' );
+    unlike( $source, qr/\$api->get\('\/api\/duplicates\/cover\/review-events'/, 'no unauthenticated explicit route remains' );
+}
+
 use Cwd qw(getcwd);
 
 my $cwd = getcwd();

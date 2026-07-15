@@ -4162,7 +4162,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationResponse'
-  /api/duplicates/pairs:
+  /duplicates/pairs:
     get:
       security:
         - api_key: []
@@ -4230,7 +4230,7 @@ paths:
         '200':
           description: Pair dismissed
       x-mojo-to: 'api-duplicates#delete_pair'
-  /api/duplicates/stats:
+  /duplicates/stats:
     get:
       security:
         - api_key: []
@@ -4241,7 +4241,7 @@ paths:
         '200':
           description: Stats payload
       x-mojo-to: 'api-duplicates#stats'
-  /api/duplicates/refresh:
+  /duplicates/refresh:
     post:
       security:
         - api_key: []
@@ -4257,7 +4257,7 @@ paths:
         '200':
           description: Refresh result with removed counts
       x-mojo-to: 'api-duplicates#refresh'
-  /api/duplicates/cover/stats:
+  /duplicates/cover/stats:
     get:
       security:
         - api_key: []
@@ -4268,7 +4268,7 @@ paths:
         '200':
           description: Stats payload for the cover-only duplicate pipeline
       x-mojo-to: 'api-coverduplicates#stats'
-  /api/duplicates/cover/pairs:
+  /duplicates/cover/pairs:
     get:
       security:
         - api_key: []
@@ -4279,7 +4279,7 @@ paths:
         - in: query
           name: threshold
           schema: { type: number }
-          description: Cover Hamming distance ceiling (default 25).
+          description: Cover Hamming distance ceiling (default 22).
         - in: query
           name: offset
           schema: { type: integer, default: 0 }
@@ -4317,7 +4317,7 @@ paths:
         '200':
           description: Pair dismissed
       x-mojo-to: 'api-coverduplicates#delete_pair'
-  /api/duplicates/cover/review-events:
+  /duplicates/cover/review-events:
     get:
       security:
         - api_key: []
@@ -4341,7 +4341,7 @@ paths:
         '200':
           description: Page of cover duplicate review events
       x-mojo-to: 'api-coverduplicates#review_events'
-  /api/duplicates/cover/refresh:
+  /duplicates/cover/refresh:
     post:
       security:
         - api_key: []
@@ -4352,7 +4352,7 @@ paths:
         '200':
           description: Refresh result with removed counts
       x-mojo-to: 'api-coverduplicates#refresh'
-  /api/duplicates/cover/rebuild:
+  /duplicates/cover/rebuild:
     post:
       security:
         - api_key: []
@@ -4368,7 +4368,7 @@ paths:
         '200':
           description: Rebuild result with stored count and deck state
       x-mojo-to: 'api-coverduplicates#rebuild'
-  /api/duplicates/cover/status:
+  /duplicates/cover/status:
     post:
       security:
         - api_key: []

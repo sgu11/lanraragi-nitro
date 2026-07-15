@@ -7,6 +7,8 @@ import * as LRR from "./mod/common.js";
 import I18N from "i18n";
 
 const Duplicates = {};
+Duplicates._pairsGeneration = 0;
+Duplicates._reviewActionInFlight = false;
 
 const DUPES_THRESHOLD_LS_KEY = "lrr.duplicates.threshold";
 const DUPES_THRESHOLD_DEFAULT = 22;
@@ -230,10 +232,14 @@ Duplicates.fetchPairs = function (limit = Duplicates.state.limit) {
 };
 
 Duplicates.loadPairs = function () {
+    Duplicates._pairsGeneration += 1;
+    const generation = Duplicates._pairsGeneration;
+    Duplicates.state.loadingMore = false;
     $("#dupes-list").html(`<div class="dupes-loading"><i class="fas fa-spinner fa-spin"></i> ${I18N.DuplicatesLoadingPairs}</div>`);
     $("#dupes-queue-list").empty();
     return Duplicates.fetchPairs(Duplicates.state.limit)
         .then((data) => {
+            if (generation !== Duplicates._pairsGeneration) return;
             Duplicates.state.total = data.filtered_total !== undefined ? data.filtered_total : (data.total || 0);
             Duplicates.state.pairs = data.pairs || [];
             Duplicates.state.activeIndex = 0;
@@ -244,6 +250,7 @@ Duplicates.loadPairs = function () {
             Duplicates.updateReviewMetrics();
         })
         .catch(() => {
+            if (generation !== Duplicates._pairsGeneration) return;
             $("#dupes-list").html(`<div class="dupes-empty-state">${I18N.DuplicatesFailedLoadPairs}</div>`);
             Duplicates.renderQueueRail();
             Duplicates.updateReviewMetrics();
@@ -252,10 +259,12 @@ Duplicates.loadPairs = function () {
 
 Duplicates.loadMorePairs = function () {
     if (Duplicates.state.loadingMore) return Promise.resolve();
+    const generation = Duplicates._pairsGeneration;
     Duplicates.state.loadingMore = true;
 
     return Duplicates.fetchPairs(Duplicates.state.limit)
         .then((data) => {
+            if (generation !== Duplicates._pairsGeneration) return;
             Duplicates.state.total = data.filtered_total !== undefined ? data.filtered_total : (data.total || 0);
             const known = new Set(Duplicates.state.pairs.map(pairMember));
             const incoming = (data.pairs || []).filter((pair) => {
@@ -275,7 +284,9 @@ Duplicates.loadMorePairs = function () {
         })
         .catch(() => { /* top-up is opportunistic */ })
         .finally(() => {
-            Duplicates.state.loadingMore = false;
+            if (generation === Duplicates._pairsGeneration) {
+                Duplicates.state.loadingMore = false;
+            }
         });
 };
 
@@ -575,19 +586,26 @@ Duplicates.advanceAfterReviewAction = function ({ pair, archiveId = null }) {
 };
 
 Duplicates.performReviewAction = function ({ pair, action, archiveId = null, errorTitle }) {
+    if (Duplicates._reviewActionInFlight) return Promise.resolve(false);
+    Duplicates._reviewActionInFlight = true;
     const $card = $("#dupes-list .dupe-focus-card");
     $card.addClass("is-busy");
 
-    return action()
+    return Promise.resolve()
+        .then(action)
         .then(() => {
             $card.addClass("is-exiting");
             setTimeout(() => {
+                Duplicates._reviewActionInFlight = false;
                 Duplicates.advanceAfterReviewAction({ pair, archiveId });
             }, 160);
+            return true;
         })
         .catch((err) => {
+            Duplicates._reviewActionInFlight = false;
             $card.removeClass("is-busy is-exiting");
             LRR.showPopUp({ title: errorTitle, text: String(err), icon: "error" });
+            return false;
         });
 };
 

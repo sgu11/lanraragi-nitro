@@ -65,6 +65,16 @@ test("custom duplicate review actions do not reload the whole deck", async () =>
     const nextHandlerStart = script.indexOf("$(document).on(\"keydown\"", actionHandlerStart);
     const actionHandler = script.slice(actionHandlerStart, nextHandlerStart);
     assert.doesNotMatch(actionHandler, /Duplicates\.loadPairs\(\)/);
+    assert.match(script, /Duplicates\._reviewActionInFlight/);
+    assert.match(script, /if \(Duplicates\._reviewActionInFlight\) return Promise\.resolve\(false\)/);
+});
+
+test("custom duplicate queue ignores stale asynchronous responses", async () => {
+    const script = await source("public/js/duplicates_custom.js");
+
+    assert.match(script, /Duplicates\._pairsGeneration \+= 1;[\s\S]*const generation = Duplicates\._pairsGeneration/);
+    assert.match(script, /if \(generation !== Duplicates\._pairsGeneration\) return/);
+    assert.match(script, /const generation = Duplicates\._pairsGeneration;[\s\S]*Duplicates\.loadMorePairs/);
 });
 
 test("custom duplicate delete actions skip the confirmation modal", async () => {

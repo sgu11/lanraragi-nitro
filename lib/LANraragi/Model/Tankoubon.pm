@@ -403,6 +403,15 @@ sub update_archive_list ( $tank_id, $data ) {
             push @removed_tags, split_tags_to_array($arc_tags_str);
         }
 
+        # Config keeps one Redis handle per DB for the process. Resolve tank
+        # membership before MULTI so helper reads do not get queued on the
+        # transaction connection and accidentally look truthy.
+        my %has_other_tank;
+        foreach my $arc_id (@diff) {
+            my @other_tanks = grep { $_ ne $tank_id } get_tankoubons_containing_archive($arc_id);
+            $has_other_tank{$arc_id} = @other_tanks ? 1 : 0;
+        }
+
         $redis->multi;
         $redis_search->multi;
 
@@ -412,10 +421,7 @@ sub update_archive_list ( $tank_id, $data ) {
 
             # Make removed archives visible in search again unless other tanks contain them
             foreach my $arc_id (@diff) {
-                # Have to filter out $tank_id here since it still contains the archive at this point (we haven't called exec, so zrem didn't run)
-                # (This case isn't covered by unit tests as they don't mock multi properly)
-                my @other_tanks = grep { $_ ne $tank_id } get_tankoubons_containing_archive($arc_id);
-                unless ( @other_tanks ) {
+                unless ( $has_other_tank{$arc_id} ) {
                     $redis_search->sadd( "LRR_TANKGROUPED", $arc_id );
                 }
             }

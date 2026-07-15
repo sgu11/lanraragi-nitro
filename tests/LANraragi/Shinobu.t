@@ -117,7 +117,7 @@ note('wait_for_stable_size returns once a writer stops appending');
     }
 
     my $start = time;
-    Shinobu::wait_for_stable_size($filename);
+    ok( Shinobu::wait_for_stable_size($filename), 'stable file reports success' );
     my $elapsed = time - $start;
     waitpid( $pid, 0 );
 
@@ -133,10 +133,30 @@ note('wait_for_stable_size short-circuits when the file disappears');
     ok( !-e $filename, 'file really is gone' );
 
     my $start = time;
-    Shinobu::wait_for_stable_size($filename);
+    ok( !Shinobu::wait_for_stable_size($filename), 'missing file reports failure' );
     my $elapsed = time - $start;
 
     cmp_ok( $elapsed, '<', 2, "exited promptly when file is missing" );
+}
+
+note('wait_for_stable_size reports timeout separately from success');
+{
+    my ( $fh, $filename ) = tempfile( UNLINK => 1 );
+    close $fh;
+    ok( !Shinobu::wait_for_stable_size( $filename, 1, 0 ), 'poll ceiling reports failure' );
+}
+
+note('add_new_file propagates core ingest failures after cleanup');
+{
+    my $config_mod = Test::MockModule->new('LANraragi::Model::Config');
+    $config_mod->redefine('get_redis',        sub { ShinobuCoverDedupRedis->new });
+    $config_mod->redefine('get_redis_search', sub { ShinobuCoverDedupRedis->new });
+
+    no warnings 'redefine';
+    local *Shinobu::add_archive_to_redis = sub { die "broken archive\n" };
+    my $error;
+    eval { Shinobu::add_new_file( 'abc123', '/tmp/broken.cbz' ); 1 } or $error = $@;
+    like( $error, qr/^broken archive/, 'Minion caller can fail and retry the ingest job' );
 }
 
 note('same-ID replacement cover dedup refresh enqueues coverhash only by default');

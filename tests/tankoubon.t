@@ -250,6 +250,8 @@ ok((grep { $_ eq $index_tank_id } @cherry_index), 'Tank in INDEX_fruit:cherry af
 
 @elderberry_index = $redis_search->smembers("INDEX_fruit:elderberry");
 ok(!(grep { $_ eq $index_tank_id } @elderberry_index), 'Tank removed from INDEX_fruit:elderberry after bulk update');
+my @grouped_archives = $redis_search->smembers("LRR_TANKGROUPED");
+ok((grep { $_ eq $banana_archive } @grouped_archives), 'archive removed from its only tank becomes visible in grouped search');
 
 # Cleanup
 LANraragi::Model::Tankoubon::delete_tankoubon($index_tank_id);

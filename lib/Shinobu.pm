@@ -295,6 +295,12 @@ sub add_to_filemap ( $redis_cfg, $file ) {
 
         $logger->debug("Adding $file to Shinobu filemap.");
 
+        # Stabilize newly observed paths before committing their filemap entry.
+        # A retry after a partial ingest must still take the new-file path.
+        if ( !$redis_cfg->hexists( "LRR_FILEMAP", $file ) && !wait_for_stable_size($file) ) {
+            die "Archive disappeared or did not stabilize before ingest: $file\n";
+        }
+
         #Freshly created files might not be complete yet.
         #We have to wait before doing any form of calculation.
         while (1) {
@@ -339,11 +345,7 @@ sub add_to_filemap ( $redis_cfg, $file ) {
         }
 
         # New file handling runs outside the lock so auto-plugin can acquire its own lock.
-        # Wait for the write to finish first — zip files built in-place only become readable
-        # once the central directory is written, and plugins that crack the archive open
-        # (e.g. info.txt readers) fail with "Could not read archive" on a partial file.
         if ( $acquired && $is_new ) {
-            wait_for_stable_size($file);
             add_new_file( $id, $file );
             invalidate_cache();
         }
@@ -552,21 +554,22 @@ sub add_new_files (@files) {
 # indicating the writer has closed it. For zips built in-place the central directory
 # is written in the final flush, so size-stability is a reliable "archive is readable"
 # signal. Bails after a 5-minute ceiling or if the file disappears mid-wait.
-sub wait_for_stable_size ($file) {
+sub wait_for_stable_size ( $file, $max_polls = 300, $poll_seconds = 1 ) {
     my $prev   = -1;
     my $stable = 0;
-    for ( 1 .. 300 ) {
-        return unless -e $file;
+    for ( 1 .. $max_polls ) {
+        return 0 unless -e $file;
         my $size = -s $file // 0;
         if ( $size == $prev ) {
-            return if ++$stable >= 2;
+            return 1 if ++$stable >= 2;
         } else {
             $stable = 0;
         }
         $prev = $size;
-        sleep 1;
+        sleep $poll_seconds if $poll_seconds;
     }
     $logger->warn("Timed out waiting for file size to stabilize: $file");
+    return 0;
 }
 
 sub add_new_file ( $id, $file ) {
@@ -575,6 +578,7 @@ sub add_new_file ( $id, $file ) {
     my $redis_search = LANraragi::Model::Config->get_redis_search;
     $logger->info("Adding new file $file with ID $id");
 
+    my $error;
     eval {
         add_archive_to_redis( $id, $file, $redis, $redis_search );
         add_timestamp_tag( $redis, $id );
@@ -601,10 +605,12 @@ sub add_new_file ( $id, $file ) {
     };
 
     if ($@) {
-        $logger->error("Error while adding file: $@");
+        $error = $@;
+        $logger->error("Error while adding file: $error");
     }
     $redis->quit;
     $redis_search->quit;
+    die $error if $error;
 }
 
 __PACKAGE__->initialize_from_new_process unless caller;

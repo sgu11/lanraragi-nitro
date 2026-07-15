@@ -813,6 +813,11 @@ sub find_duplicate_pairs_in_memory {
     my $cur_i           = $n_total;   # default = sweep complete
     my $cur_j           = 0;
 
+    # Avoid synchronous Redis membership checks inside the potentially
+    # multi-million-candidate loop. This mirrors the cover sweep above.
+    my %dismissed = map { $_ => 1 } $redis->smembers("LRR_DEDUP_DISMISSED");
+    my %existing  = map { $_ => 1 } $redis->zrange("LRR_DUPLICATE_PAIRS", 0, -1);
+
     OUTER: for (my $i = $start_i; $i < $n_total; $i++) {
         my $n_i = $page_data->{$ids[$i]}{n};
         my $upper_bound = $n_i * (1 + $tolerance);
@@ -831,14 +836,15 @@ sub find_duplicate_pairs_in_memory {
 
             my ($a, $b) = sort ($ids[$i], $ids[$j]);
             my $member = "$a|$b";
-            next if $redis->sismember("LRR_DEDUP_DISMISSED", $member);
-            next if defined $redis->zscore("LRR_DUPLICATE_PAIRS", $member);
+            next if $dismissed{$member};
+            next if $existing{$member};
 
             my ($score, $per_page, $pcount_delta) =
                 score_pair($page_data->{$a}, $page_data->{$b});
             next if $score > $loose_max;
 
             $redis->zadd("LRR_DUPLICATE_PAIRS", $score, $member);
+            $existing{$member} = 1;
             $redis->hset("LRR_DUPLICATE_PAIR_META", $member,
                 encode_json({
                     per_page     => $per_page,

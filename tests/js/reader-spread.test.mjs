@@ -154,6 +154,12 @@ test("navigation follows display windows instead of fixed offsets", () => {
     assert.equal(getPageNavigationDestination(-1, { ...state, currentPage: 4 }), 3);
     assert.equal(getPageNavigationDestination(10, { ...state, currentPage: 1 }), 6);
     assert.equal(getPageNavigationDestination(-10, { ...state, currentPage: 4 }), 0);
+    assert.equal(getPageNavigationDestination(-1, { ...state, doublePageMode: false, currentPage: 0 }), -1);
+    assert.equal(getPageNavigationDestination(1, { ...state, doublePageMode: false, currentPage: 7 }), 8);
+
+    const doublePageState = { ...state, doublePageMode: true };
+    assert.equal(getPageNavigationDestination(-1, { ...doublePageState, currentPage: 0 }), -1);
+    assert.equal(getPageNavigationDestination(1, { ...doublePageState, currentPage: 6 }), 8);
 });
 
 test("double-page cover navigation only probes the cover before rendering", () => {

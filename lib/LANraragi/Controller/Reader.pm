@@ -39,21 +39,7 @@ sub index {
         # cold cache we intentionally skip this — scanning the archive synchronously
         # here would add the very latency we're trying to avoid. JS populates src
         # after /files responds in that case.
-        my $first_page_url = "";
-        eval {
-            my $redis  = $self->LRR_CONF->get_redis;
-            my $cached = $redis->hget( $id, "pagefiles" );
-            $redis->quit;
-            if ( defined $cached && length $cached ) {
-                my $list = thaw($cached);
-                if ( ref $list eq 'ARRAY' && @$list ) {
-                    my $imgpath = redis_decode( $list->[0] );
-                    $imgpath = uri_escape_utf8($imgpath);
-                    $imgpath =~ s!%2F!/!g;
-                    $first_page_url = $self->url_for("/api/archives/$id/page?path=$imgpath")->path_query;
-                }
-            }
-        };
+        my $first_page_url = _first_page_url( $self, $id );
 
         $self->render(
             template       => "reader",
@@ -75,6 +61,27 @@ sub index {
         # No parameters back the fuck off
         $self->redirect_to('index');
     }
+}
+
+sub _first_page_url {
+    my ( $self, $id ) = @_;
+    my $redis;
+    my $url = "";
+    eval {
+        $redis = $self->LRR_CONF->get_redis;
+        my $cached = $redis->hget( $id, "pagefiles" );
+        if ( defined $cached && length $cached ) {
+            my $list = thaw($cached);
+            if ( ref $list eq 'ARRAY' && @$list ) {
+                my $imgpath = redis_decode( $list->[0] );
+                $imgpath = uri_escape_utf8($imgpath);
+                $imgpath =~ s!%2F!/!g;
+                $url = $self->url_for("/api/archives/$id/page?path=$imgpath")->path_query;
+            }
+        }
+    };
+    eval { $redis->quit } if $redis;
+    return $url;
 }
 
 1;
