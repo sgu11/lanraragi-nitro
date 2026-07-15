@@ -174,6 +174,21 @@ sub _get_archive_path { LANraragi::Utils::Path::get_archive_path(@_) }
 # (we have observed cached lists pointing at filenames that no longer exist
 # inside the archive); force=1 rewalks the archive and rewrites the cache.
 sub _get_filelist     { my @list = LANraragi::Utils::Archive::get_filelist($_[0], $_[1], 1); return @list }
+
+sub _safe_archive_member_path {
+    my ($page) = @_;
+    return 0 unless defined $page && !ref $page && length $page;
+    return 0 if $page =~ /\0/;
+
+    # Archive member names are portable paths. Normalize Windows separators
+    # only for validation, while preserving the original name for extraction.
+    (my $normalized = $page) =~ tr{\\}{/};
+    return 0 if $normalized =~ m{\A/};
+    return 0 if $normalized =~ m{\A[A-Za-z]:/};
+    return 0 if $normalized =~ m{(?:\A|/)\.\.(?:/|\z)};
+    return 1;
+}
+
 # extract_single_file returns content bytes, not a path; pHash needs a path.
 # Use extract_single_file_to_file into a per-call tempdir. Returns
 # ($file_path, $dir) so the caller can remove both — leaving the dir
@@ -186,7 +201,10 @@ sub _extract_page {
     # never reach _unlink_temp, leaking the dir (CLEANUP => 0 never reaps it).
     # On failure $file is undef; the caller's _compute_phash(undef) then dies
     # cleanly and the slot becomes a sentinel, while $dir is still cleaned up.
-    my $file = eval { LANraragi::Utils::Archive::extract_single_file_to_file($archive, $page, $dir) };
+    my $file;
+    if ( _safe_archive_member_path($page) ) {
+        $file = eval { LANraragi::Utils::Archive::extract_single_file_to_file($archive, $page, $dir) };
+    }
     return ($file, $dir);
 }
 sub _unlink_temp {

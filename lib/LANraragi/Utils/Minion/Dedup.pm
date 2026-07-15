@@ -97,9 +97,18 @@ sub _run_find_cover_duplicates_isolated {
     my $enqueued = 0;
     my $in_flight = 0;
     my $skipped  = 0;
+    my @cover_states;
     for my $id (@ids) {
-        my $v   = $redis->hget($id, "coverhash_v")   // '';
-        my $err = $redis->hget($id, "coverhash_err") // '';
+        $redis->hmget($id, "coverhash_v", "coverhash_err",
+            sub { push @cover_states, [ $id, $_[0] ] });
+    }
+    $redis->wait_all_responses;
+
+    for my $state (@cover_states) {
+        my ($id, $reply) = @$state;
+        my ($v, $err) = @{ $reply // [] };
+        $v   //= '';
+        $err //= '';
         if ($v eq $cfg->{cover_algo_version}) {
             $skipped++;
             next;

@@ -11,6 +11,7 @@ test("versioned module paths also include deploy-specific asset cache busting", 
     const importmap = await source("templates/common/importmap.html.tt2");
     const reader = await source("templates/reader.html.tt2");
     const duplicatesCustom = await source("templates/duplicates_custom.html.tt2");
+    const duplicatesCustomModule = await source("public/js/duplicates_custom.js");
     const generic = await source("lib/LANraragi/Utils/Generic.pm");
 
     assert.match(app, /LRR_ASSET_VERSION/);
@@ -32,6 +33,8 @@ test("versioned module paths also include deploy-specific asset cache busting", 
     assert.match(reader, /\/js\/reader\.js\?\$asset_version/);
     assert.match(duplicatesCustom, /duplicates_custom\.css\?\$asset_version/);
     assert.match(duplicatesCustom, /duplicates_custom\.js\?\$asset_version/);
+    assert.match(duplicatesCustomModule, /import \* as LRR from "lrr-common"/);
+    assert.doesNotMatch(duplicatesCustomModule, /from "\.\/mod\/common\.js"/);
     assert.match(generic, /eval \{ \$self->LRR_ASSET_VERSION \}/);
     assert.match(generic, /\/themes\/\$css_file\?\$asset_version/);
 });

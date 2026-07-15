@@ -3,7 +3,7 @@
  *
  * Uses the cover-only API endpoints backed by LRR_COVER_DUPLICATE_PAIRS.
  */
-import * as LRR from "./mod/common.js";
+import * as LRR from "lrr-common";
 import I18N from "i18n";
 
 const Duplicates = {};
@@ -41,7 +41,7 @@ function saveStoredThreshold(v) {
 }
 
 function htmlText(value) {
-    return $("<div></div>").text(value || "").html();
+    return LRR.encodeHTML(String(value || ""));
 }
 
 function pairMember(pair) {

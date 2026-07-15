@@ -3,7 +3,6 @@ use warnings;
 use v5.36;
 use Test::More;
 use Test::MockObject;
-
 use_ok('LANraragi::Model::Dedup');
 
 note("pick_spaced: cell-center sampling at int(n*(i+0.5)/k)");
@@ -79,6 +78,29 @@ note("score_pair: all-sentinel slots return high score (64 + PCOUNT_WEIGHT)");
     is($score, 64 + 20, "all-sentinel score = 64 + PCOUNT_WEIGHT");
     is_deeply($per_page, [], "no per-page distances for sentinel-only pair");
     is($delta, 0, "page count delta is 0");
+}
+
+note("dedup page extraction rejects archive member path traversal");
+{
+    my @extracted;
+    no warnings 'redefine';
+    local *LANraragi::Utils::Archive::extract_single_file_to_file = sub {
+        my ($archive, $page, $dir) = @_;
+        push @extracted, $page;
+        return "$dir/$page";
+    };
+
+    for my $unsafe ("../outside.jpg", "nested/../../outside.jpg", "/tmp/outside.jpg", 'C:\\temp\\outside.jpg') {
+        my ($file, $dir) = LANraragi::Model::Dedup::_extract_page("archive.cbz", $unsafe);
+        ok(!defined $file, "unsafe member is not extracted: $unsafe");
+        LANraragi::Model::Dedup::_unlink_temp($file, $dir);
+    }
+    is_deeply(\@extracted, [], "unsafe archive members never reach the filesystem extraction helper");
+
+    my ($file, $dir) = LANraragi::Model::Dedup::_extract_page("archive.cbz", "nested/page.jpg");
+    is($extracted[0], "nested/page.jpg", "legitimate nested archive member is preserved");
+    like($file, qr{/nested/page\.jpg\z}, "legitimate member extracts below the temporary root");
+    LANraragi::Model::Dedup::_unlink_temp($file, $dir);
 }
 
 note("compute_pagehashes_for_archive: writes pagehashes/_v/_n and clears _err");

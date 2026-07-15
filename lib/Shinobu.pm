@@ -221,6 +221,7 @@ sub update_filemap {
     foreach my $deletedfile (@deletedfiles) {
         $logger->debug("Removing $deletedfile from filemap.");
         $redis->hdel( "LRR_FILEMAP", $deletedfile ) || $logger->warn("Couldn't delete previous filemap data.");
+        $redis->hdel( "LRR_FILEMAP_PENDING", $deletedfile );
     }
 
     # Verify arcsize for existing files — detect files replaced on disk with same first 512KB
@@ -326,11 +327,10 @@ sub add_to_filemap ( $redis_cfg, $file ) {
 
         if ($compute_error && -e $file) {
             $logger->error("Couldn't open $file for ID computation: $compute_error");
-            $logger->error("Giving up on adding it to the filemap.");
-            return;
+            die $compute_error;
         } elsif ($compute_error) {
             $logger->warn("File $file no longer exists; giving up on adding it to the filemap.");
-            return;
+            die $compute_error;
         }
 
         # Acquire exclusive metadata and file write access for archive by ID with 1m timeout
@@ -347,6 +347,7 @@ sub add_to_filemap ( $redis_cfg, $file ) {
         # New file handling runs outside the lock so auto-plugin can acquire its own lock.
         if ( $acquired && $is_new ) {
             add_new_file( $id, $file );
+            $redis_cfg->hdel( "LRR_FILEMAP_PENDING", $file );
             invalidate_cache();
         }
 
@@ -369,6 +370,28 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
     if ( $redis_cfg->hexists( "LRR_FILEMAP", $file ) ) {
 
         my $filemap_id = $redis_cfg->hget( "LRR_FILEMAP", $file );
+        my $pending_id = $redis_cfg->hget( "LRR_FILEMAP_PENDING", $file );
+
+        # A filemap entry is reserved before the expensive archive ingest.
+        # Keep every pending retry on the new-file path until add_new_file completes,
+        # even if the archive contents changed after a partial ingest failure.
+        if ( defined $pending_id ) {
+            if ( $filemap_id ne $id || $pending_id ne $id ) {
+                my $partial_id = $redis_arc->exists($filemap_id) ? $filemap_id
+                  : $pending_id ne $filemap_id && $redis_arc->exists($pending_id) ? $pending_id
+                  : undef;
+
+                if ( defined $partial_id && $partial_id ne $id ) {
+                    change_archive_id( $partial_id, $id );
+                    eval { enqueue_first_spread_start_detection($id); };
+                    $logger->warn("Failed to enqueue first-spread-start detection for $id: $@") if $@;
+                }
+
+                $redis_cfg->hset( "LRR_FILEMAP",         $file, $id );
+                $redis_cfg->hset( "LRR_FILEMAP_PENDING", $file, $id );
+            }
+            return 1;
+        }
 
         $logger->debug("$file was logged but is already in the filemap!");
 
@@ -386,6 +409,7 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
 
             # Don't forget to update the filemap, later operations will behave incorrectly otherwise
             $redis_cfg->hset( "LRR_FILEMAP", $file, $id );
+            $redis_cfg->hdel( "LRR_FILEMAP_PENDING", $file );
         } else {
             $logger->debug(
                 "$file has the same ID as the one in the filemap. Duplicate inotify events? Cleaning cache just to make sure");
@@ -422,6 +446,7 @@ sub update_filemap_entry ( $logger, $id, $file, $redis_cfg, $redis_arc ) {
         return;
 
     } else {
+        $redis_cfg->hset( "LRR_FILEMAP_PENDING", $file, $id );
         $redis_cfg->hset( "LRR_FILEMAP", $file, $id );    # raw FS path so no encoding/decoding whatsoever
     }
 
@@ -525,6 +550,7 @@ sub deleted_file_callback ($name) {
 
         # Prune file from filemap
         $redis->hdel( "LRR_FILEMAP", $name );
+        $redis->hdel( "LRR_FILEMAP_PENDING", $name );
 
         eval { invalidate_cache(); };
 

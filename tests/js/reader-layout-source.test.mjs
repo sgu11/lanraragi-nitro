@@ -4,6 +4,24 @@ import test from "node:test";
 
 const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
+test("reader metadata ignores stale size callbacks after its display shape changes", async () => {
+    const js = await source("public/js/mod/reader_common.js");
+    const start = js.indexOf("function updateMetadata()");
+    const end = js.indexOf("// Update page numbers in the paginator", start);
+    const updateMetadata = js.slice(start, end);
+
+    assert.notEqual(start, -1);
+    assert.notEqual(end, -1);
+    assert.match(js, /let metadataRenderGeneration = 0;/);
+    assert.match(updateMetadata, /metadataRenderGeneration \+= 1;\s*const renderGeneration = metadataRenderGeneration;/);
+    assert.match(updateMetadata, /const metadataPage = currentPage;/);
+    assert.match(updateMetadata, /const metadataSinglePage = showingSinglePage;/);
+    assert.match(updateMetadata, /metadataRenderGeneration === renderGeneration/);
+    assert.match(updateMetadata, /currentPage === metadataPage/);
+    assert.match(updateMetadata, /showingSinglePage === metadataSinglePage/);
+    assert.equal((updateMetadata.match(/isCurrentMetadataRender\(\)/g) || []).length, 2);
+});
+
 test("reader paginator uses labeled native buttons without changing navigation values", async () => {
     const template = await source("templates/reader.html.tt2");
     const paginator = template.match(/<div class="sn paginator"[\s\S]*?<\/div>\n\[% END %\]/)?.[0] || "";

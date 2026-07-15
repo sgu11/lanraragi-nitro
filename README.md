@@ -12,6 +12,21 @@ Korean version: [`README.ko.md`](README.ko.md).
 
 The current merge-preservation baseline lives in [`docs/local-features/`](docs/local-features/README.md). Use those feature documents during upstream syncs to preserve fork-only implementation details, routes, Redis keys, and verification commands.
 
+### Fork review hardening (2026-07-15)
+
+- Duplicate review now rejects unsafe archive-member paths before extraction,
+  escapes archive metadata through the shared HTML encoder, and imports the
+  cache-busted `lrr-common` module.
+- Interrupted archive ingestion remains retryable through a pending file-map
+  marker, while Minion retains the lease for retryable failures and releases it
+  only after a terminal failure.
+- Cover duplicate rebuilds pipeline Redis state reads, reader metadata ignores
+  stale asynchronous size results, and legacy spread-start values serialize to
+  the supported `auto`/`pair2` contract.
+- metadata sidecar plugin bare tags are normalized into the `tag:` namespace, and
+  the OpenAPI document now matches duplicate status filtering, cover review
+  responses, and Tachiyomi-family `groupby_tanks` defaults.
+
 ### Upstream sync (2026-07-12)
 
 - Merged upstream through `b94e4805`, including `.cbw` archive support, search

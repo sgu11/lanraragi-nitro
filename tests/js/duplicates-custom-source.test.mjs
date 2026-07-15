@@ -4,6 +4,15 @@ import test from "node:test";
 
 const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
+test("custom duplicate metadata uses the versioned common module and attribute-safe encoding", async () => {
+    const script = await source("public/js/duplicates_custom.js");
+
+    assert.match(script, /import \* as LRR from "lrr-common";/);
+    assert.doesNotMatch(script, /from "\.\/mod\/common\.js"/);
+    assert.match(script, /function htmlText\(value\) \{\s*return LRR\.encodeHTML\(String\(value \|\| ""\)\);\s*\}/);
+    assert.match(script, /title="\$\{htmlText\(title\)\}"/);
+});
+
 test("custom duplicate finder uses cover-only API endpoints", async () => {
     const script = await source("public/js/duplicates_custom.js");
     const template = await source("templates/duplicates_custom.html.tt2");

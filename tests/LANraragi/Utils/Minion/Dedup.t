@@ -17,14 +17,27 @@ package CoverRebuildTestData {
     our @hdel_seen;
     our $sweep_calls;
     our $cleanup_calls;
+    our $cover_state_hget_calls;
+    our $cover_state_hmget_calls;
+    our $wait_all_responses_calls;
 }
 
 package CoverRebuildRedis {
     sub new { bless {}, shift }
     sub hget {
         my ($self, $key, $field) = @_;
+        $CoverRebuildTestData::cover_state_hget_calls++
+            if $field eq 'coverhash_v' || $field eq 'coverhash_err';
         return $CoverRebuildTestData::hash{$key}{$field} // '';
     }
+    sub hmget {
+        my ($self, $key, @args) = @_;
+        my $callback = pop @args;
+        $CoverRebuildTestData::cover_state_hmget_calls++;
+        $callback->([ map { $CoverRebuildTestData::hash{$key}{$_} // '' } @args ]);
+        return 1;
+    }
+    sub wait_all_responses { $CoverRebuildTestData::wait_all_responses_calls++; 1 }
     sub hset {
         my ($self, $key, $field, $value) = @_;
         $CoverRebuildTestData::hash{$key}{$field} = $value;
@@ -80,6 +93,9 @@ sub reset_cover_rebuild_state {
     %CoverTaskMinion::tasks = ();
     $CoverRebuildTestData::sweep_calls = 0;
     $CoverRebuildTestData::cleanup_calls = 0;
+    $CoverRebuildTestData::cover_state_hget_calls = 0;
+    $CoverRebuildTestData::cover_state_hmget_calls = 0;
+    $CoverRebuildTestData::wait_all_responses_calls = 0;
 }
 
 my $config_mod = Test::MockModule->new('LANraragi::Model::Config');
@@ -120,6 +136,9 @@ reset_cover_rebuild_state();
     is($job->{finished}{pending}, 2, "pending count reported");
     is($job->{finished}{in_flight}, 0, "no existing in-flight jobs reported");
     is($job->{finished}{requeued}, 1, "follow-up sweep is reported");
+    is($CoverRebuildTestData::cover_state_hget_calls, 0, "cover rebuild performs no synchronous per-archive state reads");
+    is($CoverRebuildTestData::cover_state_hmget_calls, 2, "cover rebuild pipelines one state read per archive");
+    is($CoverRebuildTestData::wait_all_responses_calls, 1, "cover state pipeline waits once");
 }
 
 note("find_cover_duplicates_isolated does not enqueue duplicate coverhash jobs already in flight");

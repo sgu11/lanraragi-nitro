@@ -2218,13 +2218,14 @@ paths:
           in: query
           required: false
           description: >-
-            Enable or disable Tankoubon grouping. Defaults to true.
+            Enable or disable Tankoubon grouping. Defaults to true for regular
+            clients. When omitted by Tachiyomi-family clients, the server
+            overrides the default to false for compatibility.
 
             When enabled, Tankoubons will show in search results, replacing all
             the archive IDs they contain.
           schema:
             type: boolean
-            default: true
       responses:
         '200':
           description: Search results
@@ -4201,6 +4202,14 @@ paths:
           name: min_confidence
           schema: { type: number, minimum: 0, maximum: 1 }
           description: Optional minimum confidence for relation-aware pairs.
+        - in: query
+          name: status
+          schema:
+            type: string
+            default: new
+          description: >-
+            Exact review-status filter. Defaults to new; status=all bypasses
+            the filter. Other values match stored pair metadata verbatim.
       responses:
         '200':
           description: List of pairs
@@ -4388,10 +4397,43 @@ paths:
                   example: "abc...|def..."
                 status:
                   type: string
-                  enum: [same_cover, variant, not_duplicate, needs_review, resolved]
+                  enum: [new, same_cover, variant, not_duplicate, needs_review, resolved]
       responses:
         '200':
-          description: Status updated
+          description: >-
+            Status updated. Event logging is best-effort; event_logged is false
+            and warning is present when the status committed but audit logging failed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, event_logged, pair, status]
+                properties:
+                  success:
+                    type: boolean
+                  event_logged:
+                    type: boolean
+                  pair:
+                    type: string
+                  status:
+                    type: string
+                    enum: [new, same_cover, variant, not_duplicate, needs_review, resolved]
+                  event_id:
+                    type: string
+                    description: Present when the review event was logged.
+                  warning:
+                    type: string
+                    description: Present when the status committed but event logging failed.
+        '400':
+          description: Invalid pair identifier or review status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
       x-mojo-to: 'api-coverduplicates#update_status'
   /stamps/{id}:
     get:

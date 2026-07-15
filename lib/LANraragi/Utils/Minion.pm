@@ -63,9 +63,11 @@ sub add_tasks {
             } or $error = $@ || "Unknown ingest failure";
 
             if ($error) {
-                $redis_cfg->quit;
                 $logger->error("Failed to ingest $file: $error");
                 $job->fail( { errors => [$error], file => $file } );
+                my $state = eval { $job->info->{state} } // '';
+                $redis_cfg->del($lock_key) if $lock_key && $state eq 'failed';
+                $redis_cfg->quit;
                 return;
             }
             $redis_cfg->del($lock_key) if $lock_key;

@@ -59,6 +59,7 @@ let preloadedPromises = {};
 let preloadedOrder = [];
 let preloadedSizes = {};
 let preloadedDimensions = {};   // fork: page index -> { width, height }, for spread rendering decisions
+let metadataRenderGeneration = 0;
 let archiveIndex = -1;
 let archiveIds = [];
 let spaceScroll = { timeout: null, animationId: null };
@@ -2012,6 +2013,16 @@ function loadBookmarkStatus() {
 }
 
 function updateMetadata() {
+    metadataRenderGeneration += 1;
+    const renderGeneration = metadataRenderGeneration;
+    const metadataPage = currentPage;
+    const metadataSinglePage = showingSinglePage;
+    const isCurrentMetadataRender = () => (
+        metadataRenderGeneration === renderGeneration
+        && currentPage === metadataPage
+        && showingSinglePage === metadataSinglePage
+    );
+
     const img = $("#img")[0];
     const { filename } = img.dataset;
 
@@ -2050,7 +2061,7 @@ function updateMetadata() {
         renderSingle(size);
         if (size === undefined) {
             const idx = currentPage;
-            fetchAndStore(idx).then((s) => { if (currentPage === idx) renderSingle(s); });
+            fetchAndStore(idx).then((s) => { if (isCurrentMetadataRender()) renderSingle(s); });
         }
     } else {
         const size = preloadedSizes[currentPage];
@@ -2059,7 +2070,7 @@ function updateMetadata() {
         if (size === undefined || sizePre === undefined) {
             const idx = currentPage;
             Promise.all([fetchAndStore(idx), fetchAndStore(idx + 1)]).then(([s1, s2]) => {
-                if (currentPage === idx) renderDouble(s1, s2);
+                if (isCurrentMetadataRender()) renderDouble(s1, s2);
             });
         }
     }

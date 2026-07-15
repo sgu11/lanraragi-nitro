@@ -376,7 +376,12 @@ sub build_json ( $id, %hash ) {
         lastreadtime => $lastreadtime ? int($lastreadtime) : 0,
         size         => $arcsize      ? int($arcsize)      : 0,
         toc                      => \@chapters,
-        spreadstart              => $spreadstart ? $spreadstart : "auto",
+        spreadstart              => do {
+            my $value = $spreadstart // '';
+            $value = 'pair2' if $value eq 'none' || $value eq 'always';
+            $value = 'auto' unless $value eq 'auto' || $value eq 'pair2';
+            $value;
+        },
         firstspreadstart            => $firstspreadstart,
         firstspreadstart_confidence => $firstspreadstart_confidence,
         firstspreadstart_reason     => $firstspreadstart_reason,

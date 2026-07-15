@@ -27,4 +27,18 @@ is( $json->{firstspreadstart_confidence}, "0.72",        "archive JSON includes 
 is( $json->{firstspreadstart_reason},     "sample_vote", "archive JSON includes detection reason" );
 is( $json->{firstspreadstart_v},          "1",           "archive JSON includes detection algorithm version" );
 
+for my $case (
+    [ auto    => 'auto'  ],
+    [ pair2   => 'pair2' ],
+    [ none    => 'pair2' ],
+    [ always  => 'pair2' ],
+    [ pair3   => 'auto'  ],
+    [ unknown => 'auto'  ],
+) {
+    my ($stored, $expected) = @$case;
+    $redis->hset( $id, "spreadstart", $stored );
+    my $normalized = get_archive_json( $redis, $id );
+    is( $normalized->{spreadstart}, $expected, "spreadstart $stored serializes as $expected" );
+}
+
 done_testing();

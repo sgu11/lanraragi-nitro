@@ -34,6 +34,22 @@ package ShinobuIngestRedis {
     sub quit { 1 }
 }
 
+package ShinobuTransactionalRedis {
+    sub new { bless { LRR_FILEMAP => {}, LRR_FILEMAP_PENDING => {} }, shift }
+    sub hexists { exists $_[0]->{$_[1]}{$_[2]} }
+    sub hget { $_[0]->{$_[1]}{$_[2]} }
+    sub hset { $_[0]->{$_[1]}{$_[2]} = $_[3]; 1 }
+    sub hdel { delete $_[0]->{$_[1]}{$_[2]}; 1 }
+    sub quit { 1 }
+}
+
+package ShinobuTransactionalArchiveRedis {
+    sub new { bless { archives => {} }, shift }
+    sub exists { exists $_[0]->{archives}{$_[1]} }
+    sub hget { return $_[2] eq "arcsize" ? 512_001 : 1 }
+    sub quit { 1 }
+}
+
 package ShinobuCoverDedupMinion {
     our @enqueued;
     sub new { bless {}, shift }
@@ -78,7 +94,7 @@ package ShinobuPageCacheLogger {
 package ShinobuPageCacheRedisCfg {
     sub new { bless { file => $_[1], id => $_[2] }, $_[0] }
     sub hexists { 1 }
-    sub hget { return $_[0]->{id} }
+    sub hget { return $_[1] eq "LRR_FILEMAP" ? $_[0]->{id} : undef }
     sub hset { 1 }
 }
 
@@ -157,6 +173,119 @@ note('add_new_file propagates core ingest failures after cleanup');
     my $error;
     eval { Shinobu::add_new_file( 'abc123', '/tmp/broken.cbz' ); 1 } or $error = $@;
     like( $error, qr/^broken archive/, 'Minion caller can fail and retry the ingest job' );
+}
+
+note('failed initial ingest remains retryable until add_new_file completes');
+{
+    my ( $fh, $filename ) = tempfile( SUFFIX => '.cbz', UNLINK => 1 );
+    print {$fh} "x" x 512_001;
+    close $fh;
+
+    my $redis_cfg = ShinobuTransactionalRedis->new;
+    my $config_mod = Test::MockModule->new('LANraragi::Model::Config');
+    $config_mod->redefine('get_redis', sub { ShinobuTransactionalArchiveRedis->new });
+
+    my $calls = 0;
+    no warnings 'redefine';
+    local *Shinobu::is_archive = sub { 1 };
+    local *Shinobu::wait_for_stable_size = sub { 1 };
+    local *Shinobu::compute_id = sub { "1234567890abcdef1234567890abcdef12345678" };
+    local *Shinobu::exec_with_lock_pure = sub {
+        my (undef, $code) = @_;
+        return (1, $code->());
+    };
+    local *Shinobu::add_new_file = sub {
+        $calls++;
+        die "first ingest failed\n" if $calls == 1;
+        return 1;
+    };
+    local *Shinobu::invalidate_cache = sub { 1 };
+
+    my $error;
+    eval { Shinobu::add_to_filemap( $redis_cfg, $filename ); 1 } or $error = $@;
+    like($error, qr/^first ingest failed/, "first ingest failure propagates");
+    ok($redis_cfg->hexists("LRR_FILEMAP_PENDING", $filename), "failed ingest remains explicitly pending");
+
+    Shinobu::add_to_filemap( $redis_cfg, $filename );
+    is($calls, 2, "retry runs add_new_file again instead of accepting the partial filemap");
+    ok(!$redis_cfg->hexists("LRR_FILEMAP_PENDING", $filename), "successful retry commits the ingest");
+}
+
+note('failed ingest with changed content migrates partial state and retries full ingest');
+{
+    my ( $fh, $filename ) = tempfile( SUFFIX => '.cbz', UNLINK => 1 );
+    print {$fh} "x" x 512_001;
+    close $fh;
+
+    my $old_id = "1234567890abcdef1234567890abcdef12345678";
+    my $new_id = "abcdef1234567890abcdef1234567890abcdef12";
+    my $redis_cfg = ShinobuTransactionalRedis->new;
+    my $redis_arc = ShinobuTransactionalArchiveRedis->new;
+    my $config_mod = Test::MockModule->new('LANraragi::Model::Config');
+    $config_mod->redefine('get_redis', sub { $redis_arc });
+
+    my @computed_ids = ( $old_id, $new_id );
+    my @ingested_ids;
+    my @migrations;
+    my @pending_during_ingest;
+    no warnings 'redefine';
+    local *Shinobu::is_archive = sub { 1 };
+    local *Shinobu::wait_for_stable_size = sub { 1 };
+    local *Shinobu::compute_id = sub { shift @computed_ids };
+    local *Shinobu::exec_with_lock_pure = sub {
+        my (undef, $code) = @_;
+        return (1, $code->());
+    };
+    local *Shinobu::change_archive_id = sub {
+        my ( $from, $to ) = @_;
+        push @migrations, [ $from, $to ];
+        delete $redis_arc->{archives}{$from};
+        $redis_arc->{archives}{$to} = 1;
+    };
+    local *Shinobu::add_new_file = sub {
+        my ( $id, undef ) = @_;
+        push @ingested_ids, $id;
+        push @pending_during_ingest, $redis_cfg->hget( "LRR_FILEMAP_PENDING", $filename );
+        if ( @ingested_ids == 1 ) {
+            $redis_arc->{archives}{$id} = 1;
+            die "first ingest failed\n";
+        }
+        return 1;
+    };
+    local *Shinobu::invalidate_cache = sub { 1 };
+
+    my $error;
+    eval { Shinobu::add_to_filemap( $redis_cfg, $filename ); 1 } or $error = $@;
+    like($error, qr/^first ingest failed/, "first ingest failure propagates");
+    is($redis_cfg->hget("LRR_FILEMAP", $filename), $old_id, "failed ingest keeps the original filemap ID");
+    is($redis_cfg->hget("LRR_FILEMAP_PENDING", $filename), $old_id, "failed ingest keeps the original pending ID");
+
+    Shinobu::add_to_filemap( $redis_cfg, $filename );
+    is_deeply( \@migrations, [ [ $old_id, $new_id ] ], "partial archive state migrates to the recomputed ID" );
+    is_deeply( \@ingested_ids, [ $old_id, $new_id ], "changed-ID retry reruns full ingestion" );
+    is_deeply( \@pending_during_ingest, [ $old_id, $new_id ], "pending marker tracks the active ID through successful ingestion" );
+    is($redis_cfg->hget("LRR_FILEMAP", $filename), $new_id, "filemap tracks the recomputed ID");
+    ok(!$redis_cfg->hexists("LRR_FILEMAP_PENDING", $filename), "pending marker clears only after retry succeeds");
+}
+
+note('compute_id failures propagate to the Minion retry boundary');
+{
+    my ( $fh, $filename ) = tempfile( SUFFIX => '.cbz', UNLINK => 1 );
+    print {$fh} "x" x 512_001;
+    close $fh;
+
+    my $redis_cfg = ShinobuTransactionalRedis->new;
+    my $config_mod = Test::MockModule->new('LANraragi::Model::Config');
+    $config_mod->redefine('get_redis', sub { ShinobuTransactionalArchiveRedis->new });
+
+    no warnings 'redefine';
+    local *Shinobu::is_archive = sub { 1 };
+    local *Shinobu::wait_for_stable_size = sub { 1 };
+    local *Shinobu::compute_id = sub { die "cannot hash archive\n" };
+
+    my $error;
+    eval { Shinobu::add_to_filemap( $redis_cfg, $filename ); 1 } or $error = $@;
+    like($error, qr/^cannot hash archive/, "hashing error is not converted into task success");
 }
 
 note('same-ID replacement cover dedup refresh enqueues coverhash only by default');
