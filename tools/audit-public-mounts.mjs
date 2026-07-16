@@ -6,6 +6,7 @@
  *
  * Usage:
  *   node tools/audit-public-mounts.mjs --mounts-file path/to/mounts.txt
+ *     [--changes-file path/to/git-name-status.txt]
  *   node tools/audit-public-mounts.mjs --mounts-file fixtures/complete.txt
  *
  * Mounts file format: one compose-style "host:container[:mode]" mount per
@@ -16,6 +17,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseChangesInventory } from "./classify-change-surface.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
@@ -23,6 +25,13 @@ const REPO_ROOT = resolve(__dirname, "..");
 /** Fork files that require individual bind mounts (see docs/DEPLOYMENT.md). */
 export const FORK_PUBLIC_MOUNT_PATHS = Object.freeze([
     "tools/openapi.yaml",
+    "public/js/mod/common.js",
+    "public/js/duplicates.js",
+    "public/js/mod/index.js",
+    "public/js/mod/index_datatables.js",
+    "public/js/mod/index-order.js",
+    "public/js/reader.js",
+    "public/js/mod/server.js",
     "public/js/mod/reader-spread.js",
     "public/js/mod/progress-migration.js",
     "public/js/mod/reader-chrome.js",
@@ -33,6 +42,7 @@ export const FORK_PUBLIC_MOUNT_PATHS = Object.freeze([
     "public/js/mod/perf.js",
     "public/js/mod/index_contextmenu.js",
     "public/js/mod/index_grid_selection.js",
+    "public/css/lrr.css",
     "public/css/reader-chrome.css",
     "public/js/duplicates_custom.js",
     "public/css/duplicates_custom.css",
@@ -73,6 +83,24 @@ export function parseMountsInventory(text) {
     return mounts;
 }
 
+/**
+ * Return checkout-backed JS/CSS files that must be individually mounted for a
+ * Git name-status inventory. Deleted files have no destination to require;
+ * stale mounts for them are caught by the reverse on-disk audit.
+ */
+export function requiredMountPathsFromChanges(text) {
+    const required = [];
+    const seen = new Set();
+    for (const change of parseChangesInventory(text)) {
+        if (!/^[AMTRC]/.test(change.status)) continue;
+        const path = change.path;
+        if (!path || !/^public\/(?:js|css)\/.+/.test(path) || seen.has(path)) continue;
+        seen.add(path);
+        required.push(path);
+    }
+    return required;
+}
+
 export function auditMounts(mounts, required = FORK_PUBLIC_MOUNT_PATHS) {
     const bySource = new Map(mounts.map((mount) => [mount.source, mount]));
     const missing = [];
@@ -103,13 +131,16 @@ export function auditMounts(mounts, required = FORK_PUBLIC_MOUNT_PATHS) {
 
 function main(argv = process.argv.slice(2)) {
     let mountsFile = null;
+    let changesFile = null;
     for (let i = 0; i < argv.length; i++) {
         if (argv[i] === "--mounts-file" && argv[i + 1]) {
             mountsFile = argv[++i];
+        } else if (argv[i] === "--changes-file" && argv[i + 1]) {
+            changesFile = argv[++i];
         }
     }
     if (!mountsFile) {
-        console.error("Usage: node tools/audit-public-mounts.mjs --mounts-file <inventory.txt>");
+        console.error("Usage: node tools/audit-public-mounts.mjs --mounts-file <inventory.txt> [--changes-file <git-name-status.txt>]");
         process.exit(2);
     }
     const abs = resolve(process.cwd(), mountsFile);
@@ -119,12 +150,26 @@ function main(argv = process.argv.slice(2)) {
     }
     const text = readFileSync(abs, "utf8");
     const mounts = parseMountsInventory(text);
-    const result = auditMounts(mounts);
+    let required = [...FORK_PUBLIC_MOUNT_PATHS];
+    if (changesFile) {
+        const changesAbs = resolve(process.cwd(), changesFile);
+        if (!existsSync(changesAbs)) {
+            console.error(`Changes file not found: ${changesAbs}`);
+            process.exit(2);
+        }
+        required = [...new Set([
+            ...required,
+            ...requiredMountPathsFromChanges(readFileSync(changesAbs, "utf8")),
+        ])];
+    }
+    const result = auditMounts(mounts, required);
 
     // Reverse direction: every repo-scoped source named by the inventory must
     // still exist. This catches stale mounts after upstream deletes/renames.
-    const absentOnDisk = mounts
-        .map((mount) => mount.source)
+    const absentOnDisk = [...new Set([
+        ...mounts.map((mount) => mount.source),
+        ...required,
+    ])]
         .filter((path) => /^(public\/|tools\/openapi\.yaml$)/.test(path))
         .filter((path) => !existsSync(join(REPO_ROOT, path)));
 

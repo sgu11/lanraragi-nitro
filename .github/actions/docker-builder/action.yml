@@ -1,5 +1,5 @@
 name: 'Docker builder'
-description: ''
+description: 'Build and publish one platform image by digest'
 inputs:
   platform:
     required: true

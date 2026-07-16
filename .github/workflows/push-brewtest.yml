@@ -1,4 +1,4 @@
-on: push
+"on": workflow_dispatch
 name: "Test Homebrew"
 jobs:
   testBrew:
@@ -16,7 +16,7 @@ jobs:
         sed -i.bck "s/COMMIT_HASH/$(git rev-parse --verify HEAD)/" Lanraragi.rb
 
         echo "Copying test formula to custom tap to allow installation"
-        cp Lanraragi.rb $(brew --repository)/Library/Taps/difegue/homebrew-lanraragi/Formula/
+        cp Lanraragi.rb "$(brew --repository)/Library/Taps/difegue/homebrew-lanraragi/Formula/"
 
         brew install --force --verbose --build-from-source difegue/lanraragi/lanraragi
         brew test --verbose difegue/lanraragi/lanraragi

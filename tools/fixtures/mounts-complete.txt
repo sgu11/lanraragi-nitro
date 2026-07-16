@@ -1,5 +1,12 @@
 # Complete fork public mount inventory (fixture for audit-public-mounts.mjs)
 ./LANraragi/tools/openapi.yaml:/home/koyomi/lanraragi/tools/openapi.yaml:ro
+./LANraragi/public/js/mod/common.js:/home/koyomi/lanraragi/public/js/mod/common.js:ro
+./LANraragi/public/js/duplicates.js:/home/koyomi/lanraragi/public/js/duplicates.js:ro
+./LANraragi/public/js/mod/index.js:/home/koyomi/lanraragi/public/js/mod/index.js:ro
+./LANraragi/public/js/mod/index_datatables.js:/home/koyomi/lanraragi/public/js/mod/index_datatables.js:ro
+./LANraragi/public/js/mod/index-order.js:/home/koyomi/lanraragi/public/js/mod/index-order.js:ro
+./LANraragi/public/js/reader.js:/home/koyomi/lanraragi/public/js/reader.js:ro
+./LANraragi/public/js/mod/server.js:/home/koyomi/lanraragi/public/js/mod/server.js:ro
 ./LANraragi/public/js/mod/reader-spread.js:/home/koyomi/lanraragi/public/js/mod/reader-spread.js:ro
 ./LANraragi/public/js/mod/progress-migration.js:/home/koyomi/lanraragi/public/js/mod/progress-migration.js:ro
 ./LANraragi/public/js/mod/reader-chrome.js:/home/koyomi/lanraragi/public/js/mod/reader-chrome.js:ro
@@ -10,6 +17,7 @@
 ./LANraragi/public/js/mod/perf.js:/home/koyomi/lanraragi/public/js/mod/perf.js:ro
 ./LANraragi/public/js/mod/index_contextmenu.js:/home/koyomi/lanraragi/public/js/mod/index_contextmenu.js:ro
 ./LANraragi/public/js/mod/index_grid_selection.js:/home/koyomi/lanraragi/public/js/mod/index_grid_selection.js:ro
+./LANraragi/public/css/lrr.css:/home/koyomi/lanraragi/public/css/lrr.css:ro
 ./LANraragi/public/css/reader-chrome.css:/home/koyomi/lanraragi/public/css/reader-chrome.css:ro
 ./LANraragi/public/js/duplicates_custom.js:/home/koyomi/lanraragi/public/js/duplicates_custom.js:ro
 ./LANraragi/public/css/duplicates_custom.css:/home/koyomi/lanraragi/public/css/duplicates_custom.css:ro

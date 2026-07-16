@@ -14,6 +14,8 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 
 ### Fork review hardening (2026-07-15)
 
+- **Proportional deployment environment delivery contract** — routine feature fork changes now use changed-surface validation plus short HTTP/Valkey/Shinobu/Minion readiness, while structural/data/runtime/dependency work keeps the full gate, mount/OpenAPI/vendor guards, rollback tuple, and Redis backup where applicable. Public multi-platform, Windows, Homebrew, MSI, Docker Hub, and GitHub Release artifacts run only by manual dispatch or an explicit public release trigger.
+
 - Duplicate review now rejects unsafe archive-member paths before extraction,
   escapes archive metadata through the shared HTML encoder, and imports the
   cache-busted `lrr-common` module.

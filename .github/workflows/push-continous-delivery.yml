@@ -1,9 +1,16 @@
-on: 
-  push:
-    branches:
-    - dev
-    - test-builds
-    - actions-testing
+"on":
+  workflow_dispatch:
+    inputs:
+      publish_multiarch_docker:
+        description: "Publish ARM v6/v7/arm64 and x86 Docker nightly images"
+        required: false
+        type: boolean
+        default: false
+      build_windows_msi:
+        description: "Build the native Windows MSI artifact"
+        required: false
+        type: boolean
+        default: false
 env:
   REGISTRY_IMAGE: difegue/lanraragi
   TAG: nightly
@@ -12,6 +19,7 @@ jobs:
 
   buildDockerArm:
     name: Build Docker Images (ARM)
+    if: ${{ inputs.publish_multiarch_docker }}
     runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
@@ -31,6 +39,7 @@ jobs:
 
   buildDockerx86:
     name: Build Docker Images (x86)
+    if: ${{ inputs.publish_multiarch_docker }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -49,6 +58,7 @@ jobs:
 
   mergeDocker:
     name: Merge Docker Images
+    if: ${{ inputs.publish_multiarch_docker }}
     runs-on: ubuntu-24.04
     needs:
       - buildDockerArm
@@ -63,6 +73,7 @@ jobs:
 
   buildNightlyMSYS2:
     name: Build and export native Windows version
+    if: ${{ inputs.build_windows_msi }}
     runs-on: windows-2025
     steps:
     - uses: actions/checkout@v6

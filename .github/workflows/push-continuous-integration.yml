@@ -1,67 +1,157 @@
-on:
+"on":
   push:
+    branches:
+      - dev
   pull_request:
   workflow_dispatch:
     inputs:
+      run_guarded:
+        description: "Run the full Perl/Docker/Perl::Critic gate"
+        required: false
+        type: boolean
+        default: false
+      run_docker_integration:
+        description: "Run the long Linux browser/integration sweep"
+        required: false
+        type: boolean
+        default: false
+      run_windows_integration:
+        description: "Run the Windows artifact and integration sweep"
+        required: false
+        type: boolean
+        default: false
       integration_test_repository:
-        description: 'Integration testing repository path'
+        description: "Integration testing repository path"
         required: true
-        default: 'psilabs-dev/aio-lanraragi'
+        default: "psilabs-dev/aio-lanraragi"
       integration_test_ref:
-        description: 'Integration testing repository git commit hash or branch'
+        description: "Integration testing repository git commit hash or branch"
         required: true
-        default: '64b12b317ed85e6f1185328f6a0e3ca4b34cab87'
+        default: "64b12b317ed85e6f1185328f6a0e3ca4b34cab87"
+
+permissions:
+  contents: read
 
 env:
-  INTEGRATION_TEST_REPOSITORY: ${{ github.event.inputs.integration_test_repository || 'psilabs-dev/aio-lanraragi' }}
-  INTEGRATION_TEST_REF: ${{ github.event.inputs.integration_test_ref || '64b12b317ed85e6f1185328f6a0e3ca4b34cab87' }}
+  INTEGRATION_TEST_REPOSITORY: ${{ inputs.integration_test_repository || 'psilabs-dev/aio-lanraragi' }}
+  INTEGRATION_TEST_REF: ${{ inputs.integration_test_ref || '64b12b317ed85e6f1185328f6a0e3ca4b34cab87' }}
 
-name: "Continuous Integration \U0001F44C\U0001F440"
+name: feature fork Gate
+
 jobs:
-  eslint:
-    name: Frontend lint, unit tests, and deploy audit
+  classify:
+    name: Classify changed surface
+    runs-on: ubuntu-latest
+    outputs:
+      full_gate: ${{ steps.surface.outputs.full_gate }}
+      long_browser: ${{ steps.surface.outputs.long_browser }}
+      perl: ${{ steps.surface.outputs.perl }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Build change inventory
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CURRENT_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE_SHA="$PR_BASE_SHA"
+          elif [ "$EVENT_NAME" = "push" ] && [ -n "$BEFORE_SHA" ] && ! printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
+            BASE_SHA="$BEFORE_SHA"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+            BASE_SHA=$(git merge-base "$CURRENT_SHA" "origin/$DEFAULT_BRANCH")
+          else
+            BASE_SHA="${CURRENT_SHA}^"
+          fi
+          git diff --name-status --find-renames "$BASE_SHA" "$CURRENT_SHA" > /tmp/lrr-changes.txt
+      - name: Select validation lane
+        id: surface
+        run: |
+          node tools/classify-change-surface.mjs \
+            --changes-file /tmp/lrr-changes.txt \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Share change inventory with the fast gate
+        uses: actions/upload-artifact@v7
+        with:
+          name: lrr-change-inventory
+          path: /tmp/lrr-changes.txt
+          retention-days: 1
+
+  privateForkGate:
+    name: Fast feature fork push gate
+    needs: classify
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-node@v6
-      with:
-        node-version: "22"
-        cache: npm
-    - run: npm ci
-    - run: npm run lint
-    - run: npm run test:js
-    - run: node tools/audit-public-mounts.mjs --mounts-file tools/fixtures/mounts-complete.txt
-    - run: npm audit --audit-level=high
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Download classified change inventory
+        uses: actions/download-artifact@v8
+        with:
+          name: lrr-change-inventory
+          path: /tmp/lrr-change-inventory
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:js
+      - run: npm run lint-openapi
+      - run: >-
+          node tools/audit-public-mounts.mjs
+          --mounts-file tools/fixtures/mounts-complete.txt
+          --changes-file /tmp/lrr-change-inventory/lrr-changes.txt
+      - run: npm audit --audit-level=high
 
   testSuite:
-    name: Run Test Suite and Perl Critic
+    name: Guarded full suite and Perl::Critic
+    needs: classify
+    if: >-
+      needs.classify.outputs.full_gate == 'true' ||
+      needs.classify.outputs.perl == 'true' ||
+      (github.event_name == 'workflow_dispatch' &&
+        (inputs.run_guarded || inputs.run_docker_integration || inputs.run_windows_integration))
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v4
-    - name: Build LRR Docker image
-      uses: docker/build-push-action@v7
-      with:
-        file: ./tools/build/docker/Dockerfile
-        tags: lanraragi:test
-        outputs: type=docker
-        cache-from: type=gha,scope=buildkit-linux-amd64
-    - name: Copy tests
-      run: cp -R tests .github/action-run-tests
-    - name: LANraragi Test Suite
-      uses: ./.github/action-run-tests
-    - name: Perl Critic
-      uses: Difegue/action-perlcritic@d7e751eb07c818ee735b2b0cd03c6974bb7d0d5b # 2.1.0
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
+      - uses: actions/checkout@v6
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build LRR Docker image
+        uses: docker/build-push-action@v7
+        with:
+          file: ./tools/build/docker/Dockerfile
+          tags: lanraragi:test
+          outputs: type=docker
+          cache-from: type=gha,scope=buildkit-linux-amd64
+          cache-to: type=gha,mode=max,scope=buildkit-linux-amd64
+      - name: Copy tests
+        run: cp -R tests .github/action-run-tests
+      - name: LANraragi Test Suite
+        uses: ./.github/action-run-tests
+      - name: Perl Critic
+        uses: Difegue/action-perlcritic@d7e751eb07c818ee735b2b0cd03c6974bb7d0d5b # 2.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
           args: ./lib/* ./script/* ./tools/install.pl
 
   integrationTestsDocker:
-    name: Run Docker Integration Tests
+    name: Guarded Linux browser integration
     runs-on: ubuntu-latest
-    needs: testSuite
+    needs:
+      - classify
+      - testSuite
+    if: >-
+      always() && needs.testSuite.result == 'success' &&
+      (needs.classify.outputs.long_browser == 'true' ||
+        (github.event_name == 'workflow_dispatch' && inputs.run_docker_integration))
     steps:
       - name: Checkout LANraragi repository
         uses: actions/checkout@v6
@@ -88,7 +178,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
       - name: Install workspace packages
@@ -97,8 +187,7 @@ jobs:
           uv sync --all-packages
           uv run playwright install
       - name: Create staging directory
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/staging"
+        run: mkdir -p "$GITHUB_WORKSPACE/staging"
       - name: Run integration tests against local LANraragi build
         timeout-minutes: 70
         run: |
@@ -123,18 +212,21 @@ jobs:
           retention-days: 14
 
   integrationTestsWindows:
-    name: Run Windows Integration Tests
+    name: Manual Windows artifact and integration
     runs-on: windows-2025
     needs: testSuite
+    if: >-
+      always() && needs.testSuite.result == 'success' &&
+      github.event_name == 'workflow_dispatch' && inputs.run_windows_integration
     steps:
       - name: Checkout LANraragi repository
         uses: actions/checkout@v6
         with:
-          path: lanraragi
+          path: LANraragi
       - name: Compute windist cache key
         id: windist-key
         run: |
-          $toolsHash = git -C "$env:GITHUB_WORKSPACE\lanraragi" rev-parse HEAD:tools
+          $toolsHash = git -C "$env:GITHUB_WORKSPACE\LANraragi" rev-parse HEAD:tools
           "key=windist-${{ runner.os }}-$toolsHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
       - name: Restore windist cache
         id: cache-windist
@@ -160,8 +252,7 @@ jobs:
         if: steps.cache-windist.outputs.cache-hit != 'true'
         shell: msys2 {0}
         working-directory: LANraragi
-        run: |
-          ./tools/build/windows/install-deps.sh
+        run: ./tools/build/windows/install-deps.sh
       - name: Build
         if: steps.cache-windist.outputs.cache-hit != 'true'
         shell: msys2 {0}
@@ -173,8 +264,7 @@ jobs:
       - name: Enable UTF-8
         if: steps.cache-windist.outputs.cache-hit != 'true'
         working-directory: LANraragi
-        run: |
-          ./tools/build/windows/utf8-support.ps1
+        run: ./tools/build/windows/utf8-support.ps1
       - name: Create windist zip for cache
         if: steps.cache-windist.outputs.cache-hit != 'true'
         run: |
@@ -209,7 +299,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
       - name: Install workspace packages
@@ -218,8 +308,7 @@ jobs:
           uv sync --all-packages
           uv run playwright install
       - name: Create staging directory
-        run: |
-          New-Item -ItemType Directory -Path "$env:GITHUB_WORKSPACE\staging" -Force | Out-Null
+        run: New-Item -ItemType Directory -Path "$env:GITHUB_WORKSPACE\staging" -Force | Out-Null
       - name: Run integration tests against local LANraragi build
         working-directory: aio-lanraragi/integration_tests
         timeout-minutes: 100

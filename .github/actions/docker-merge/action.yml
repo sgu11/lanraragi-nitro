@@ -1,5 +1,5 @@
 name: 'Docker merge'
-description: ''
+description: 'Merge per-platform digests into a published manifest list'
 inputs:
   docker-username:
     required: true
