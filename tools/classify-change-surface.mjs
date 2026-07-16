@@ -34,10 +34,14 @@ const CPANFILE_RE = /(?:^|\/)cpanfile(?:\.snapshot)?$/i;
 const INSTALL_SCRIPT_RE = /(?:^|\/)(?:install|setup)(?:[-_.][^/]*)?\.(?:pl|pm|sh|bash|zsh|ps1|bat|cmd)$/i;
 const DOCKERFILE_RE = /(?:^|\/)dockerfile(?:\.[^/]*)?$/i;
 const S6_RE = /(?:^|\/)s6(?:\/|$)/i;
+const DOCKER_BUILD_SUPPORT_RE = /^tools\/build\/all(?:\/|$)/i;
+const IMAGE_RUNTIME_INPUT_RE = /^(?:(?:\.dockerignore|lrr\.conf)$|script(?:\/|$))/i;
 const RUNTIME_INPUT_RE = /(?:^|\/)(?:runtime|entrypoint|dependencies?|requirements?)(?:[./_-]|\/|$)/i;
 const IMAGE_ONLY_VENDOR_ASSET_RE = /^public\/(?:js\/vendor|css\/(?:vendor|webfonts))(?:\/|$)/i;
 const IMAGE_ONLY_PUBLIC_ASSET_RE = /^public\/(?!js(?:\/|$)|css(?:\/|$)|themes(?:\/|$)).+/i;
-const GUARDED_PERL_SURFACE_RE = /^(?:lib\/(?:Worker|Shinobu)\.pm|lib\/LANraragi\/Model\/|lib\/LANraragi\/Controller\/(?:Api(?:\/|$)|Login\.pm$|Upload\.pm$|Backup\.pm$)|lib\/LANraragi\/Plugin\/Login\/|lib\/LANraragi\/Utils\/(?:Database|Login|Minion|Redis)\.pm$)/i;
+const GUARD_POLICY_SURFACE_RE = /^(?:tools\/classify-change-surface\.mjs|tests\/js\/(?:change-surface|workflow-policy-source)\.test\.mjs|\.github\/workflows\/push-continuous-integration\.yml)$/i;
+const GUARDED_ROUTE_SURFACE_RE = /^(?:lib\/LANraragi\.pm$|lib\/LANraragi\/Controller\/|lib\/LANraragi\/Utils\/(?:OpenAPI|Routing)\.pm$)/i;
+const GUARDED_PERL_SURFACE_RE = /^(?:lib\/(?:Worker|Shinobu)\.pm|lib\/LANraragi\/Model\/|lib\/LANraragi\/Plugin\/Login\/|lib\/LANraragi\/Utils\/(?:Database|Login|Minion|Redis)\.pm$)/i;
 
 const FRONTEND_PACKAGE_RE = /(?:^|\/)(?:package(?:-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock)$/i;
 const ESLINT_CONFIG_RE = /(?:^|\/)(?:eslint\.config\.[^/]+|\.eslintrc(?:\.[^/]+)?)$/i;
@@ -140,7 +144,7 @@ function isMountAuditPath(path) {
 function isTier3Path(path) {
     if (PACKAGE_INPUT_RE.test(path) || CPANFILE_RE.test(path)) return true;
     if (INSTALL_SCRIPT_RE.test(path)) return true;
-    if (DOCKERFILE_RE.test(path) || S6_RE.test(path)) return true;
+    if (DOCKERFILE_RE.test(path) || S6_RE.test(path) || DOCKER_BUILD_SUPPORT_RE.test(path) || IMAGE_RUNTIME_INPUT_RE.test(path)) return true;
     if (IMAGE_ONLY_VENDOR_ASSET_RE.test(path) || IMAGE_ONLY_PUBLIC_ASSET_RE.test(path)) return true;
 
     // Keep common lock/runtime manifests covered even when a project moves
@@ -152,6 +156,10 @@ function isTier3Path(path) {
 
 function isGuardedPerlSurface(path) {
     return GUARDED_PERL_SURFACE_RE.test(path);
+}
+
+function isGuardedRouteSurface(path) {
+    return GUARDED_ROUTE_SURFACE_RE.test(path);
 }
 
 function isFrontendPath(path) {
@@ -217,6 +225,8 @@ export function classifyChangeSurface(input = [], options = {}) {
     let frontendHit = false;
     let perlHit = false;
     let guardedPerlHit = false;
+    let guardedRouteHit = false;
+    let guardPolicyHit = false;
     const tier3Paths = new Set();
 
     for (const change of normalizedChanges) {
@@ -244,6 +254,8 @@ export function classifyChangeSurface(input = [], options = {}) {
         if (paths.some(isFrontendPath)) frontendHit = true;
         if (paths.some(isPerlPath)) perlHit = true;
         if (paths.some(isGuardedPerlSurface)) guardedPerlHit = true;
+        if (paths.some(isGuardedRouteSurface)) guardedRouteHit = true;
+        if (paths.some((path) => GUARD_POLICY_SURFACE_RE.test(path))) guardPolicyHit = true;
 
         if (openapiHit) mountAuditHit = true;
         if ((kind === "M" || kind === "A" || kind === "D" || kind === "R") && paths.some(isPublicAssetPath)) {
@@ -259,8 +271,8 @@ export function classifyChangeSurface(input = [], options = {}) {
         || renameHit
         || openapiHit
         || mountAuditToolFixtureHit;
-    const fullGate = tier === 3 || structuralAudit || guardedPerlHit || normalizedOptions.dataRisk;
-    const longBrowser = structuralAudit || normalizedOptions.evidence;
+    const fullGate = tier === 3 || structuralAudit || guardedPerlHit || guardedRouteHit || guardPolicyHit || normalizedOptions.dataRisk;
+    const longBrowser = structuralAudit || guardedRouteHit || normalizedOptions.evidence;
     const lane = tier >= 2 || fullGate || normalizedOptions.evidence ? "guarded" : "fast";
 
     const reasons = new Set();
@@ -283,7 +295,13 @@ export function classifyChangeSurface(input = [], options = {}) {
         reasons.add("Structural audit required: mount-audit tool or fixture changed.");
     }
     if (guardedPerlHit) {
-        reasons.add("Full gate required: guarded API, model, auth, queue, or runtime Perl surface changed.");
+        reasons.add("Full gate required: guarded model, auth, queue, or runtime Perl surface changed.");
+    }
+    if (guardedRouteHit) {
+        reasons.add("Full gate and browser evidence required: public-route Perl surface changed.");
+    }
+    if (guardPolicyHit) {
+        reasons.add("Full gate required: validation policy or its contract tests changed.");
     }
     if (normalizedOptions.structural) {
         reasons.add("Structural audit explicitly requested.");

@@ -75,6 +75,12 @@ test("dependency and runtime inputs escalate to Tier 3", () => {
         "tools/install.pl",
         "tools/build/docker/Dockerfile",
         "tools/build/docker/s6/s6-rc.d/lanraragi/run",
+        "tools/build/all/perl-Crypt-DES-fedora-c99.patch",
+        ".dockerignore",
+        "lrr.conf",
+        "script/lanraragi",
+        "script/launcher.pl",
+        "script/backup",
         "public/app.webappmanifest",
         "public/img/favicon.png",
         "public/js/vendor/swiper.min.js",
@@ -89,6 +95,22 @@ test("dependency and runtime inputs escalate to Tier 3", () => {
     const deletedVendor = classifyChangeSurface("D\tpublic/css/vendor/legacy.css\n");
     assert.equal(deletedVendor.tier, 3);
     assert.equal(deletedVendor.full_gate, true);
+});
+
+test("non-runtime tooling scripts stay proportional", () => {
+    for (const path of [
+        "tools/maintenance-helper.sh",
+        ".dockerignore.bak",
+        "lrr.conf.local",
+        "docs/script/example.pl",
+        "nested/lrr.conf",
+        "tools/build/allied/helper.patch",
+    ]) {
+        const result = classifyChangeSurface(`M\t${path}\n`);
+        assert.equal(result.tier, 1, path);
+        assert.equal(result.lane, "fast", path);
+        assert.equal(result.full_gate, false, path);
+    }
 });
 
 test("Perl test and test-harness changes select Perl validation", () => {
@@ -116,6 +138,42 @@ test("guarded Perl owners select the full gate", () => {
         assert.equal(result.lane, "guarded", path);
         assert.equal(result.full_gate, true, path);
         assert.equal(result.perl, true, path);
+    }
+});
+
+test("public-route Perl surfaces select guarded browser evidence", () => {
+    for (const path of [
+        "lib/LANraragi.pm",
+        "lib/LANraragi/Controller/Reader.pm",
+        "lib/LANraragi/Controller/Api/Archive.pm",
+        "lib/LANraragi/Controller/Index.pm",
+        "lib/LANraragi/Controller/Batch.pm",
+        "lib/LANraragi/Controller/Config.pm",
+        "lib/LANraragi/Controller/Duplicates.pm",
+        "lib/LANraragi/Utils/OpenAPI.pm",
+        "lib/LANraragi/Utils/Routing.pm",
+    ]) {
+        const result = classifyChangeSurface(`M\t${path}\n`);
+        assert.equal(result.tier, 1, path);
+        assert.equal(result.lane, "guarded", path);
+        assert.equal(result.full_gate, true, path);
+        assert.equal(result.long_browser, true, path);
+        assert.equal(result.perl, true, path);
+    }
+});
+
+test("validation-policy changes cannot select their own fast-only gate", () => {
+    for (const path of [
+        "tools/classify-change-surface.mjs",
+        "tests/js/change-surface.test.mjs",
+        "tests/js/workflow-policy-source.test.mjs",
+        ".github/workflows/push-continuous-integration.yml",
+    ]) {
+        const result = classifyChangeSurface(`M\t${path}\n`);
+        assert.equal(result.tier, 1, path);
+        assert.equal(result.lane, "guarded", path);
+        assert.equal(result.full_gate, true, path);
+        assert.equal(result.long_browser, false, path);
     }
 });
 
