@@ -88,6 +88,13 @@ test("reader overlay uses render containment and reader preload has an A/B strat
     assert.match(reader, /localStorage\.readerPreloadStrategy/);
     assert.match(reader, /preloadImageWithBrowserCache/);
     assert.match(reader, /preloadImageWithBlobUrl/);
+    assert.match(reader, /const MAX_PREDECODED_IMAGES = 2/);
+    assert.match(reader, /let predecodedImg = \{\}/);
+    assert.match(reader, /const predecodeNext = Math\.min\(preloadNext, doublePageMode \? 2 : 1\)/);
+    assert.match(reader, /loadImage\(index\)[\s\S]*\.then\(\(src\) => decodeImage\(src\)\)/);
+    assert.match(reader, /!predecodeSources\.has\(candidate\) && !predecodedImg\[loadedSrc\]/);
+    assert.match(reader, /if \(!predecodedImg\[src\]\)[\s\S]*predecodedImg\[src\] = img/);
+    assert.match(reader, /while \(predecodedOrder\.length > MAX_PREDECODED_IMAGES\)/);
     assert.match(reader, /const OVERLAY_PAGE_WINDOW_SIZE = 60/);
     assert.match(reader, /overlay-window-button/);
     assert.match(reader, /if \(\$\("#archivePagesOverlay"\)\.attr\("loaded"\) === "true"\) updateArchiveOverlay\(\)/);

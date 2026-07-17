@@ -48,6 +48,7 @@ let currentChapter = null;
 let showingSinglePage = true;
 let pageThumbnails = [];
 const MAX_PRELOADED_IMAGES = 8;
+const MAX_PREDECODED_IMAGES = 2;
 const INFINITE_SCROLL_WINDOW_RADIUS = 4;
 const OVERLAY_PAGE_WINDOW_SIZE = 60;
 const PROGRESS_PERSISTENCE_DELAY_MS = 200;
@@ -59,6 +60,10 @@ let preloadedPromises = {};
 let preloadedOrder = [];
 let preloadedSizes = {};
 let preloadedDimensions = {};   // fork: page index -> { width, height }, for spread rendering decisions
+let predecodedImg = {};
+let predecodedPromises = {};
+let predecodedOrder = [];
+let predecodeSources = new Set();
 let metadataRenderGeneration = 0;
 let archiveIndex = -1;
 let archiveIds = [];
@@ -2249,10 +2254,24 @@ function preloadImages() {
     let preloadPrev = preloadCount == 0 ? 0 : 1;
 
     if (doublePageMode) { preloadNext *= 2; preloadPrev *= 2; }
+    const predecodeNext = Math.min(preloadNext, doublePageMode ? 2 : 1);
 
     for (let i = 1; i <= preloadNext; i++) {
         if (currentPage + i > maxPage) { break; }
-        loadImage(currentPage + i).catch(() => {});
+        const index = currentPage + i;
+        if (i <= predecodeNext) {
+            const source = getReaderImageSource(index);
+            predecodeSources.add(source);
+            loadImage(index)
+                .then((src) => decodeImage(src))
+                .catch(() => {})
+                .finally(() => {
+                    predecodeSources.delete(source);
+                    prunePreloadedImages();
+                });
+        } else {
+            loadImage(index).catch(() => {});
+        }
     }
     for (let i = 1; i <= preloadPrev; i++) {
         if (currentPage - i < 0) { break; }
@@ -2268,7 +2287,11 @@ function touchPreloadedImage(src) {
 
 function prunePreloadedImages() {
     while (preloadedOrder.length > MAX_PRELOADED_IMAGES) {
-        const src = preloadedOrder.shift();
+        const evictIndex = preloadedOrder.findIndex((candidate) => {
+            const loadedSrc = preloadedImg[candidate];
+            return !predecodeSources.has(candidate) && !predecodedImg[loadedSrc];
+        });
+        const [src] = preloadedOrder.splice(evictIndex === -1 ? 0 : evictIndex, 1);
         const blobUrl = preloadedImg[src];
         if (blobUrl) {
             if (blobUrl.startsWith("blob:")) URL.revokeObjectURL(blobUrl);
@@ -2284,6 +2307,10 @@ function revokePreloadedImages() {
     preloadedImg = {};
     preloadedPromises = {};
     preloadedOrder = [];
+    predecodedImg = {};
+    predecodedPromises = {};
+    predecodedOrder = [];
+    predecodeSources = new Set();
 }
 
 window.addEventListener("pagehide", () => {
@@ -2292,13 +2319,39 @@ window.addEventListener("pagehide", () => {
 });
 
 async function decodeImage(src) {
-    const img = new Image();
-    img.src = src;
-    if (typeof img.decode === "function") return img.decode();
-    return new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = () => reject(new Error("Image decode failed"));
-    });
+    if (!src) return;
+    if (!predecodedImg[src]) {
+        const img = new Image();
+        img.decoding = "async";
+        img.src = src;
+        predecodedImg[src] = img;
+    }
+
+    predecodedOrder = predecodedOrder.filter((existingSrc) => existingSrc !== src);
+    predecodedOrder.push(src);
+    while (predecodedOrder.length > MAX_PREDECODED_IMAGES) {
+        const staleSrc = predecodedOrder.shift();
+        delete predecodedImg[staleSrc];
+        delete predecodedPromises[staleSrc];
+    }
+
+    if (!predecodedPromises[src]) {
+        const img = predecodedImg[src];
+        predecodedPromises[src] = (typeof img.decode === "function"
+            ? img.decode()
+            : new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = () => reject(new Error("Image decode failed"));
+            }))
+            .catch((error) => {
+                delete predecodedImg[src];
+                throw error;
+            })
+            .finally(() => {
+                delete predecodedPromises[src];
+            });
+    }
+    return predecodedPromises[src];
 }
 
 function getReaderPreloadStrategy() {
