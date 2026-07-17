@@ -7,14 +7,24 @@ const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), "ut
 test("reader eagerly discovers its module graph", async () => {
     const template = await source("templates/reader.html.tt2");
     const importMap = template.indexOf("[% INCLUDE common/importmap %]");
-    const readerEntry = template.indexOf('rel="modulepreload" href="[% c.url_for("/js/reader.js?$asset_version") %]"');
-    const readerRuntime = template.indexOf('rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader_common.js?$asset_version") %]"');
-    const i18n = template.indexOf('rel="modulepreload" href="[% c.url_for("/js/i18n.js?$asset_version") %]"');
+    const preloadedModules = [
+        "/js/reader.js?$asset_version",
+        "/js/$version/mod/reader_common.js?$asset_version",
+        "/js/i18n.js?$asset_version",
+        "/js/$version/mod/server.js?$asset_version",
+        "/js/$version/mod/common.js?$asset_version",
+        "/js/$version/mod/perf.js?$asset_version",
+        "/js/$version/mod/reader-crop.js?$asset_version",
+        "/js/$version/mod/reader-chrome.js?$asset_version",
+        "/js/$version/mod/reader-nav-keys.js?$asset_version",
+        "/js/$version/mod/reader-spread.js?$asset_version",
+        "/js/$version/vendor/fscreen.esm.js?$asset_version",
+    ];
 
     assert.notEqual(importMap, -1);
-    assert.ok(readerEntry > importMap);
-    assert.ok(readerRuntime > importMap);
-    assert.ok(i18n > importMap);
+    for (const modulePath of preloadedModules) {
+        assert.ok(template.indexOf(`rel="modulepreload" href="[% c.url_for("${modulePath}") %]"`) > importMap);
+    }
 });
 
 test("library hover prefetch decodes a bounded two-page reader window", async () => {
