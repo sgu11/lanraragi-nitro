@@ -20,10 +20,17 @@ test("thumbnail cards mark archive images as lazy", async () => {
 
 test("reader Blob URL preloading dedupes in-flight fetches and revokes evicted URLs", async () => {
     const js = await source("public/js/mod/reader_common.js");
+    const pruneStart = js.indexOf("function prunePreloadedImages()");
+    const pruneEnd = js.indexOf("function revokePreloadedImages()", pruneStart);
+    const prunePreloadedImages = js.slice(pruneStart, pruneEnd);
 
     assert.match(js, /MAX_PRELOADED_IMAGES/);
     assert.match(js, /preloadedPromises/);
     assert.match(js, /URL\.revokeObjectURL/);
+    assert.match(prunePreloadedImages, /const displayedSources = new Set/);
+    assert.match(prunePreloadedImages, /!displayedSources\.has\(loadedSrc\)/);
+    assert.match(prunePreloadedImages, /if \(evictIndex === -1\) \{ break; \}/);
+    assert.doesNotMatch(prunePreloadedImages, /evictIndex === -1 \? 0 : evictIndex/);
 });
 
 test("reader predecodes two forward spreads on high-memory clients without repeating completed decodes", async () => {

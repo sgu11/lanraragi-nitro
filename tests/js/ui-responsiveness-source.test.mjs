@@ -95,7 +95,7 @@ test("reader overlay uses render containment and reader preload has an A/B strat
     assert.match(reader, /predecodeIndexes\.size >= MAX_PREDECODED_IMAGES/);
     assert.match(reader, /if \(predecodeIndexes\.has\(index\)\)/);
     assert.match(reader, /loadImage\(index\)[\s\S]*\.then\(\(src\) => decodeImage\(src\)\)/);
-    assert.match(reader, /!predecodeSources\.has\(candidate\) && !predecodedImg\[loadedSrc\]/);
+    assert.match(reader, /!predecodeSources\.has\(candidate\)[\s\S]*!predecodedImg\[loadedSrc\][\s\S]*!displayedSources\.has\(loadedSrc\)/);
     assert.match(reader, /if \(!predecodedImg\[src\]\)[\s\S]*predecodedImg\[src\] = img/);
     assert.match(reader, /while \(predecodedOrder\.length > MAX_PREDECODED_IMAGES\)/);
     assert.match(reader, /const OVERLAY_PAGE_WINDOW_SIZE = 60/);

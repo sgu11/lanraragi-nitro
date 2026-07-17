@@ -2115,6 +2115,7 @@ function displayDecodedImage(selector, decodedImage, filename = "") {
     decodedImage.dataset.filename = filename;
     $(decodedImage).off("load.reader-metadata").on("load.reader-metadata", updateMetadata);
     if (decodedImage !== displayedImage) displayedImage.replaceWith(decodedImage);
+    prunePreloadedImages();
 }
 
 function clearDisplayedImage(selector) {
@@ -2331,12 +2332,21 @@ function touchPreloadedImage(src) {
 }
 
 function prunePreloadedImages() {
+    const displayedSources = new Set(
+        ["#img", "#img_doublepage"]
+            .map((selector) => $(selector).get(0)?.currentSrc)
+            .filter(Boolean),
+    );
+
     while (preloadedOrder.length > MAX_PRELOADED_IMAGES) {
         const evictIndex = preloadedOrder.findIndex((candidate) => {
             const loadedSrc = preloadedImg[candidate];
-            return !predecodeSources.has(candidate) && !predecodedImg[loadedSrc];
+            return !predecodeSources.has(candidate)
+                && !predecodedImg[loadedSrc]
+                && !displayedSources.has(loadedSrc);
         });
-        const [src] = preloadedOrder.splice(evictIndex === -1 ? 0 : evictIndex, 1);
+        if (evictIndex === -1) { break; }
+        const [src] = preloadedOrder.splice(evictIndex, 1);
         const blobUrl = preloadedImg[src];
         if (blobUrl) {
             if (blobUrl.startsWith("blob:")) URL.revokeObjectURL(blobUrl);
