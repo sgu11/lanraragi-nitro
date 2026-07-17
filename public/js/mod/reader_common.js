@@ -2089,6 +2089,23 @@ function updateMetadata() {
     $("#i3").removeClass("loading").attr("aria-busy", "false");
 }
 
+function displayDecodedImage(selector, decodedImage, filename = "") {
+    const displayedImage = $(selector).get(0);
+    if (!displayedImage || !decodedImage) { return; }
+
+    decodedImage.id = displayedImage.id;
+    decodedImage.className = displayedImage.className;
+    decodedImage.alt = displayedImage.alt;
+    decodedImage.fetchPriority = displayedImage.fetchPriority || "high";
+    decodedImage.dataset.filename = filename;
+    $(decodedImage).off("load.reader-metadata").on("load.reader-metadata", updateMetadata);
+    if (decodedImage !== displayedImage) displayedImage.replaceWith(decodedImage);
+}
+
+function clearDisplayedImage(selector) {
+    displayDecodedImage(selector, new Image());
+}
+
 export async function goToPage(page, { resetScroll = true, preserveDisplayWindow = false } = {}) {
     return Perf.measure("reader.goToPage", async () => {
         const navigation = beginReaderNavigation(readerCursor, page, maxPage);
@@ -2147,54 +2164,49 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                         const img2 = await loadImage(displayWindow.end);
                         if (!isCurrentNavigation(navigationId)) { return; }
                         const img2Filename = getFilename(displayWindow.end);
-                        await Promise.all([decodeImage(img1), decodeImage(img2)]);
+                        const [decodedImg1, decodedImg2] = await Promise.all([decodeImage(img1), decodeImage(img2)]);
                         if (!isCurrentNavigation(navigationId)) { return; }
                         activeDisplayWindow = displayWindow;
                         activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
                         activeDisplayWindowStride = displayWindowStrideOverride || 2;
                         if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
                         if (mangaMode) {
-                            $("#img").attr("src", img2);
-                            $("#img").attr("data-filename", img2Filename);
-                            $("#img_doublepage").attr("src", img1);
-                            $("#img_doublepage").attr("data-filename", img1Filename);
+                            displayDecodedImage("#img", decodedImg2, img2Filename);
+                            displayDecodedImage("#img_doublepage", decodedImg1, img1Filename);
                         } else {
-                            $("#img").attr("src", img1);
-                            $("#img").attr("data-filename", img1Filename);
-                            $("#img_doublepage").attr("src", img2);
-                            $("#img_doublepage").attr("data-filename", img2Filename);
+                            displayDecodedImage("#img", decodedImg1, img1Filename);
+                            displayDecodedImage("#img_doublepage", decodedImg2, img2Filename);
                         }
                         $("#display").addClass("double-mode");
+                        updateMetadata();
                     } else {
                         const img = await loadImage(displayStart);
                         if (!isCurrentNavigation(navigationId)) { return; }
                         const imgFilename = getFilename(displayStart);
-                        await decodeImage(img);
+                        const decodedImg = await decodeImage(img);
                         if (!isCurrentNavigation(navigationId)) { return; }
                         activeDisplayWindow = displayWindow;
                         activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
                         activeDisplayWindowStride = displayWindowStrideOverride || 2;
                         if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
-                        $("#img").attr("src", img);
-                        $("#img").attr("data-filename", imgFilename);
-                        $("#img_doublepage").attr("src", "");
-                        $("#img_doublepage").attr("data-filename", "");
+                        displayDecodedImage("#img", decodedImg, imgFilename);
+                        clearDisplayedImage("#img_doublepage");
                         $("#display").removeClass("double-mode");
                         showingSinglePage = true;
+                        updateMetadata();
                     }
                 } else {
                     const img = await loadImage(targetPage);
                     if (!isCurrentNavigation(navigationId)) { return; }
                     const imgFilename = getFilename(targetPage);
-                    await decodeImage(img);
+                    const decodedImg = await decodeImage(img);
                     if (!isCurrentNavigation(navigationId)) { return; }
                     if (!commitCurrentNavigation(navigationId, targetPage)) { return; }
-                    $("#img").attr("src", img);
-                    $("#img").attr("data-filename", imgFilename);
-                    $("#img_doublepage").attr("src", "");
-                    $("#img_doublepage").attr("data-filename", "");
+                    displayDecodedImage("#img", decodedImg, imgFilename);
+                    clearDisplayedImage("#img_doublepage");
                     $("#display").removeClass("double-mode");
                     showingSinglePage = true;
+                    updateMetadata();
                 }
 
                 applyContainerWidth();
@@ -2359,6 +2371,7 @@ async function decodeImage(src) {
                 img.onload = resolve;
                 img.onerror = () => reject(new Error("Image decode failed"));
             }))
+            .then(() => img)
             .catch((error) => {
                 delete predecodedImg[src];
                 delete predecodedPromises[src];

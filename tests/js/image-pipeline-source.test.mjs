@@ -43,6 +43,23 @@ test("reader predecodes two forward spreads on high-memory clients without repea
     assert.doesNotMatch(decodeImage, /\.finally\(\(\) => \{\s*delete predecodedPromises\[src\];/);
 });
 
+test("reader moves decoded image objects into the display instead of assigning their URLs again", async () => {
+    const js = await source("public/js/mod/reader_common.js");
+    const displayStart = js.indexOf("function displayDecodedImage");
+    const displayEnd = js.indexOf("export async function goToPage", displayStart);
+    const goStart = js.indexOf("export async function goToPage");
+    const goEnd = js.indexOf("function updateProgress", goStart);
+    const displayDecodedImage = js.slice(displayStart, displayEnd);
+    const goToPage = js.slice(goStart, goEnd);
+
+    assert.match(displayDecodedImage, /displayedImage\.replaceWith\(decodedImage\)/);
+    assert.match(displayDecodedImage, /decodedImage\.dataset\.filename = filename/);
+    assert.match(goToPage, /const \[decodedImg1, decodedImg2\] = await Promise\.all/);
+    assert.match(goToPage, /displayDecodedImage\("#img", decodedImg2, img2Filename\)/);
+    assert.match(goToPage, /clearDisplayedImage\("#img_doublepage"\)/);
+    assert.doesNotMatch(goToPage, /\$\("#img"\)\.attr\("src", img/);
+});
+
 test("reader crop preload falls back to the original page when the crop response fails", async () => {
     const js = await source("public/js/mod/reader_common.js");
     const loadStart = js.indexOf("async function loadImage(index)");
