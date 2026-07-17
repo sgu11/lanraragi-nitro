@@ -48,7 +48,7 @@ let currentChapter = null;
 let showingSinglePage = true;
 let pageThumbnails = [];
 const MAX_PRELOADED_IMAGES = 8;
-const MAX_PREDECODED_IMAGES = 2;
+const MAX_PREDECODED_IMAGES = Number(navigator.deviceMemory) >= 8 ? 4 : 2;
 const INFINITE_SCROLL_WINDOW_RADIUS = 4;
 const OVERLAY_PAGE_WINDOW_SIZE = 60;
 const PROGRESS_PERSISTENCE_DELAY_MS = 200;
@@ -2261,18 +2261,20 @@ function preloadImages() {
     const nextDisplayWindow = nextDisplayPage <= maxPage
         ? getDisplayWindow(nextDisplayPage, { ...preloadState, currentPage: nextDisplayPage })
         : null;
+    const forwardStart = nextDisplayWindow?.start ?? currentPage + 1;
+    const forwardIndexes = [];
+    for (let offset = 0; offset < preloadNext; offset++) {
+        const index = forwardStart + offset;
+        if (index > maxPage) { break; }
+        forwardIndexes.push(index);
+    }
     const predecodeIndexes = new Set();
-    if (nextDisplayWindow) {
-        for (let index = nextDisplayWindow.start;
-            index <= nextDisplayWindow.end && predecodeIndexes.size < MAX_PREDECODED_IMAGES;
-            index++) {
-            predecodeIndexes.add(index);
-        }
+    for (const index of forwardIndexes) {
+        if (predecodeIndexes.size >= MAX_PREDECODED_IMAGES) { break; }
+        predecodeIndexes.add(index);
     }
 
-    for (let i = 1; i <= preloadNext; i++) {
-        if (currentPage + i > maxPage) { break; }
-        const index = currentPage + i;
+    for (const index of forwardIndexes) {
         if (predecodeIndexes.has(index)) {
             const source = getReaderImageSource(index);
             predecodeSources.add(source);
@@ -2359,10 +2361,8 @@ async function decodeImage(src) {
             }))
             .catch((error) => {
                 delete predecodedImg[src];
-                throw error;
-            })
-            .finally(() => {
                 delete predecodedPromises[src];
+                throw error;
             });
     }
     return predecodedPromises[src];

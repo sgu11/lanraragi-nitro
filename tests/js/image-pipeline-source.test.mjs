@@ -26,6 +26,23 @@ test("reader Blob URL preloading dedupes in-flight fetches and revokes evicted U
     assert.match(js, /URL\.revokeObjectURL/);
 });
 
+test("reader predecodes two forward spreads on high-memory clients without repeating completed decodes", async () => {
+    const js = await source("public/js/mod/reader_common.js");
+    const preloadStart = js.indexOf("function preloadImages()");
+    const preloadEnd = js.indexOf("function touchPreloadedImage", preloadStart);
+    const decodeStart = js.indexOf("async function decodeImage(src)");
+    const decodeEnd = js.indexOf("function getReaderPreloadStrategy", decodeStart);
+    const preloadImages = js.slice(preloadStart, preloadEnd);
+    const decodeImage = js.slice(decodeStart, decodeEnd);
+
+    assert.match(js, /const MAX_PREDECODED_IMAGES = Number\(navigator\.deviceMemory\) >= 8 \? 4 : 2;/);
+    assert.match(preloadImages, /const forwardStart = nextDisplayWindow\?\.start \?\? currentPage \+ 1;/);
+    assert.match(preloadImages, /for \(let offset = 0; offset < preloadNext; offset\+\+\)/);
+    assert.match(preloadImages, /if \(predecodeIndexes\.size >= MAX_PREDECODED_IMAGES\) \{ break; \}/);
+    assert.match(decodeImage, /delete predecodedPromises\[src\];[\s\S]*throw error;/);
+    assert.doesNotMatch(decodeImage, /\.finally\(\(\) => \{\s*delete predecodedPromises\[src\];/);
+});
+
 test("reader crop preload falls back to the original page when the crop response fails", async () => {
     const js = await source("public/js/mod/reader_common.js");
     const loadStart = js.indexOf("async function loadImage(index)");
