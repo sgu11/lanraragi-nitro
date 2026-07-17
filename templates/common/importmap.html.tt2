@@ -15,6 +15,7 @@
             "lrr-reader-crop": "[% c.url_for("/js/$version/mod/reader-crop.js?$asset_version") %]",
             "lrr-reader-chrome": "[% c.url_for("/js/$version/mod/reader-chrome.js?$asset_version") %]",
             "lrr-reader-spread": "[% c.url_for("/js/$version/mod/reader-spread.js?$asset_version") %]",
+            "lrr-reader-progress": "[% c.url_for("/js/$version/mod/reader-progress.js?$asset_version") %]",
             "lrr-reader-nav-keys": "[% c.url_for("/js/$version/mod/reader-nav-keys.js?$asset_version") %]",
             "lrr-reader-common": "[% c.url_for("/js/$version/mod/reader_common.js?$asset_version") %]",
             "fscreen": "[% c.url_for("/js/$version/vendor/fscreen.esm.js?$asset_version") %]",

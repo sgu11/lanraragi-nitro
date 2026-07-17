@@ -507,7 +507,7 @@ sub update_progress {
     }
 
     # Safety-check the given page value.
-    unless ( $force || ( looks_like_number($page) && $page > 0 && $page <= $pagecount ) ) {
+    unless ( $force || ( looks_like_number($page) && $page >= 0 && $page <= $pagecount ) ) {
         render_api_response( $self, "update_progress", "Invalid progress value." );
         $redis->quit();
         $redis_cfg->quit();

@@ -28,6 +28,7 @@ import {
     getPageNavigationDestination,
     getSinglePageSpreadWindow,
     getSpreadWindowWithPageShift,
+    getSyncedReadingProgressPageForDisplayWindow,
     isCurrentReaderNavigation,
     isReaderNavigationPending,
     isWidePage,
@@ -301,11 +302,20 @@ function clearPendingProgressPersistence() {
 }
 
 function persistProgress(page, options = {}) {
-    rememberProgressDisplayWindow();
+    if (page === 0) {
+        localStorage.removeItem(`${id}-reader`);
+        localStorage.removeItem(getProgressDisplayWindowKey());
+    } else {
+        rememberProgressDisplayWindow();
+    }
     if (state.authenticateProgress && LRR.isUserLogged()) {
         Server.updateServerSideProgress(id, page, options);
     } else if (state.trackProgressLocally) {
-        localStorage.setItem(`${id}-reader`, page);
+        if (page === 0) {
+            localStorage.removeItem(`${id}-reader`);
+        } else {
+            localStorage.setItem(`${id}-reader`, page);
+        }
     } else if (!state.authenticateProgress) {
         Server.updateServerSideProgress(id, page, options);
     }
@@ -2253,9 +2263,11 @@ function updateProgress() {
     markers = [];
     renderMarkers();
 
-    let page = currentPage + 1; // progress is 1-indexed
+    const page = currentPage + 1; // progress is 1-indexed
+    const displayWindow = getCurrentDisplayWindow();
+    const syncedProgressPage = getSyncedReadingProgressPageForDisplayWindow(displayWindow, pages.length, page);
     commitReaderSessionPage(page);
-    updateSyncedReadingProgress(page);
+    updateSyncedReadingProgress(syncedProgressPage);
 
     // Load stamps
     if (!infiniteScroll) {

@@ -4,6 +4,13 @@ use utf8;
 
 use Test::More;
 use Digest::SHA qw(sha1_hex);
+use Cwd qw(getcwd);
+
+BEGIN {
+    my $cwd = getcwd;
+    require "$cwd/tests/mocks.pl";
+    setup_redis_mock();
+}
 
 use LANraragi::Controller::Api::Archive;
 

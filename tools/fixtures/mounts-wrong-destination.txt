@@ -1,6 +1,7 @@
 # Complete host sources, but reader_common.js points to the wrong runtime name.
 ./LANraragi/tools/openapi.yaml:/home/koyomi/lanraragi/tools/openapi.yaml:ro
 ./LANraragi/public/js/mod/reader-spread.js:/home/koyomi/lanraragi/public/js/mod/reader-spread.js:ro
+./LANraragi/public/js/mod/reader-progress.js:/home/koyomi/lanraragi/public/js/mod/reader-progress.js:ro
 ./LANraragi/public/js/mod/progress-migration.js:/home/koyomi/lanraragi/public/js/mod/progress-migration.js:ro
 ./LANraragi/public/js/mod/reader-chrome.js:/home/koyomi/lanraragi/public/js/mod/reader-chrome.js:ro
 ./LANraragi/public/js/mod/reader-crop.js:/home/koyomi/lanraragi/public/js/mod/reader-crop.js:ro

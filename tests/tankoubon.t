@@ -161,6 +161,13 @@ ok($prog_result, 'update_tank_progress returns success');
 my %tank_prog7 = LANraragi::Model::Tankoubon::get_tankoubon($new_tank_id);
 is($tank_prog7{progress}, 7, 'Tank progress updated to 7');
 
+# Test: update_tank_progress can clear completed reading progress
+my ($reset_result, $reset_err) = LANraragi::Model::Tankoubon::update_tank_progress($new_tank_id, 0);
+ok($reset_result, 'update_tank_progress accepts a cleared progress value');
+
+my %tank_prog_reset = LANraragi::Model::Tankoubon::get_tankoubon($new_tank_id);
+is($tank_prog_reset{progress}, 0, 'Tank progress resets to 0');
+
 # Test: Delete tankoubon
 my $del_result = LANraragi::Model::Tankoubon::delete_tankoubon($new_tank_id);
 ok($del_result, 'Deleted tankoubon');

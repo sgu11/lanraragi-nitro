@@ -33,6 +33,7 @@ export const FORK_PUBLIC_MOUNT_PATHS = Object.freeze([
     "public/js/reader.js",
     "public/js/mod/server.js",
     "public/js/mod/reader-spread.js",
+    "public/js/mod/reader-progress.js",
     "public/js/mod/progress-migration.js",
     "public/js/mod/reader-chrome.js",
     "public/js/mod/reader-crop.js",

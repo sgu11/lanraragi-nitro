@@ -18,6 +18,34 @@ export function normalizeReaderPage(page, maxPage = Number.MAX_SAFE_INTEGER) {
 }
 
 /**
+ * Convert the visible 1-indexed page into persisted reading progress.
+ * Reaching the final page completes the archive, so its next library open
+ * starts from the beginning instead of resuming at the end.
+ */
+export function getSyncedReadingProgressPage(page, pageCount) {
+    const currentPage = Math.max(0, Math.trunc(Number(page)) || 0);
+    const totalPages = Math.max(0, Math.trunc(Number(pageCount)) || 0);
+
+    if (totalPages > 0 && currentPage >= totalPages) {
+        return 0;
+    }
+    return currentPage;
+}
+
+/**
+ * Convert the visible display window into persisted reading progress.
+ * A double-page navigation cursor points at the first page in a spread, so
+ * completion must be derived from the window's visible end instead.
+ */
+export function getSyncedReadingProgressPageForDisplayWindow(displayWindow, pageCount, fallbackPage = 0) {
+    const endPage = Number(displayWindow?.end);
+    return getSyncedReadingProgressPage(
+        Number.isFinite(endPage) ? endPage + 1 : fallbackPage,
+        pageCount,
+    );
+}
+
+/**
  * Resolve a reader navigation command into either an absolute destination or
  * a relative step. Horizontal page turns follow manga reading direction;
  * page-number jumps can opt out so keyboard conventions stay stable.

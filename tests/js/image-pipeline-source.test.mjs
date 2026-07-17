@@ -92,9 +92,9 @@ test("reader disabled progress tracking suppresses persistence while preserving 
     assert.notEqual(end, -1);
     assert.match(js, /function updateSyncedReadingProgress\(page\)[\s\S]*if \(!ignoreProgress\) \{\s*scheduleProgressPersistence\(page\);\s*\} else \{\s*clearPendingProgressPersistence\(\);\s*\}/);
     assert.match(js, /function persistProgress\(page[\s\S]*Server\.updateServerSideProgress\(id, page[\s\S]*localStorage\.setItem\(`\$\{id\}-reader`, page\);[\s\S]*Server\.updateServerSideProgress\(id, page/);
-    assert.match(updateProgress, /commitReaderSessionPage\(page\);\s*updateSyncedReadingProgress\(page\);/);
+    assert.match(updateProgress, /const displayWindow = getCurrentDisplayWindow\(\);\s*const syncedProgressPage = getSyncedReadingProgressPageForDisplayWindow\(displayWindow, pages\.length, page\);\s*commitReaderSessionPage\(page\);\s*updateSyncedReadingProgress\(syncedProgressPage\);/);
     assert.match(updateProgress, /\/\/ Load stamps[\s\S]*loadStamps\(page\);/);
-    assert.ok(updateProgress.indexOf("updateSyncedReadingProgress(page);") < updateProgress.indexOf("// Load stamps"));
+    assert.ok(updateProgress.indexOf("updateSyncedReadingProgress(syncedProgressPage);") < updateProgress.indexOf("// Load stamps"));
 });
 
 test("reader disabled progress tracking does not apply an implicit saved-progress jump", async () => {
@@ -168,7 +168,23 @@ test("reader progress persistence is latest-only and bypassed when tracking is d
     assert.match(js, /pendingProgressPage = page;/);
     assert.match(js, /progressPersistenceTimer = setTimeout\(flushProgressPersistence, PROGRESS_PERSISTENCE_DELAY_MS\);/);
     assert.match(js, /function updateSyncedReadingProgress\(page\)[\s\S]*scheduleProgressPersistence\(page\);/);
-    assert.match(updateProgress, /updateSyncedReadingProgress\(page\);/);
+    assert.match(updateProgress, /const displayWindow = getCurrentDisplayWindow\(\);/);
+    assert.match(updateProgress, /const syncedProgressPage = getSyncedReadingProgressPageForDisplayWindow\(displayWindow, pages\.length, page\);/);
+    assert.match(updateProgress, /updateSyncedReadingProgress\(syncedProgressPage\);/);
+    assert.match(js, /function persistProgress\(page[\s\S]*if \(page === 0\) \{[\s\S]*localStorage\.removeItem\(`\$\{id\}-reader`\);[\s\S]*localStorage\.removeItem\(getProgressDisplayWindowKey\(\)\);[\s\S]*\}[\s\S]*if \(state\.authenticateProgress/);
+});
+
+test("server progress writes share an archive queue and retain keepalive on lock retries", async () => {
+    const server = await source("public/js/mod/server.js");
+    const queue = await source("public/js/mod/reader-progress.js");
+
+    assert.match(server, /createProgressWriteQueue/);
+    assert.match(server, /progressWriteQueue\.enqueue\(id, currentPage, \{ endpoint, keepalive \}\)/);
+    assert.match(server, /if \(code === 423\) \{[\s\S]*throw new Error\(I18N\.GenericReponseError\);/);
+    assert.match(queue, /retryCount = DEFAULT_PROGRESS_RETRY_COUNT/);
+    assert.match(queue, /if \(result\?\.code !== 423\)/);
+    assert.match(queue, /if \(retries >= maxRetries\)/);
+    assert.match(queue, /keepalive: request\.keepalive/);
 });
 
 test("reader session page survives reload independent of progress persistence", async () => {
@@ -187,7 +203,7 @@ test("reader session page survives reload independent of progress persistence", 
     assert.match(js, /function replaceReaderSessionPage\(page\)/);
     assert.match(js, /function commitReaderSessionPage\(page\)[\s\S]*replaceReaderSessionPage\(page\);/);
     assert.match(js, /window\.history\.replaceState\(null, "", url\);/);
-    assert.match(updateProgress, /commitReaderSessionPage\(page\);[\s\S]*updateSyncedReadingProgress\(page\);/);
+    assert.match(updateProgress, /const page = currentPage \+ 1;[\s\S]*const displayWindow = getCurrentDisplayWindow\(\);[\s\S]*commitReaderSessionPage\(page\);[\s\S]*updateSyncedReadingProgress\(syncedProgressPage\);/);
     assert.match(handleFullScreen, /requestAnimationFrame\(\(\) => \{[\s\S]*syncInfiniteScrollCurrentPageFromViewport\(\);[\s\S]*replaceReaderSessionPage\(currentPage \+ 1\);[\s\S]*\}\);/);
 });
 

@@ -35,6 +35,7 @@ English version: [`README.md`](README.md).
 - **대형 archive overview windowing**: thumbnail overview는 실제로 열 때 생성하고 한 번에 60 page만 render함.
 - **Single-page spread alignment**: 마지막 page가 짝 없이 남으면 빈 secondary image slot을 숨겨 page를 중앙에 유지하고 RTL mode의 끝에서 ghost page가 생기지 않도록 함.
 - **Page-number keyboard jump**: manga mode에서도 `Home`/`End`는 첫 번째/마지막 번호 page로 이동하고 `Page Up`/`Page Down`은 page 번호 기준 -10/+10으로 이동함. Horizontal page-turn control만 reading direction에 따라 반전함.
+- **완독 progress 초기화**: 마지막 page에 도달하면 synced reading progress를 초기화하되 현재 reader session URL은 유지함. 이후 library에서 archive를 다시 열면 마지막 page가 아니라 page 1에서 시작함.
 
 - **Auto-fullscreen**: archive open 시 자동 fullscreen 진입, reader 종료 시 정상 해제. 구형 browser 대응을 위해 `fscreen` polyfill 사용.
 - **Reader cursor auto-hide**: mouse movement 없는 1초 후 page area cursor를 숨김. `W/A/S/D`, arrow, wheel page navigation 입력 시 즉시 숨기고, 50px 이상 mouse 이동 시 다시 표시함.

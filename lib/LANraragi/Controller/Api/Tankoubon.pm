@@ -247,7 +247,7 @@ sub update_tank_progress {
         return;
     }
 
-    unless ( looks_like_number($page) && $page > 0 ) {
+    unless ( looks_like_number($page) && $page >= 0 ) {
         render_api_response( $self, "update_tank_progress", "Invalid progress value." );
         return;
     }
@@ -291,4 +291,3 @@ sub get_tankoubons_file {
 }
 
 1;
-

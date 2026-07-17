@@ -1728,9 +1728,11 @@ paths:
           description: >-
             Current page to update the reading progress to.
 
-            **Must** be a positive integer, and inferior or equal to the total page number of the archive.
+            **Must** be a non-negative integer, and inferior or equal to the total page number of the archive.
+            Use `0` to clear saved reading progress.
           schema:
             type: integer
+            minimum: 0
       responses:
         '200':
           description: Success response
@@ -4017,10 +4019,10 @@ paths:
           required: true
           description: >-
             Global 1-indexed page number to update the reading progress to.
-            Must be a positive integer.
+            Use `0` to clear saved reading progress.
           schema:
             type: integer
-            minimum: 1
+            minimum: 0
       responses:
         '200':
           description: Success response

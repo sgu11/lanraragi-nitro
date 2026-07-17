@@ -3,12 +3,26 @@
  */
 import * as LRR from "lrr-common";
 import I18N from "i18n";
+import { createProgressWriteQueue } from "lrr-reader-progress";
 
 let isScriptRunning = false;
 
 // Inflight request cache: deduplicates concurrent GETs to the same URL.
 // Only applied to GET; side-effectful verbs must not be merged.
 const inflight = new Map();
+
+const progressWriteQueue = createProgressWriteQueue({
+    send: ({ endpoint, keepalive }) => fetch(endpoint, { method: "PUT", keepalive })
+        .then(async (response) => {
+            let data = {};
+            try {
+                data = await response.json();
+            } catch {
+                // Empty error responses are handled from the HTTP status.
+            }
+            return { code: response.status, data };
+        }),
+});
 
 /**
  * Call that shows a popup to the user on success/failure.
@@ -479,31 +493,37 @@ export function updateServerSideProgress(id, currentPage, { keepalive = false } 
         new LRR.ApiURL(`/api/tankoubons/${id}/progress/${currentPage}`) :
         new LRR.ApiURL(`/api/archives/${id}/progress/${currentPage}`);
 
-    return fetch(endpointUrl, { method: "PUT", keepalive })
-        .then((response) => (response.ok ? {code: response.status, data: response.json()} : { code: response.status, data: {success: 0, error: I18N.GenericReponseError} }))
+    const endpoint = endpointUrl.toString();
+    return progressWriteQueue.enqueue(id, currentPage, { endpoint, keepalive })
         .then((response) => {
-            const { code, data } = response;
+            if (response?.skipped) {
+                return null;
+            }
+
+            const { code, data = {} } = response || {};
             if (code === 423) {
-                // Rapid calls to the API endpoint can return a 423 due to a redis lock
-                return;
+                throw new Error(I18N.GenericReponseError);
+            }
+            if (code < 200 || code >= 300) {
+                throw new Error(data.error || I18N.GenericReponseError);
             }
             if (Object.prototype.hasOwnProperty.call(data, "success") && !data.success) {
                 throw new Error(data.error);
-            } else {
-                let message = null;
-                if ("successMessage" in data && data.successMessage) {
-                    message = data.successMessage;
-                }
-                if (message !== null) {
-                    LRR.toast({
-                        heading: message,
-                        icon: "success",
-                        hideAfter: 7000,
-                    });
-                }
-
-                return null;
             }
+
+            let message = null;
+            if ("successMessage" in data && data.successMessage) {
+                message = data.successMessage;
+            }
+            if (message !== null) {
+                LRR.toast({
+                    heading: message,
+                    icon: "success",
+                    hideAfter: 7000,
+                });
+            }
+
+            return null;
         })
         .catch((error) => LRR.showErrorToast(I18N.ReaderErrorProgress, error));
 }

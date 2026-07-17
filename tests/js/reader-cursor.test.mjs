@@ -6,10 +6,29 @@ import {
     commitReaderNavigation,
     consumeQueuedReaderNavigationStep,
     createReaderCursor,
+    getSyncedReadingProgressPage,
+    getSyncedReadingProgressPageForDisplayWindow,
     isReaderNavigationPending,
     queueReaderNavigationStep,
     selectReaderOpeningPage,
 } from "../../public/js/mod/reader-spread.js";
+
+test("reader clears synced progress after the final page is reached", () => {
+    assert.equal(getSyncedReadingProgressPage(1, 20), 1);
+    assert.equal(getSyncedReadingProgressPage(19, 20), 19);
+    assert.equal(getSyncedReadingProgressPage(20, 20), 0);
+    assert.equal(getSyncedReadingProgressPage(21, 20), 0);
+});
+
+test("reader clears synced progress from the visible end of a double-page window", () => {
+    const currentPage = 8;
+    const ordinaryProgressPage = currentPage + 1;
+    const visibleWindow = { start: 8, end: 9 };
+
+    assert.equal(ordinaryProgressPage, 9);
+    assert.equal(getSyncedReadingProgressPageForDisplayWindow(visibleWindow, 10), 0);
+    assert.equal(getSyncedReadingProgressPageForDisplayWindow({ start: 6, end: 7 }, 10), 8);
+});
 
 test("reader cursor rejects stale async navigation commits", () => {
     const cursor = createReaderCursor(0);

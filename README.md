@@ -61,6 +61,9 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   `Home`/`End` select the first/final numbered page and `Page Up`/`Page Down`
   move backward/forward 10 page numbers, while horizontal page-turn controls
   remain reading-direction-aware.
+- **Completed reading progress resets** when the final page is reached, while
+  the active reader session keeps its current-page URL. Reopening the archive
+  from the library therefore starts at page 1 instead of the final page.
 
 - **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
 - **Reader cursor auto-hide** hides the mouse cursor over the page area after
