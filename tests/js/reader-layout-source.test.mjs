@@ -28,7 +28,7 @@ test("reader eagerly discovers its module graph", async () => {
     }
 });
 
-test("library hover prefetch decodes a bounded two-page reader window", async () => {
+test("library hover prefetch fully warms a bounded two-page HTTP cache window without decoding", async () => {
     const js = await source("public/js/mod/index.js");
 
     assert.match(js, /const READER_INTENT_DELAY_MS = 60;/);
@@ -39,8 +39,11 @@ test("library hover prefetch decodes a bounded two-page reader window", async ()
     assert.match(js, /const resumePage = archiveData \? LRR\.getProgress\(archiveData\)\.progress : 0;/);
     assert.match(js, /const startPage = getReaderIntentStartIndex\(resumePage, pages\.length\);/);
     assert.match(js, /\.slice\(startPage, startPage \+ READER_INTENT_PAGE_COUNT\)/);
-    assert.match(js, /image\.decoding = "async";/);
-    assert.match(js, /image\.fetchPriority = priority;/);
+    assert.match(js, /function fetchReaderIntentPage\(src, priority\)/);
+    assert.match(js, /credentials: "same-origin",\s*priority,/);
+    assert.match(js, /return response\.blob\(\);[\s\S]*\.then\(\(\) => undefined\);/);
+    assert.doesNotMatch(js, /decodeReaderIntentImage/);
+    assert.doesNotMatch(js, /image\.decode\(\)/);
     assert.match(js, /document\.addEventListener\("pointerover", scheduleReaderIntentPrefetch, \{ passive: true \}\);/);
     assert.match(js, /document\.addEventListener\("pointerout", cancelReaderIntentPrefetch, \{ passive: true \}\);/);
     assert.match(js, /document\.addEventListener\("focusin",/);

@@ -71,19 +71,14 @@ function touchReaderIntentCache(archiveId, entry) {
     }
 }
 
-function decodeReaderIntentImage(src, priority) {
-    const image = new Image();
-    image.decoding = "async";
-    image.fetchPriority = priority;
-    image.src = src;
-
-    const decoded = typeof image.decode === "function"
-        ? image.decode()
-        : new Promise((resolve, reject) => {
-            image.onload = resolve;
-            image.onerror = reject;
-        });
-    return { image, decoded: decoded.catch(() => {}) };
+function fetchReaderIntentPage(src, priority) {
+    return fetch(src, {
+        credentials: "same-origin",
+        priority,
+    }).then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.blob();
+    }).then(() => undefined);
 }
 
 function prefetchReaderIntent(anchor) {
@@ -98,7 +93,7 @@ function prefetchReaderIntent(anchor) {
         return cached.promise;
     }
 
-    const entry = { images: [], promise: null };
+    const entry = { promise: null };
     entry.promise = Perf.measure("index.readerIntentPrefetch", () => (
         fetch(new LRR.ApiURL(`/api/archives/${archiveId}/files?force=false`), {
             credentials: "same-origin",
@@ -112,11 +107,10 @@ function prefetchReaderIntent(anchor) {
                 const archiveData = LRR.getArchiveData(archiveId);
                 const resumePage = archiveData ? LRR.getProgress(archiveData).progress : 0;
                 const startPage = getReaderIntentStartIndex(resumePage, pages.length);
-                const decodeTasks = pages
+                const fetchTasks = pages
                     .slice(startPage, startPage + READER_INTENT_PAGE_COUNT)
-                    .map((src, index) => decodeReaderIntentImage(src, index === 0 ? "high" : "low"));
-                entry.images = decodeTasks.map(({ image }) => image);
-                return Promise.all(decodeTasks.map(({ decoded }) => decoded));
+                    .map((src, index) => fetchReaderIntentPage(src, index === 0 ? "high" : "low"));
+                return Promise.all(fetchTasks);
             })
             .catch(() => {})
     ));
