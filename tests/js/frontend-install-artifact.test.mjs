@@ -32,8 +32,11 @@ test("clean frontend install builds the Swiper artifact consumed through the imp
     const outdir = await mkdtemp(join(tmpdir(), "lrr-front-artifact-"));
     t.after(() => rm(outdir, { recursive: true, force: true }));
     const esbuildCli = join(rootPath, "node_modules", "esbuild", "bin", "esbuild");
-    const build = spawnSync(esbuildCli, ["--bundle", "--format=esm", "--minify",
-        "--external:react", `--outdir=${outdir}`, entry], {
+    const esbuildArgs = ["--bundle", "--format=esm", "--minify",
+        "--external:react", `--outdir=${outdir}`, entry];
+    const executable = process.platform === "win32" ? process.execPath : esbuildCli;
+    const args = process.platform === "win32" ? [esbuildCli, ...esbuildArgs] : esbuildArgs;
+    const build = spawnSync(executable, args, {
         cwd: new URL(root),
         encoding: "utf8",
     });
