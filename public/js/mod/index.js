@@ -67,21 +67,24 @@ function touchReaderIntentCache(archiveId, entry) {
 
     while (readerIntentCache.size > READER_INTENT_CACHE_MAX) {
         const staleId = readerIntentCache.keys().next().value;
+        const staleEntry = readerIntentCache.get(staleId);
+        if (!staleEntry.promoted && !staleEntry.settled) staleEntry.controller.abort();
         readerIntentCache.delete(staleId);
     }
 }
 
-function fetchReaderIntentPage(src, priority) {
+function fetchReaderIntentPage(src, priority, signal) {
     return fetch(src, {
         credentials: "same-origin",
         priority,
+        signal,
     }).then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.blob();
     }).then(() => undefined);
 }
 
-function prefetchReaderIntent(anchor) {
+function prefetchReaderIntent(anchor, { promoted = false } = {}) {
     if (isMultiSelectMode || document.visibilityState === "hidden" || navigator.connection?.saveData) return;
 
     const archiveId = getReaderIntentArchiveId(anchor);
@@ -89,14 +92,21 @@ function prefetchReaderIntent(anchor) {
 
     const cached = readerIntentCache.get(archiveId);
     if (cached) {
+        if (promoted) cached.promoted = true;
         touchReaderIntentCache(archiveId, cached);
         return cached.promise;
     }
 
-    const entry = { promise: null };
+    const entry = {
+        controller: new AbortController(),
+        promoted,
+        settled: false,
+        promise: null,
+    };
     entry.promise = Perf.measure("index.readerIntentPrefetch", () => (
         fetch(new LRR.ApiURL(`/api/archives/${archiveId}/files?force=false`), {
             credentials: "same-origin",
+            signal: entry.controller.signal,
         })
             .then((response) => {
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -109,10 +119,15 @@ function prefetchReaderIntent(anchor) {
                 const startPage = getReaderIntentStartIndex(resumePage, pages.length);
                 const fetchTasks = pages
                     .slice(startPage, startPage + READER_INTENT_PAGE_COUNT)
-                    .map((src, index) => fetchReaderIntentPage(src, index === 0 ? "high" : "low"));
+                    .map((src, index) => fetchReaderIntentPage(
+                        src,
+                        index === 0 ? "high" : "low",
+                        entry.controller.signal
+                    ));
                 return Promise.all(fetchTasks);
             })
             .catch(() => {})
+            .finally(() => { entry.settled = true; })
     ));
     touchReaderIntentCache(archiveId, entry);
     return entry.promise;
@@ -138,11 +153,31 @@ function cancelReaderIntentPrefetch(event) {
         window.clearTimeout(timer);
         readerIntentTimers.delete(anchor);
     }
+
+    const archiveId = getReaderIntentArchiveId(anchor);
+    const entry = readerIntentCache.get(archiveId);
+    if (entry && !entry.promoted && !entry.settled) {
+        entry.controller.abort();
+        readerIntentCache.delete(archiveId);
+    }
+}
+
+function promoteReaderIntentPrefetch(event) {
+    const anchor = getReaderIntentAnchor(event.target);
+    if (!anchor) return;
+
+    const timer = readerIntentTimers.get(anchor);
+    if (timer !== undefined) {
+        window.clearTimeout(timer);
+        readerIntentTimers.delete(anchor);
+    }
+    prefetchReaderIntent(anchor, { promoted: true });
 }
 
 function initializeReaderIntentPrefetch() {
     document.addEventListener("pointerover", scheduleReaderIntentPrefetch, { passive: true });
     document.addEventListener("pointerout", cancelReaderIntentPrefetch, { passive: true });
+    document.addEventListener("pointerdown", promoteReaderIntentPrefetch, { passive: true });
     document.addEventListener("focusin", (event) => prefetchReaderIntent(getReaderIntentAnchor(event.target)), { passive: true });
 }
 
