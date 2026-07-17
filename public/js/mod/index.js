@@ -36,12 +36,127 @@ export let selectedArchives = new Set();
 
 const CAROUSEL_RETRY_DELAY_MS = 1500;
 const CAROUSEL_MAX_RETRIES = 10;
+const READER_INTENT_DELAY_MS = 60;
+const READER_INTENT_PAGE_COUNT = 2;
+const READER_INTENT_CACHE_MAX = 3;
+const READER_ARCHIVE_ID_PATTERN = /^[a-f0-9]{40}$/;
+const readerIntentTimers = new WeakMap();
+const readerIntentCache = new Map();
+
+function getReaderIntentAnchor(target) {
+    return target?.closest?.("a[href*='/reader?id=']") || null;
+}
+
+function getReaderIntentArchiveId(anchor) {
+    if (!anchor) return null;
+
+    try {
+        const url = new URL(anchor.href, window.location.href);
+        const archiveId = url.searchParams.get("id") || "";
+        if (!url.pathname.endsWith("/reader") || !READER_ARCHIVE_ID_PATTERN.test(archiveId)) return null;
+        return archiveId;
+    } catch {
+        return null;
+    }
+}
+
+function touchReaderIntentCache(archiveId, entry) {
+    readerIntentCache.delete(archiveId);
+    readerIntentCache.set(archiveId, entry);
+
+    while (readerIntentCache.size > READER_INTENT_CACHE_MAX) {
+        const staleId = readerIntentCache.keys().next().value;
+        readerIntentCache.delete(staleId);
+    }
+}
+
+function decodeReaderIntentImage(src, priority) {
+    const image = new Image();
+    image.decoding = "async";
+    image.fetchPriority = priority;
+    image.src = src;
+
+    const decoded = typeof image.decode === "function"
+        ? image.decode()
+        : new Promise((resolve, reject) => {
+            image.onload = resolve;
+            image.onerror = reject;
+        });
+    return { image, decoded: decoded.catch(() => {}) };
+}
+
+function prefetchReaderIntent(anchor) {
+    if (isMultiSelectMode || document.visibilityState === "hidden" || navigator.connection?.saveData) return;
+
+    const archiveId = getReaderIntentArchiveId(anchor);
+    if (!archiveId) return;
+
+    const cached = readerIntentCache.get(archiveId);
+    if (cached) {
+        touchReaderIntentCache(archiveId, cached);
+        return cached.promise;
+    }
+
+    const entry = { images: [], promise: null };
+    entry.promise = Perf.measure("index.readerIntentPrefetch", () => (
+        fetch(new LRR.ApiURL(`/api/archives/${archiveId}/files?force=false`), {
+            credentials: "same-origin",
+        })
+            .then((response) => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
+            .then((data) => {
+                const pages = data.pages || [];
+                const archiveData = LRR.getArchiveData(archiveId);
+                const resumePage = archiveData ? LRR.getProgress(archiveData).progress : 0;
+                const startPage = resumePage > 0 && resumePage < pages.length - 1 ? resumePage : 0;
+                const decodeTasks = pages
+                    .slice(startPage, startPage + READER_INTENT_PAGE_COUNT)
+                    .map((src, index) => decodeReaderIntentImage(src, index === 0 ? "high" : "low"));
+                entry.images = decodeTasks.map(({ image }) => image);
+                return Promise.all(decodeTasks.map(({ decoded }) => decoded));
+            })
+            .catch(() => {})
+    ));
+    touchReaderIntentCache(archiveId, entry);
+    return entry.promise;
+}
+
+function scheduleReaderIntentPrefetch(event) {
+    const anchor = getReaderIntentAnchor(event.target);
+    if (!anchor || anchor.contains(event.relatedTarget) || readerIntentTimers.has(anchor)) return;
+
+    const timer = window.setTimeout(() => {
+        readerIntentTimers.delete(anchor);
+        prefetchReaderIntent(anchor);
+    }, READER_INTENT_DELAY_MS);
+    readerIntentTimers.set(anchor, timer);
+}
+
+function cancelReaderIntentPrefetch(event) {
+    const anchor = getReaderIntentAnchor(event.target);
+    if (!anchor || anchor.contains(event.relatedTarget)) return;
+
+    const timer = readerIntentTimers.get(anchor);
+    if (timer !== undefined) {
+        window.clearTimeout(timer);
+        readerIntentTimers.delete(anchor);
+    }
+}
+
+function initializeReaderIntentPrefetch() {
+    document.addEventListener("pointerover", scheduleReaderIntentPrefetch, { passive: true });
+    document.addEventListener("pointerout", cancelReaderIntentPrefetch, { passive: true });
+    document.addEventListener("focusin", (event) => prefetchReaderIntent(getReaderIntentAnchor(event.target)), { passive: true });
+}
 
 /**
  * Initialize the Archive Index.
  */
 export function initializeAll() {
     Perf.initializeLongTaskObserver();
+    initializeReaderIntentPrefetch();
 
     // Bind events to DOM
     $(document).on("click", "[id^=edit-header-]", function () {

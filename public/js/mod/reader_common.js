@@ -1852,7 +1852,12 @@ function clearMarkers() {
 function toggleStamps() {
     // Show or hide the markers
     markersVisible = localStorage.markersVisible = !markersVisible;
-    renderMarkers();
+    if (markersVisible) {
+        loadStamps(currentPage + 1);
+    } else {
+        markers = [];
+        renderMarkers();
+    }
 }
 
 function loadStamps(currentPage) {
@@ -2270,8 +2275,8 @@ function updateProgress() {
     updateSyncedReadingProgress(syncedProgressPage);
 
     // Load stamps
-    if (!infiniteScroll) {
-        const stamps = loadStamps(page);
+    if (!infiniteScroll && markersVisible) {
+        loadStamps(page);
     }
 }
 

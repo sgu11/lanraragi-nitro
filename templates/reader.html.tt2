@@ -23,6 +23,13 @@
 
     [% INCLUDE common/importmap %]
 
+    <!-- Collapse the reader module graph's discovery waterfall. reader.js is
+         intentionally tiny; reader_common.js owns the hot path and recursively
+         discovers the remaining reader dependencies from the import map. -->
+    <link rel="modulepreload" href="[% c.url_for("/js/reader.js?$asset_version") %]" />
+    <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader_common.js?$asset_version") %]" />
+    <link rel="modulepreload" href="[% c.url_for("/js/i18n.js?$asset_version") %]" />
+
     <script src="[% c.url_for("/js/vendor/jquery.min.js?$asset_version") %]" defer></script>
     <script src="[% c.url_for("/js/vendor/jquery.contextMenu.min.js?$asset_version") %]" defer></script>
     [% IF userlogged %]

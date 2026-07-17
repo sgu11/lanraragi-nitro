@@ -4,6 +4,51 @@ import test from "node:test";
 
 const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
+test("reader eagerly discovers its module graph", async () => {
+    const template = await source("templates/reader.html.tt2");
+    const importMap = template.indexOf("[% INCLUDE common/importmap %]");
+    const readerEntry = template.indexOf('rel="modulepreload" href="[% c.url_for("/js/reader.js?$asset_version") %]"');
+    const readerRuntime = template.indexOf('rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader_common.js?$asset_version") %]"');
+    const i18n = template.indexOf('rel="modulepreload" href="[% c.url_for("/js/i18n.js?$asset_version") %]"');
+
+    assert.notEqual(importMap, -1);
+    assert.ok(readerEntry > importMap);
+    assert.ok(readerRuntime > importMap);
+    assert.ok(i18n > importMap);
+});
+
+test("library hover prefetch decodes a bounded two-page reader window", async () => {
+    const js = await source("public/js/mod/index.js");
+
+    assert.match(js, /const READER_INTENT_DELAY_MS = 60;/);
+    assert.match(js, /const READER_INTENT_PAGE_COUNT = 2;/);
+    assert.match(js, /const READER_INTENT_CACHE_MAX = 3;/);
+    assert.match(js, /navigator\.connection\?\.saveData/);
+    assert.match(js, /fetch\(new LRR\.ApiURL\(`\/api\/archives\/\$\{archiveId\}\/files\?force=false`\)/);
+    assert.match(js, /const resumePage = archiveData \? LRR\.getProgress\(archiveData\)\.progress : 0;/);
+    assert.match(js, /\.slice\(startPage, startPage \+ READER_INTENT_PAGE_COUNT\)/);
+    assert.match(js, /image\.decoding = "async";/);
+    assert.match(js, /image\.fetchPriority = priority;/);
+    assert.match(js, /document\.addEventListener\("pointerover", scheduleReaderIntentPrefetch, \{ passive: true \}\);/);
+    assert.match(js, /document\.addEventListener\("pointerout", cancelReaderIntentPrefetch, \{ passive: true \}\);/);
+    assert.match(js, /document\.addEventListener\("focusin",/);
+    assert.match(js, /initializeReaderIntentPrefetch\(\);/);
+});
+
+test("reader only fetches stamps while marker rendering is enabled", async () => {
+    const js = await source("public/js/mod/reader_common.js");
+    const toggleStart = js.indexOf("function toggleStamps()");
+    const toggleEnd = js.indexOf("function handleMarkerContextMenu", toggleStart);
+    const updateStart = js.indexOf("function updateProgress()");
+    const updateEnd = js.indexOf("function preloadImages()", updateStart);
+    const toggle = js.slice(toggleStart, toggleEnd);
+    const update = js.slice(updateStart, updateEnd);
+
+    assert.match(toggle, /if \(markersVisible\) \{\s*loadStamps\(currentPage \+ 1\);/);
+    assert.match(toggle, /markers = \[\];\s*renderMarkers\(\);/);
+    assert.match(update, /if \(!infiniteScroll && markersVisible\) \{\s*loadStamps\(page\);/);
+});
+
 test("reader metadata ignores stale size callbacks after its display shape changes", async () => {
     const js = await source("public/js/mod/reader_common.js");
     const start = js.indexOf("function updateMetadata()");
