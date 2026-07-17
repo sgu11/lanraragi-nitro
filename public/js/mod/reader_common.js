@@ -2254,12 +2254,24 @@ function preloadImages() {
     let preloadPrev = preloadCount == 0 ? 0 : 1;
 
     if (doublePageMode) { preloadNext *= 2; preloadPrev *= 2; }
-    const predecodeNext = Math.min(preloadNext, doublePageMode ? 2 : 1);
+    const preloadState = getSpreadState();
+    const nextDisplayPage = getPageNavigationDestination(1, preloadState);
+    const nextDisplayWindow = nextDisplayPage <= maxPage
+        ? getDisplayWindow(nextDisplayPage, { ...preloadState, currentPage: nextDisplayPage })
+        : null;
+    const predecodeIndexes = new Set();
+    if (nextDisplayWindow) {
+        for (let index = nextDisplayWindow.start;
+            index <= nextDisplayWindow.end && predecodeIndexes.size < MAX_PREDECODED_IMAGES;
+            index++) {
+            predecodeIndexes.add(index);
+        }
+    }
 
     for (let i = 1; i <= preloadNext; i++) {
         if (currentPage + i > maxPage) { break; }
         const index = currentPage + i;
-        if (i <= predecodeNext) {
+        if (predecodeIndexes.has(index)) {
             const source = getReaderImageSource(index);
             predecodeSources.add(source);
             loadImage(index)
