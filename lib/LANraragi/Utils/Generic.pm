@@ -397,8 +397,10 @@ sub css_default_data {
     elsif ( $_[0] eq "modern.css" )       { return ( "Hachikuji", "#34353B" ) }
     elsif ( $_[0] eq "modern_clear.css" ) { return ( "Yotsugi",   "#34495E" ) }
     elsif ( $_[0] eq "modern_red.css" )   { return ( "Nadeko",    "#D83B66" ) }
-    elsif ( $_[0] eq "ex.css" )           { return ( "Sad Panda", "#43464E" ) }
-    else                                  { return ( $_[0],       "#34353B" ) }
+    elsif ( $_[0] eq "ex.css" )                { return ( "Sad Panda",        "#43464E" ) }
+    elsif ( $_[0] eq "catppuccin-mocha.css" )  { return ( "Catppuccin Mocha", "#1E1E2E" ) }
+    elsif ( $_[0] eq "catppuccin-oled.css" )   { return ( "Catppuccin OLED",  "#000000" ) }
+    else                                       { return ( $_[0],              "#34353B" ) }
 }
 
 sub flat {

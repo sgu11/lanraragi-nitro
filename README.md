@@ -301,7 +301,7 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 
 ### Themes
 
-- New **Catppuccin Mocha** theme.
+- New **Catppuccin Mocha** and true-black **Catppuccin OLED** themes.
 
 ### Plugins
 
