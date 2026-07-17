@@ -2126,7 +2126,9 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                 // Each writes to distinct preloadedDimensions/preloadedPromises
                 // keys, so concurrent loadImage calls don't clobber shared state.
                     await Promise.all(
-                        getDoublePageInitialProbePages(targetPage, maxPage).map((probePage) => loadImage(probePage))
+                        getDoublePageInitialProbePages(targetPage, maxPage).map((probePage) => (
+                            preloadedDimensions[probePage] ? Promise.resolve() : loadImage(probePage)
+                        ))
                     );
                     if (!isCurrentNavigation(navigationId)) { return; }
 

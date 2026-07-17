@@ -182,6 +182,11 @@ test("double-page probe pages are loaded concurrently, not serially awaited", as
         /await Promise\.all\(\s*getDoublePageInitialProbePages\([\s\S]*?\.map\([\s\S]*?loadImage/,
         "double-page probe should use Promise.all over getDoublePageInitialProbePages().map(loadImage)"
     );
+    assert.match(
+        readerSrc,
+        /preloadedDimensions\[probePage\] \? Promise\.resolve\(\) : loadImage\(probePage\)/,
+        "double-page probe should reuse dimensions populated by readahead"
+    );
     // The old serial form must be gone.
     assert.doesNotMatch(
         readerSrc,
