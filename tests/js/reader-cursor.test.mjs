@@ -13,21 +13,34 @@ import {
     selectReaderOpeningPage,
 } from "../../public/js/mod/reader-spread.js";
 
-test("reader clears synced progress after the final page is reached", () => {
+test("reader preserves completed synced progress after the final page is reached", () => {
     assert.equal(getSyncedReadingProgressPage(1, 20), 1);
     assert.equal(getSyncedReadingProgressPage(19, 20), 19);
-    assert.equal(getSyncedReadingProgressPage(20, 20), 0);
-    assert.equal(getSyncedReadingProgressPage(21, 20), 0);
+    assert.equal(getSyncedReadingProgressPage(20, 20), 20);
+    assert.equal(getSyncedReadingProgressPage(21, 20), 20);
 });
 
-test("reader clears synced progress from the visible end of a double-page window", () => {
+test("reader preserves completed progress from the visible end of a double-page window", () => {
     const currentPage = 8;
     const ordinaryProgressPage = currentPage + 1;
     const visibleWindow = { start: 8, end: 9 };
 
     assert.equal(ordinaryProgressPage, 9);
-    assert.equal(getSyncedReadingProgressPageForDisplayWindow(visibleWindow, 10), 0);
+    assert.equal(getSyncedReadingProgressPageForDisplayWindow(visibleWindow, 10), 10);
     assert.equal(getSyncedReadingProgressPageForDisplayWindow({ start: 6, end: 7 }, 10), 8);
+});
+
+test("completed progress remains read while a later Library open starts at page one", () => {
+    const pageCount = 20;
+    const maxPage = pageCount - 1;
+    const persistedProgress = getSyncedReadingProgressPage(pageCount, pageCount);
+
+    assert.ok((persistedProgress / pageCount) > 0.85);
+    assert.deepEqual(selectReaderOpeningPage({
+        progressPage: persistedProgress - 1,
+        progressEnabled: true,
+        maxPage,
+    }), { page: 0, reason: "default-first" });
 });
 
 test("reader cursor rejects stale async navigation commits", () => {
@@ -92,6 +105,14 @@ test("reader opening page treats synced progress as a library-open hint only", (
         explicitPage: null,
         progressPage: 10,
         progressEnabled: false,
+        userInteractedBeforeInitialPageScroll: false,
+        maxPage: 20,
+    }), { page: 0, reason: "default-first" });
+
+    assert.deepEqual(selectReaderOpeningPage({
+        explicitPage: null,
+        progressPage: 20,
+        progressEnabled: true,
         userInteractedBeforeInitialPageScroll: false,
         maxPage: 20,
     }), { page: 0, reason: "default-first" });

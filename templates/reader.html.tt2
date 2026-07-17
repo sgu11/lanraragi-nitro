@@ -30,6 +30,7 @@
     <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader_common.js?$asset_version") %]" />
     <link rel="modulepreload" href="[% c.url_for("/js/i18n.js?$asset_version") %]" />
     <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/server.js?$asset_version") %]" />
+    <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader-progress.js?$asset_version") %]" />
     <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/common.js?$asset_version") %]" />
     <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/perf.js?$asset_version") %]" />
     <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader-crop.js?$asset_version") %]" />

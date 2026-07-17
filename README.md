@@ -61,9 +61,10 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
   `Home`/`End` select the first/final numbered page and `Page Up`/`Page Down`
   move backward/forward 10 page numbers, while horizontal page-turn controls
   remain reading-direction-aware.
-- **Completed reading progress resets** when the final page is reached, while
-  the active reader session keeps its current-page URL. Reopening the archive
-  from the library therefore starts at page 1 instead of the final page.
+- **Completed reading progress is preserved** when the final page is reached,
+  so Library read-status and hide-completed behavior remain correct. The active
+  reader session keeps its current-page URL, while reopening the archive from
+  the Library starts at page 1 instead of resuming the final page.
 
 - **Auto-fullscreen** option that enters fullscreen on archive open and exits cleanly on leave (with `fscreen` polyfill for older browsers).
 - **Reader cursor auto-hide** hides the mouse cursor over the page area after
@@ -276,8 +277,8 @@ A sustained sweep against the request hot path, tracked in [`docs/performance-au
 - **Actionable request metrics** — Prometheus output preserves underscore-containing endpoints, includes HTTP status counters and duration histograms for p95/p99 queries, resets search counters on restart, and reports Minion queue/worker state plus Minion/Shinobu process metrics. Redis hot-path increments use real callback pipelines.
 - **Bounded reader preload cache** — reader Blob URL preloads dedupe in-flight fetches, reuse the inline first page when already loaded, and revoke evicted Blob URLs instead of growing unbounded.
 - **Reader predecode window** — high-memory clients retain the next four reader pages (two on lower-memory clients) and move those decoded `Image` objects directly into the visible DOM. This avoids both repeated 6 MP WebP decode calls and the second decode/paint stall Windows Chromium incurred when a decoded Blob URL was assigned to a different `<img>`. The window remains protected inside the existing eight-entry preload LRU.
-- **Reader module-graph preload** — the Reader template advertises `reader.js`, the large `reader_common.js` runtime, `i18n.js`, and the runtime's direct dependency set with `modulepreload`, allowing Chromium to fetch and compile the import graph in parallel before the inline module bootstrap reaches it.
-- **Library reader-intent prewarm** — a pointer hover held for 60 ms, or keyboard focus on a Reader link, fetches the stable file list and decodes the predicted resume page plus its successor. The Library retains at most three two-page intent windows and disables the work for Data Saver, hidden tabs, and multi-select mode.
+- **Reader module-graph preload** — the Reader template advertises `reader.js`, the large `reader_common.js` runtime, `i18n.js`, `reader-progress.js`, and the runtime's direct dependency set with `modulepreload`, allowing Chromium to fetch and compile the import graph in parallel before the inline module bootstrap reaches it.
+- **Library reader-intent prewarm** — a pointer hover held for 60 ms, or keyboard focus on a Reader link, fetches the stable file list and decodes the correctly converted zero-indexed resume page plus its successor. Completed archives prewarm page 1. The Library retains at most three two-page intent windows and disables the work for Data Saver, hidden tabs, and multi-select mode.
 - **Hidden stamp request suppression** — page turns no longer fetch stamp annotations while marker display is off; enabling markers immediately loads the current page so annotation behavior is preserved without competing with normal readahead.
 - **Inflight-promise dedup in `Server.callAPI` (B.10)** — concurrent GETs to the same URL share a single fetch; the Map self-evicts on settle.
 - **Filelist cache (B.1)** — `pagefiles` on the archive hash (Storable-frozen, invalidated by Shinobu on arcsize mismatch and by `change_archive_id`). Reader opens on warm cache skip the libarchive scan — 237 → 49 ms on truly cold archives.

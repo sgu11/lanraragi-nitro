@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { createProgressWriteQueue } from "../../public/js/mod/reader-progress.js";
 
-test("progress writes keep a completion reset behind an in-flight page write", async () => {
+test("progress writes keep a final completion value behind an in-flight page write", async () => {
     const sent = [];
     let releaseFirst;
     let firstStarted;
@@ -29,18 +29,18 @@ test("progress writes keep a completion reset behind an in-flight page write", a
     const first = queue.enqueue("archive-1", 9, { endpoint: "/progress/9" });
     await firstStartedPromise;
     const superseded = queue.enqueue("archive-1", 10, { endpoint: "/progress/10" });
-    const completionReset = queue.enqueue("archive-1", 0, {
-        endpoint: "/progress/0",
+    const completionWrite = queue.enqueue("archive-1", 12, {
+        endpoint: "/progress/12",
         keepalive: true,
     });
 
     assert.deepEqual(await superseded, { skipped: true });
     releaseFirst();
-    await Promise.all([first, completionReset]);
+    await Promise.all([first, completionWrite]);
 
     assert.deepEqual(sent.map(({ endpoint, page, keepalive }) => ({ endpoint, page, keepalive })), [
         { endpoint: "/progress/9", page: 9, keepalive: false },
-        { endpoint: "/progress/0", page: 0, keepalive: true },
+        { endpoint: "/progress/12", page: 12, keepalive: true },
     ]);
 });
 
@@ -75,13 +75,13 @@ test("a locked older write yields immediately to a newer pending value", async (
     const sent = [];
     const waits = [];
     let queue;
-    let completionReset;
+    let completionWrite;
     queue = createProgressWriteQueue({
         send: async (request) => {
             sent.push(request);
             if (request.page === 9) {
-                completionReset = queue.enqueue("archive-1", 0, {
-                    endpoint: "/progress/0",
+                completionWrite = queue.enqueue("archive-1", 12, {
+                    endpoint: "/progress/12",
                     keepalive: true,
                 });
                 return { code: 423, data: {} };
@@ -94,12 +94,12 @@ test("a locked older write yields immediately to a newer pending value", async (
     });
 
     const stale = await queue.enqueue("archive-1", 9, { endpoint: "/progress/9" });
-    await completionReset;
+    await completionWrite;
 
     assert.deepEqual(stale, { skipped: true });
     assert.deepEqual(sent.map(({ page, keepalive }) => ({ page, keepalive })), [
         { page: 9, keepalive: false },
-        { page: 0, keepalive: true },
+        { page: 12, keepalive: true },
     ]);
     assert.deepEqual(waits, []);
 });

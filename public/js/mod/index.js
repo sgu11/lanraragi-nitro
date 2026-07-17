@@ -7,6 +7,7 @@ import * as Server from "lrr-server";
 import * as IndexTable from "lrr-index-table";
 import * as Perf from "lrr-perf";
 import {
+    getReaderIntentStartIndex,
     metadataResponseMeansMissing,
     shouldMigrateProgressValue,
     shouldRunProgressMigration,
@@ -110,7 +111,7 @@ function prefetchReaderIntent(anchor) {
                 const pages = data.pages || [];
                 const archiveData = LRR.getArchiveData(archiveId);
                 const resumePage = archiveData ? LRR.getProgress(archiveData).progress : 0;
-                const startPage = resumePage > 0 && resumePage < pages.length - 1 ? resumePage : 0;
+                const startPage = getReaderIntentStartIndex(resumePage, pages.length);
                 const decodeTasks = pages
                     .slice(startPage, startPage + READER_INTENT_PAGE_COUNT)
                     .map((src, index) => decodeReaderIntentImage(src, index === 0 ? "high" : "low"));

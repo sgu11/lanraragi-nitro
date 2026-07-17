@@ -19,15 +19,17 @@ export function normalizeReaderPage(page, maxPage = Number.MAX_SAFE_INTEGER) {
 
 /**
  * Convert the visible 1-indexed page into persisted reading progress.
- * Reaching the final page completes the archive, so its next library open
- * starts from the beginning instead of resuming at the end.
+ * Reaching the final page keeps the completed page count persisted so Library
+ * read-status and hide-completed filters remain correct. Reader reopening is
+ * handled separately by selectReaderOpeningPage(), which does not resume the
+ * final page.
  */
 export function getSyncedReadingProgressPage(page, pageCount) {
     const currentPage = Math.max(0, Math.trunc(Number(page)) || 0);
     const totalPages = Math.max(0, Math.trunc(Number(pageCount)) || 0);
 
     if (totalPages > 0 && currentPage >= totalPages) {
-        return 0;
+        return totalPages;
     }
     return currentPage;
 }

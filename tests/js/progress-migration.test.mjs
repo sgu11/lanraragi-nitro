@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+    getReaderIntentStartIndex,
     metadataResponseMeansMissing,
     shouldMigrateProgressValue,
     shouldRunProgressMigration,
@@ -48,6 +49,16 @@ test("progress migration compares page numbers numerically", () => {
     assert.equal(shouldMigrateProgressValue(null, 0), false);
     assert.equal(shouldMigrateProgressValue("not-a-number", 0), false);
     assert.equal(shouldMigrateProgressValue("10bad", 2), false);
+});
+
+test("reader intent converts persisted progress to the exact opening page", () => {
+    assert.equal(getReaderIntentStartIndex(0, 20), 0);
+    assert.equal(getReaderIntentStartIndex(1, 20), 0);
+    assert.equal(getReaderIntentStartIndex(5, 20), 4);
+    assert.equal(getReaderIntentStartIndex("19", "20"), 18);
+    assert.equal(getReaderIntentStartIndex(20, 20), 0);
+    assert.equal(getReaderIntentStartIndex(21, 20), 0);
+    assert.equal(getReaderIntentStartIndex("not-a-page", 20), 0);
 });
 
 test("index progress migration does not require a new common.js getter", async () => {

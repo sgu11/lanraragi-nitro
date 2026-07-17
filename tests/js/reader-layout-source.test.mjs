@@ -12,6 +12,7 @@ test("reader eagerly discovers its module graph", async () => {
         "/js/$version/mod/reader_common.js?$asset_version",
         "/js/i18n.js?$asset_version",
         "/js/$version/mod/server.js?$asset_version",
+        "/js/$version/mod/reader-progress.js?$asset_version",
         "/js/$version/mod/common.js?$asset_version",
         "/js/$version/mod/perf.js?$asset_version",
         "/js/$version/mod/reader-crop.js?$asset_version",
@@ -36,6 +37,7 @@ test("library hover prefetch decodes a bounded two-page reader window", async ()
     assert.match(js, /navigator\.connection\?\.saveData/);
     assert.match(js, /fetch\(new LRR\.ApiURL\(`\/api\/archives\/\$\{archiveId\}\/files\?force=false`\)/);
     assert.match(js, /const resumePage = archiveData \? LRR\.getProgress\(archiveData\)\.progress : 0;/);
+    assert.match(js, /const startPage = getReaderIntentStartIndex\(resumePage, pages\.length\);/);
     assert.match(js, /\.slice\(startPage, startPage \+ READER_INTENT_PAGE_COUNT\)/);
     assert.match(js, /image\.decoding = "async";/);
     assert.match(js, /image\.fetchPriority = priority;/);

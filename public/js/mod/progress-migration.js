@@ -33,3 +33,18 @@ export function shouldMigrateProgressValue(progress, serverProgress) {
 
     return Number.isFinite(localProgress) && Number.isFinite(storedServerProgress) && localProgress > storedServerProgress;
 }
+
+/**
+ * Convert persisted 1-indexed progress into the 0-indexed page that the Reader
+ * will open. Unset, invalid, and completed progress all open the first page.
+ */
+export function getReaderIntentStartIndex(progress, pageCount) {
+    const storedProgress = parseProgressValue(progress);
+    const totalPages = parseProgressValue(pageCount);
+
+    if (!Number.isFinite(storedProgress) || !Number.isFinite(totalPages)
+        || storedProgress <= 0 || storedProgress >= totalPages) {
+        return 0;
+    }
+    return storedProgress - 1;
+}

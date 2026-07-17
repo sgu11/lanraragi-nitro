@@ -1,10 +1,10 @@
 /**
  * Latest-only, ordered progress write queue.
  *
- * Reader navigation can enqueue a completion reset while an earlier page
- * update is still in flight.  Keep one active request per archive and retain
- * only the newest pending value so an older write cannot run after a newer
- * reset.  The transport is injected to keep this small state machine
+ * Reader navigation can enqueue a final completion value while an earlier page
+ * update is still in flight. Keep one active request per archive and retain
+ * only the newest pending value so an older write cannot run after the final
+ * value. The transport is injected to keep this small state machine
  * browser-independent and directly testable under node.
  */
 
