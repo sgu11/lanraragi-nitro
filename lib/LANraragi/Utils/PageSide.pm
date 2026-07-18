@@ -28,6 +28,7 @@ our @EXPORT_OK = qw(
   enqueue_first_page_side_detection
   enqueue_first_spread_start_detection
   recent_archive_ids
+  store_user_first_spread_start
 );
 
 use constant FIRST_PAGE_SIDE_VERSION   => 1;
@@ -239,13 +240,14 @@ sub detect_and_store_first_spread_start ($id) {
 
     my $result;
     eval {
-        my $current_v     = $redis->hget( $id, "firstspreadstart_v" ) // "";
-        my $current_start = $redis->hget( $id, "firstspreadstart" )   // "";
-        if ( $current_v eq FIRST_SPREAD_START_VERSION && $current_start ne "" ) {
+        my $current_v      = $redis->hget( $id, "firstspreadstart_v" )      // "";
+        my $current_start  = $redis->hget( $id, "firstspreadstart" )        // "";
+        my $current_reason = $redis->hget( $id, "firstspreadstart_reason" ) // "";
+        if ( $current_start ne "" && ( $current_v eq FIRST_SPREAD_START_VERSION || $current_reason eq "user_slide" ) ) {
             $result = {
                 first_spread_start => $current_start,
                 confidence         => $redis->hget( $id, "firstspreadstart_confidence" ) // 0,
-                reason             => $redis->hget( $id, "firstspreadstart_reason" )     // "cached",
+                reason             => $current_reason || "cached",
                 cached             => 1
             };
         } else {
@@ -317,6 +319,23 @@ sub _store_first_spread_start ( $redis, $id, $result ) {
     } else {
         $redis->hdel( $id, "firstspreadstart_err" );
     }
+}
+
+sub store_user_first_spread_start ( $redis, $id, $start ) {
+    return unless $redis && $id;
+    my $spread_start = _normalize_first_spread_start($start);
+    return unless defined $spread_start && ( $spread_start eq "2" || $spread_start eq "4" );
+
+    _store_first_spread_start(
+        $redis,
+        $id,
+        {
+            first_spread_start => $spread_start,
+            confidence         => 1,
+            reason             => "user_slide"
+        }
+    );
+    return $spread_start;
 }
 
 sub detect_page_side ( $contents, $page_index ) {

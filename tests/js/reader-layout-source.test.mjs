@@ -356,6 +356,32 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
     assert.match(init, /isReaderNavKeydownSuppress\(e\.which\)/);
 });
 
+test("confirmed vertical spread slides lazily persist human offset feedback", async () => {
+    const js = await source("public/js/mod/reader_common.js");
+    const slideStart = js.indexOf("function slideSpreadBySinglePage(step)");
+    const slideEnd = js.indexOf("function shiftRequestedSpreadByPageCount(step)", slideStart);
+    const feedbackStart = js.indexOf("function queueFirstSpreadStartFeedback(");
+    const feedbackEnd = js.indexOf("function shouldSlideSpreadWithVerticalKeys()", feedbackStart);
+    const changeStart = js.indexOf("function changePage(");
+    const changeEnd = js.indexOf("function retryCurrentPage", changeStart);
+    const goToStart = js.indexOf("async function goToPage");
+    const goToEnd = js.indexOf("function updateProgress()", goToStart);
+    const slide = js.slice(slideStart, slideEnd);
+    const feedback = js.slice(feedbackStart, feedbackEnd);
+    const changePage = js.slice(changeStart, changeEnd);
+    const goToPage = js.slice(goToStart, goToEnd);
+
+    assert.match(js, /inferFirstSpreadStartFromDisplayWindow,/);
+    assert.match(slide, /requestedDisplayWindowRecordsHumanFeedback = true;/);
+    assert.match(goToPage, /humanFeedbackDisplayWindow/);
+    assert.match(goToPage, /queueFirstSpreadStartFeedback\(displayWindow, humanFeedbackDisplayWindow\)/);
+    assert.match(feedback, /spreadStart !== "auto"/);
+    assert.match(feedback, /id\.startsWith\("TANK_"\)/);
+    assert.match(feedback, /\/api\/archives\/\$\{id\}\/firstspreadstart\?value=\$\{value\}/);
+    assert.match(feedback, /method: "PUT"/);
+    assert.match(changePage, /Math\.abs\(navigation\.step\) === 1[\s\S]*flushPendingFirstSpreadStartFeedback\(\)/);
+});
+
 test("explicit page reload restores double-spread navigation stride", async () => {
     const js = await source("public/js/mod/reader_common.js");
     const selectStart = js.indexOf("function selectInitialPage()");

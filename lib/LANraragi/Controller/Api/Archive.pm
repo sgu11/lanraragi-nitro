@@ -14,6 +14,7 @@ use File::Basename;
 use LANraragi::Utils::Generic  qw(render_api_response is_archive get_bytelength exec_with_lock);
 use LANraragi::Utils::Database qw(get_archive_json set_isnew);
 use LANraragi::Utils::Logging  qw(get_logger);
+use LANraragi::Utils::PageSide qw(store_user_first_spread_start);
 use LANraragi::Utils::Redis    qw(redis_encode);
 use LANraragi::Utils::Path     qw(compat_path get_archive_path move_path);
 
@@ -572,6 +573,39 @@ sub update_spreadstart {
                     id          => $id,
                     spreadstart => $value,
                     success     => 1
+                }
+            );
+        }
+    );
+}
+
+sub update_firstspreadstart {
+    my $self  = shift->openapi->valid_input or return;
+    my $id    = $self->stash('id');
+    my $value = $self->req->param('value') // "";
+
+    unless ( $value eq "2" || $value eq "4" ) {
+        render_api_response( $self, "update_firstspreadstart", "Invalid firstspreadstart value." );
+        return;
+    }
+
+    return unless exec_with_lock(
+        $self,
+        "archive-write:$id",
+        "update_firstspreadstart",
+        $id,
+        sub {
+            my $redis  = $self->LRR_CONF->get_redis;
+            my $stored = store_user_first_spread_start( $redis, $id, $value );
+            $redis->quit();
+
+            $self->render(
+                openapi => {
+                    operation        => "update_firstspreadstart",
+                    id               => $id,
+                    firstspreadstart => $stored,
+                    reason           => "user_slide",
+                    success          => 1
                 }
             );
         }

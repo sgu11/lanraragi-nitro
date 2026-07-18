@@ -257,4 +257,43 @@ note("API upload checksum validation streams large uploads instead of slurping")
     }
 }
 
+note("Reader-confirmed spread starts are validated and stored with server-owned provenance");
+{
+    no warnings 'redefine';
+    my @stored;
+    my $lock_calls = 0;
+
+    local *LANraragi::Controller::Api::Archive::exec_with_lock = sub {
+        my ( $self, $key, $operation, $id, $callback ) = @_;
+        $lock_calls++;
+        is( $key, "archive-write:$archive_id", "human spread feedback uses the archive write lock" );
+        return $callback->();
+    };
+    local *LANraragi::Controller::Api::Archive::store_user_first_spread_start = sub {
+        my ( $redis, $id, $value ) = @_;
+        push @stored, [ $id, $value ];
+        return "$value";
+    };
+
+    my $ctx = FakeArchiveController->new(
+        stash  => { id => $archive_id },
+        params => { value => 4 },
+    );
+    LANraragi::Controller::Api::Archive::update_firstspreadstart($ctx);
+
+    is( $lock_calls, 1, "valid human spread feedback acquires one lock" );
+    is_deeply( $stored[0], [ $archive_id, 4 ], "validated feedback reaches the storage helper" );
+    is( $ctx->last_render->{openapi}{firstspreadstart}, "4", "stored anchor is returned" );
+    is( $ctx->last_render->{openapi}{reason}, "user_slide", "server-owned provenance is returned" );
+
+    my $invalid = FakeArchiveController->new(
+        stash  => { id => $archive_id },
+        params => { value => "UNKNOWN" },
+    );
+    LANraragi::Controller::Api::Archive::update_firstspreadstart($invalid);
+
+    is( $lock_calls, 1, "invalid feedback is rejected before locking" );
+    is( $invalid->last_render->{openapi}{success}, 0, "invalid feedback returns an API error" );
+}
+
 done_testing();

@@ -48,6 +48,10 @@ The current merge-preservation baseline lives in [`docs/local-features/`](docs/l
 
 ### Reader
 
+- **Human-confirmed adaptive offset feedback** — an unambiguous two-page
+  alignment selected with `Up`/`Down`/`W`/`S` is stored after the next normal
+  page turn as `firstspreadstart` with `user_slide` provenance. Detector
+  backfills preserve that choice until archive content changes.
 - **Measured Reader speculation tuning** — Library intent now warms two pages
   through the HTTP cache without retaining decoded images, aborts stale hover
   work, and protects the actually selected target. Reader Blob eviction skips
@@ -222,6 +226,11 @@ Reader behavior:
   do not reverse in manga mode; horizontal page-turn controls still do.
 - Pressing `J` toggles adaptive offset between `auto` and `pair2`, persisted via
   `PUT /api/archives/{id}/spreadstart?value=<auto|pair2>`.
+- In `auto` mode, an unambiguous two-page window selected by a one-page vertical
+  slide is queued as human feedback. The next ordinary page turn lazily persists
+  it through `PUT /api/archives/{id}/firstspreadstart?value=<2|4>` with
+  `firstspreadstart_reason = user_slide`. Single, wide, boundary, tankoubon, and
+  ambiguous windows do not write feedback.
 - Hidden-header/minimal-reader chrome is isolated in
   `public/js/mod/reader-chrome.js` and `public/css/reader-chrome.css`; verify
   it with `npm run smoke:reader-chrome` against a deployed reader.

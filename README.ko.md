@@ -31,6 +31,10 @@ English version: [`README.md`](README.md).
 
 ### Reader
 
+- **사람이 확정한 adaptive offset feedback**: `Up`/`Down`/`W`/`S`로 선택한
+  명확한 two-page alignment를 다음 일반 page turn 뒤 `firstspreadstart`와
+  `user_slide` provenance로 저장함. Detector backfill은 archive content가
+  변경되기 전까지 이 선택을 보존함.
 - **Reader failure recovery 및 accessibility**: page fetch/decode 실패 시 pending navigation과 queued input을 정리하고 inline retry를 제공함. Overlay는 dialog/focus semantics를 사용하고 control target은 44px이며 reduced-motion 설정을 존중함.
 - **대형 archive overview windowing**: thumbnail overview는 실제로 열 때 생성하고 한 번에 60 page만 render함.
 - **Single-page spread alignment**: 마지막 page가 짝 없이 남으면 빈 secondary image slot을 숨겨 page를 중앙에 유지하고 RTL mode의 끝에서 ghost page가 생기지 않도록 함.
@@ -103,6 +107,11 @@ Reader behavior:
 - Navigation은 fixed `+/-2` offset이 아니라 display window 기준으로 이동함.
 - `Home`/`End`와 `Page Up`/`Page Down`은 manga mode와 무관하게 page 번호 기준 동작을 유지함. Horizontal page-turn control은 기존처럼 reading direction을 따름.
 - `J` key는 adaptive offset을 `auto` / `pair2` 사이에서 toggle하고 `PUT /api/archives/{id}/spreadstart?value=<auto|pair2>`로 저장함.
+- `auto` mode에서 one-page vertical slide로 선택한 two-page window가 Pair
+  2-3/Pair 3-4 중 하나로 명확하면 human feedback 후보로 보관함. 다음 일반
+  page turn 때 `PUT /api/archives/{id}/firstspreadstart?value=<2|4>`로 lazy
+  저장하고 `firstspreadstart_reason = user_slide`을 기록함. Single, wide,
+  boundary, tankoubon, ambiguous window는 저장하지 않음.
 - Hidden-header/minimal-reader chrome logic은 `public/js/mod/reader-chrome.js`와 `public/css/reader-chrome.css`로 격리함. Deployed reader 검증은 `npm run smoke:reader-chrome` 사용함.
 
 ### Library / Thumbnails

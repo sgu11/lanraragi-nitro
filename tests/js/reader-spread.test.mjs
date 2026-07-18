@@ -7,6 +7,7 @@ import {
     getPageNavigationDestination,
     getSinglePageSpreadWindow,
     getSpreadWindowWithPageShift,
+    inferFirstSpreadStartFromDisplayWindow,
     getDoublePageInitialProbePages,
     normalizeSpreadStartMode,
     resolveReaderNavigationInput,
@@ -233,6 +234,32 @@ test("single-page spread sliding keeps cover and wide pages single", () => {
         ...state,
         displayWindow: { start: 5, end: 5 },
     }), { start: 6, end: 6 });
+});
+
+test("human shifted spreads infer an unambiguous first interior spread start", () => {
+    const state = {
+        maxPage: 8,
+        doublePageMode: true,
+        widePages: new Set(),
+    };
+
+    assert.equal(inferFirstSpreadStartFromDisplayWindow({ start: 1, end: 2 }, state), 2);
+    assert.equal(inferFirstSpreadStartFromDisplayWindow({ start: 2, end: 3 }, state), 4);
+    assert.equal(inferFirstSpreadStartFromDisplayWindow({ start: 5, end: 6 }, state), 2);
+    assert.equal(inferFirstSpreadStartFromDisplayWindow({ start: 6, end: 7 }, state), 4);
+});
+
+test("human shifted spread inference rejects single, wide, and ambiguous windows", () => {
+    const state = {
+        maxPage: 8,
+        doublePageMode: true,
+        widePages: new Set([4]),
+    };
+
+    assert.equal(inferFirstSpreadStartFromDisplayWindow({ start: 0, end: 0 }, state), undefined);
+    assert.equal(inferFirstSpreadStartFromDisplayWindow({ start: 4, end: 4 }, state), undefined);
+    assert.equal(inferFirstSpreadStartFromDisplayWindow({ start: 5, end: 6 }, state), undefined);
+    assert.equal(inferFirstSpreadStartFromDisplayWindow({ start: 3, end: 5 }, state), undefined);
 });
 
 test("shifted spread navigation keeps a double-page stride from an overlapping spread", () => {

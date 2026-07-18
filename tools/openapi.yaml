@@ -1795,6 +1795,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationResponse'
+  /archives/{id}/firstspreadstart:
+    put:
+      security:
+        - api_key: []
+      operationId: updateArchiveFirstSpreadStart
+      x-mojo-to: api-archive#update_firstspreadstart
+      summary: Store a reader-confirmed adaptive offset
+      description: |-
+        Stores an unambiguous Pair 2-3 or Pair 3-4 choice inferred from a
+        reader single-page spread slide. The server records user_slide
+        provenance and preserves the choice across detector backfills until
+        the archive content changes.
+      tags:
+        - archives
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the Archive to process.
+          schema:
+            type: string
+            minLength: 40
+            maxLength: 40
+        - name: value
+          in: query
+          required: true
+          description: Reader-confirmed first interior spread anchor.
+          schema:
+            type: integer
+            enum:
+              - 2
+              - 4
+      responses:
+        '200':
+          description: Success response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  operation:
+                    type: string
+                    enum:
+                      - update_firstspreadstart
+                  firstspreadstart:
+                    type: string
+                    enum:
+                      - "2"
+                      - "4"
+                  reason:
+                    type: string
+                    enum:
+                      - user_slide
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+        '400':
+          description: Invalid reader-confirmed spread start
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '423':
+          description: Locked resource response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
   /archives/{id}/spreadstart:
     put:
       security:
@@ -4881,7 +4952,7 @@ components:
             - "pair2"
         firstspreadstart:
           type: [string, "null"]
-          description: Detected first spread anchor for adaptive double-page spread starts
+          description: Detected or reader-confirmed first spread anchor for adaptive double-page spread starts
           enum:
             - "2"
             - "4"
@@ -4889,10 +4960,10 @@ components:
             - null
         firstspreadstart_confidence:
           type: [string, "null"]
-          description: Confidence score for firstspreadstart
+          description: Detector confidence score, or 1 for reader-confirmed feedback
         firstspreadstart_reason:
           type: [string, "null"]
-          description: Detector reason for firstspreadstart
+          description: Detector reason or user_slide provenance for firstspreadstart
         firstspreadstart_v:
           type: [string, "null"]
           description: Detector algorithm version for firstspreadstart

@@ -29,6 +29,7 @@ import {
     getSinglePageSpreadWindow,
     getSpreadWindowWithPageShift,
     getSyncedReadingProgressPageForDisplayWindow,
+    inferFirstSpreadStartFromDisplayWindow,
     isCurrentReaderNavigation,
     isReaderNavigationPending,
     isWidePage,
@@ -80,6 +81,9 @@ let activeDisplayWindowWasRequested = false;
 let activeDisplayWindowStride = 2;
 let requestedDisplayWindow = null;
 let requestedDisplayWindowStride = null;
+let requestedDisplayWindowRecordsHumanFeedback = false;
+let pendingFirstSpreadStartFeedback = null;
+let firstSpreadStartFeedbackInFlight = false;
 let hasExplicitPageParameter = false;
 let initialPageScrollPending = false;
 let userInteractedBeforeInitialPageScroll = false;
@@ -1175,6 +1179,7 @@ function toggleMobileFullscreen() {
 // fork: adaptive offset control, persisted per-archive.
 function setSpreadStart(value) {
     spreadStart = normalizeSpreadStartMode(value);
+    if (spreadStart !== "auto") { pendingFirstSpreadStartFeedback = null; }
     ({ firstSpreadStart } = spreadStartFlags(spreadStart, detectedFirstSpreadStart));
     $("#toggle-spread-start input").removeClass("toggled");
     $(`#spread-${spreadStart}`).addClass("toggled");
@@ -1208,6 +1213,46 @@ function getCurrentDisplayWindow() {
     return getDisplayWindow(currentPage, getSpreadState());
 }
 
+function displayWindowsEqual(left, right) {
+    return Boolean(left && right && left.start === right.start && left.end === right.end);
+}
+
+function queueFirstSpreadStartFeedback(displayWindow, requestedWindow) {
+    if (spreadStart !== "auto" || id.startsWith("TANK_") || !displayWindowsEqual(displayWindow, requestedWindow)) {
+        pendingFirstSpreadStartFeedback = null;
+        return;
+    }
+
+    const inferred = inferFirstSpreadStartFromDisplayWindow(displayWindow, getSpreadState());
+    pendingFirstSpreadStartFeedback = inferred && String(inferred) !== String(detectedFirstSpreadStart)
+        ? inferred
+        : null;
+}
+
+function flushPendingFirstSpreadStartFeedback() {
+    if (firstSpreadStartFeedbackInFlight || pendingFirstSpreadStartFeedback === null) { return; }
+
+    const value = pendingFirstSpreadStartFeedback;
+    pendingFirstSpreadStartFeedback = null;
+    firstSpreadStartFeedbackInFlight = true;
+
+    fetch(new LRR.ApiURL(`/api/archives/${id}/firstspreadstart?value=${value}`), { method: "PUT" })
+        .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            detectedFirstSpreadStart = String(value);
+            if (spreadStart === "auto") { setSpreadStart("auto"); }
+        })
+        .catch((error) => {
+            if (pendingFirstSpreadStartFeedback === null) {
+                pendingFirstSpreadStartFeedback = value;
+            }
+            console.warn("Failed to persist reader-confirmed spread start", error);
+        })
+        .finally(() => {
+            firstSpreadStartFeedbackInFlight = false;
+        });
+}
+
 function shouldSlideSpreadWithVerticalKeys() {
     return doublePageMode && shouldWheelNavigatePages({
         infiniteScroll,
@@ -1224,6 +1269,7 @@ function slideSpreadBySinglePage(step) {
     requestedDisplayWindow = getSinglePageSpreadWindow(step, getSpreadState({
         displayWindow: getCurrentDisplayWindow(),
     }));
+    requestedDisplayWindowRecordsHumanFeedback = true;
     goToPage(requestedDisplayWindow.start);
     return true;
 }
@@ -2130,8 +2176,12 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
         const displayWindowStrideOverride = requestedDisplayWindow
             ? requestedDisplayWindowStride
             : (preserveDisplayWindow && activeDisplayWindowWasRequested ? activeDisplayWindowStride : null);
+        const humanFeedbackDisplayWindow = requestedDisplayWindowRecordsHumanFeedback
+            ? requestedDisplayWindow
+            : null;
         requestedDisplayWindow = null;
         requestedDisplayWindowStride = null;
+        requestedDisplayWindowRecordsHumanFeedback = false;
         previousPage = currentPage;
         const targetPage = navigation.page;
         showingSinglePage = false;
@@ -2186,6 +2236,7 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                         activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
                         activeDisplayWindowStride = displayWindowStrideOverride || 2;
                         if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
+                        queueFirstSpreadStartFeedback(displayWindow, humanFeedbackDisplayWindow);
                         if (mangaMode) {
                             displayDecodedImage("#img", decodedImg2, img2Filename);
                             displayDecodedImage("#img_doublepage", decodedImg1, img1Filename);
@@ -3060,6 +3111,9 @@ function changePage(targetPage, resetAuto = false, { respectReadingDirection = t
     if ("step" in navigation && navigation.step !== 0 && isReaderNavigationPending(readerCursor)) {
         queueReaderNavigationStep(readerCursor, navigation.step, { resetAuto });
         return;
+    }
+    if ("step" in navigation && Math.abs(navigation.step) === 1) {
+        flushPendingFirstSpreadStartFeedback();
     }
 
     // Sync position if in infinite scroll mode

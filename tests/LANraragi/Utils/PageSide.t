@@ -18,7 +18,9 @@ END { $? = 0 if !$IM_LOAD_OK }
 use LANraragi::Utils::PageSide qw(
   choose_first_spread_start
   clear_first_spread_start_detection
+  detect_and_store_first_spread_start
   recent_archive_ids
+  store_user_first_spread_start
 );
 
 sub make_grayscale_test_page {
@@ -202,6 +204,48 @@ subtest "clears spread-start and legacy page-side detection fields" => sub {
     ok( $deleted{firstspreadstart_v},    "firstspreadstart_v is cleared" );
     ok( $deleted{firstpageside},         "legacy firstpageside is cleared" );
     ok( $deleted{firstpageside_v},       "legacy firstpageside_v is cleared" );
+};
+
+subtest "stores reader-confirmed spread starts with human provenance" => sub {
+    my %stored;
+    my @deleted;
+    my $redis = Test::MockObject->new;
+    $redis->mock( hset => sub { my ( $self, $id, $field, $value ) = @_; $stored{$field} = $value; return 1; } );
+    $redis->mock( hdel => sub { my ( $self, $id, @fields ) = @_; push @deleted, @fields; return scalar @fields; } );
+
+    is( store_user_first_spread_start( $redis, "abc", 4 ), "4", "Pair 3-4 feedback is accepted" );
+    is( $stored{firstspreadstart},            "4",          "human-selected anchor is stored" );
+    is( $stored{firstspreadstart_confidence}, 1,            "human feedback is authoritative" );
+    is( $stored{firstspreadstart_reason},     "user_slide", "human provenance is stored" );
+    ok( $stored{firstspreadstart_v}, "current spread detector version is stored" );
+    ok( grep { $_ eq "firstspreadstart_err" } @deleted, "stale detector errors are cleared" );
+    is( store_user_first_spread_start( $redis, "abc", "UNKNOWN" ), undef, "non-human anchor is rejected" );
+};
+
+subtest "detector backfill preserves reader-confirmed spread starts across version changes" => sub {
+    my %stored = (
+        firstspreadstart            => "4",
+        firstspreadstart_confidence => 1,
+        firstspreadstart_reason     => "user_slide",
+        firstspreadstart_v          => 0,
+    );
+    my $redis = Test::MockObject->new;
+    $redis->mock( hget => sub { my ( $self, $id, $field ) = @_; return $stored{$field}; } );
+    $redis->mock( hset => sub { my ( $self, $id, $field, $value ) = @_; $stored{$field} = $value; return 1; } );
+    $redis->mock( hdel => sub { delete $stored{$_} for @_[ 2 .. $#_ ]; return 1; } );
+    $redis->mock( quit => sub { return 1; } );
+
+    no warnings 'redefine';
+    my $logger = Test::MockObject->new;
+    $logger->mock( warn => sub { return; } );
+    local *LANraragi::Utils::PageSide::get_logger = sub { return $logger; };
+    local *LANraragi::Model::Config::get_redis = sub { return $redis; };
+    local *LANraragi::Utils::PageSide::get_archive_path = sub { die "human feedback should bypass archive detection\n"; };
+
+    my $result = detect_and_store_first_spread_start("abc");
+    is( $result->{first_spread_start}, "4", "human-selected anchor is returned" );
+    ok( $result->{cached}, "human-selected anchor uses the cache path" );
+    is( $stored{firstspreadstart_reason}, "user_slide", "human provenance survives cache refresh" );
 };
 
 subtest "recent archive selection sorts by file mtime and returns all archives by default" => sub {

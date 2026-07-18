@@ -300,6 +300,33 @@ export function buildSpreadWindows(maxPage, state) {
     return buildSpreadWindowsMemoized(maxPage, state);
 }
 
+/**
+ * Infer a human-selected archive offset from a committed two-page display
+ * window. A window is useful feedback only when exactly one of the two
+ * supported first-spread anchors would produce it under the reader's current
+ * wide-page knowledge.
+ */
+export function inferFirstSpreadStartFromDisplayWindow(displayWindow, state) {
+    const start = Number(displayWindow?.start);
+    const end = Number(displayWindow?.end);
+    const widePages = state.widePages || new Set();
+
+    if (!state.doublePageMode || !Number.isInteger(start) || !Number.isInteger(end)
+        || end !== start + 1 || start <= 0 || end > state.maxPage
+        || widePages.has(start) || widePages.has(end)) {
+        return undefined;
+    }
+
+    const matches = [2, 4].filter((firstSpreadStart) => (
+        buildSpreadWindowsMemoized(state.maxPage, {
+            ...state,
+            firstSpreadStart,
+        }).some((window) => window.start === start && window.end === end)
+    ));
+
+    return matches.length === 1 ? matches[0] : undefined;
+}
+
 export function getDisplayWindow(page, state) {
     const currentPage = Math.max(0, Number(page) || 0);
     const windows = buildSpreadWindows(state.maxPage, state);
