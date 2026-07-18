@@ -40,55 +40,6 @@ Prewarm은 image를 미리 decode하지 않고 reader 진입에 필요한 HTTP c
 spread를 decode하며, 오래된 navigation 결과가 새 화면이나 progress를
 덮어쓰지 않도록 요청 세대를 구분합니다.
 
-## 성능 튜닝
-
-Nitro의 성능 작업은 추측이 아니라 동일 조건 A/B와 명시적인 중단 기준으로
-관리합니다. 현재 upstream과의 교차 측정에서는 시작 단계와 실제 page
-navigation의 결과가 서로 달랐습니다. Nitro는 `DOMContentLoaded`가 빠르지만,
-현재 upstream은 첫 image 표시와 warm 전체 순회가 더 빠릅니다.
-
-### 현재 upstream 기준선
-
-짧을수록 좋은 지표입니다. 2026-07-19에 official upstream nightly
-([`b94e4805`](https://github.com/Difegue/LANraragi/commit/b94e4805677d4ca75e7d61ca13c4e3e99c4b99c8),
-image digest `sha256:fbd0b1bc…`)와 동일 데이터의 Nitro runtime을 같은
-macOS Chrome 150.0.7871.129에서 교차 측정했습니다.
-
-| Reader 지표 | Upstream | Nitro | Nitro 상대 결과 |
-| --- | ---: | ---: | ---: |
-| Cold `DOMContentLoaded` p50 (`n=20`) | `87.4 ms` | **`77.8 ms`** | **11.0% 단축** |
-| Module 시작 이후 normalized DCL p50 (`n=20`) | `50.6 ms` | **`48.9 ms`** | **3.4% 단축** |
-| Cold first-visible p50 (`n=20`) | **`146.1 ms`** | `196.3 ms` | 34.4% 증가 |
-| Warm 70-page 전체 순회 total p50 (각 3회, 35 turns/run) | **`2,054.0 ms`** | `4,132.8 ms` | 101.2% 증가 |
-| Warm turn p50 / p95 (`n=105`) | **`55.8 / 117.6 ms`** | `119.9 / 142.9 ms` | 114.9% / 21.5% 증가 |
-
-측정은 `1440x900`, double-page on, manga mode off, preload `5`, progress write
-off에서 수행했습니다. Cold startup은 browser cache를 끈 20회 독립 진입,
-warm 순회는 cache를 채운 뒤 70-page sample을 35회 전환하는 과정을 3회
-반복했습니다. 각 turn은 page counter와 primary source가 바뀌고, 비어 있지
-않은 모든 표시 image가 decode되며, `aria-busy=false`가 된 시점에 끝납니다.
-Upstream은 read-only content와 복제 DB를 사용한 격리 container에서
-측정했고, 재색인을 막기 위해 background scanner/worker만 중지했습니다.
-Reader source는 official image 그대로입니다.
-
-### 최근 Nitro 내부 A/B
-
-아래 값은 현재 upstream과의 비교가 아니라, 2026-07-18 tuning session에서
-Nitro control과 candidate를 같은 조건으로 비교한 결과입니다.
-
-| 선택한 변경 | Control → candidate | 결정 |
-| --- | --- | --- |
-| `reader-progress.js` module preload | normalized DCL p50 `97.8 → 83.7 ms` (**14.4% 단축**) | 유지 |
-| Library intent를 decode 대신 fetch-only로 전환 | click-to-visible p95 `207 → 178 ms`; speculative decode `20 → 0`; estimated RGBA retention `291.7 MB → 0` | 유지 |
-| Stale intent abort와 selected-target promotion | stale transfer `6,237,558 → 5,869 bytes` (**99.91% 감소**) | 유지 |
-| 표시 중 Blob source eviction 방지 | displayed-source revoke `104 → 0`; page resources `222 → 207`; p95 변화 `+1.8%` | 유지 |
-
-이 기준선은 단일 client와 단일 고해상도 archive cohort의 회귀 지표이지,
-모든 기기와 library를 대표하는 종합 benchmark는 아닙니다. 특히 최신
-upstream 대비 warm navigation 격차는 다음 Reader tuning의 명시적인 우선
-과제이며, 과거 Nitro 자체 baseline 대비 개선만으로 upstream보다 빠르다고
-주장하지 않습니다.
-
 ## 주요 기능 자세히 보기
 
 ### Reader와 progress
