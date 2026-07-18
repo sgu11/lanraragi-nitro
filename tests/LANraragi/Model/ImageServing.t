@@ -334,6 +334,29 @@ note("CBW pages use the raster bytes' authoritative MIME instead of the syntheti
       ->header_like( "Content-Disposition", qr{\binline\b}, "CBW WebP remains inline" );
 }
 
+note("ordinary archive pages use an image MIME derived from the page extension");
+{
+    my $id     = "fedcbafedcbafedcbafedcbafedcbafedcbafedc";
+    my $source = make_format_blob( 8, 6, "webp" );
+
+    no warnings 'redefine';
+    local *LANraragi::Model::Archive::_resolve_archive_path = sub { return "/tmp/example.cbz" };
+    local *LANraragi::Model::Archive::is_cbw = sub { return 0 };
+    local *LANraragi::Model::Archive::get_page_data = sub {
+        my ( undef, undef, $metrics ) = @_;
+        $metrics->{cache_status} = "miss" if defined $metrics;
+        return $source;
+    };
+    local *LANraragi::Model::Archive::get_logger = sub { return FakeImageLogger->new };
+    local *LANraragi::Model::Metrics::record_image_serving_metrics = sub { return 1 };
+
+    my $t = build_image_app();
+    $t->get_ok("/archives/$id/page?path=page-001.webp")
+      ->status_is(200)
+      ->header_like( "Content-Type", qr{^image/webp}, "ordinary WebP page is rendered with image/webp" )
+      ->header_like( "Content-Disposition", qr{\binline\b}, "ordinary WebP page remains inline" );
+}
+
 note("archive page crop=border serves and reuses a cropped page variant");
 {
     my $id = "1234567890abcdef1234567890abcdef12345678";

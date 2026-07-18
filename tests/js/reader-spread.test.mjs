@@ -180,7 +180,7 @@ test("double-page probe pages are loaded concurrently, not serially awaited", as
     // loadImage calls are safe.
     assert.match(
         readerSrc,
-        /await Promise\.all\(\s*getDoublePageInitialProbePages\([\s\S]*?\.map\([\s\S]*?loadImage/,
+        /const probePages = getDoublePageInitialProbePages\([\s\S]*?await Promise\.all\(\s*probePages\.map\([\s\S]*?loadImage/,
         "double-page probe should use Promise.all over getDoublePageInitialProbePages().map(loadImage)"
     );
     assert.match(
