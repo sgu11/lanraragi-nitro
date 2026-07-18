@@ -49,7 +49,8 @@ let readerCursor = createReaderCursor(0);
 let currentChapter = null;
 let showingSinglePage = true;
 let pageThumbnails = [];
-const MAX_PRELOADED_IMAGES = 8;
+const MIN_PRELOADED_IMAGES = 8;
+const MAX_PRELOAD_COUNT = 8;
 const MAX_PREDECODED_IMAGES = Number(navigator.deviceMemory) >= 8 ? 4 : 2;
 const INFINITE_SCROLL_WINDOW_RADIUS = 4;
 const OVERLAY_PAGE_WINDOW_SIZE = 60;
@@ -2188,7 +2189,10 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
         let navigationFailed = false;
 
         $("#reader-load-error").hide().attr("data-page", "");
-        $("#i3").addClass("loading").attr("aria-busy", "true");
+        $("#i3").attr("aria-busy", "true");
+        const loadingTimer = setTimeout(() => {
+            if (isCurrentNavigation(navigationId)) $("#i3").addClass("loading");
+        }, 500);
 
         try {
 
@@ -2208,11 +2212,15 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                 // on each other, so load them concurrently instead of serially.
                 // Each writes to distinct preloadedDimensions/preloadedPromises
                 // keys, so concurrent loadImage calls don't clobber shared state.
-                    await Promise.all(
-                        getDoublePageInitialProbePages(targetPage, maxPage).map((probePage) => (
+                    const probePages = getDoublePageInitialProbePages(targetPage, maxPage);
+                    const probeResults = await Promise.all(
+                        probePages.map((probePage) => (
                             preloadedDimensions[probePage] ? Promise.resolve() : loadImage(probePage)
                         ))
                     );
+                    const probedImages = new Map(probePages.map((probePage, index) => (
+                        [probePage, probeResults[index]]
+                    )));
                     if (!isCurrentNavigation(navigationId)) { return; }
 
                     const probedDisplayWindow = getDisplayWindow(targetPage, getSpreadState({
@@ -2224,10 +2232,10 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                     const displayStart = displayWindow.start;
 
                     if (displayWindow.end > displayWindow.start) {
-                        const img1 = await loadImage(displayStart);
+                        const img1 = probedImages.get(displayStart) || await loadImage(displayStart);
                         if (!isCurrentNavigation(navigationId)) { return; }
                         const img1Filename = getFilename(displayStart);
-                        const img2 = await loadImage(displayWindow.end);
+                        const img2 = probedImages.get(displayWindow.end) || await loadImage(displayWindow.end);
                         if (!isCurrentNavigation(navigationId)) { return; }
                         const img2Filename = getFilename(displayWindow.end);
                         const [decodedImg1, decodedImg2] = await Promise.all([decodeImage(img1), decodeImage(img2)]);
@@ -2247,7 +2255,7 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                         $("#display").addClass("double-mode");
                         updateMetadata();
                     } else {
-                        const img = await loadImage(displayStart);
+                        const img = probedImages.get(displayStart) || await loadImage(displayStart);
                         if (!isCurrentNavigation(navigationId)) { return; }
                         const imgFilename = getFilename(displayStart);
                         const decodedImg = await decodeImage(img);
@@ -2308,6 +2316,7 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                 console.error(`Failed to load reader page ${targetPage + 1}`, error);
             }
         } finally {
+            clearTimeout(loadingTimer);
             if (navigationFailed) {
                 $("#i3").removeClass("loading").attr("aria-busy", "false");
             }
@@ -2335,6 +2344,7 @@ function updateProgress() {
 function preloadImages() {
     let preloadNext = preloadCount;
     let preloadPrev = preloadCount == 0 ? 0 : 1;
+    const preloadStrategy = getReaderPreloadStrategy();
 
     if (doublePageMode) { preloadNext *= 2; preloadPrev *= 2; }
     const preloadState = getSpreadState();
@@ -2350,8 +2360,17 @@ function preloadImages() {
         forwardIndexes.push(index);
     }
     const predecodeIndexes = new Set();
+    const predecodeTasks = [];
+    const deferredBlobIndexes = [];
+    const configuredPredecodeCount = localStorage.getItem("readerPredecodeCount");
+    const requestedPredecodeCount = configuredPredecodeCount === null
+        ? MAX_PREDECODED_IMAGES
+        : Number(configuredPredecodeCount);
+    const predecodeCount = Number.isInteger(requestedPredecodeCount)
+        ? Math.max(0, Math.min(MAX_PREDECODED_IMAGES, requestedPredecodeCount))
+        : MAX_PREDECODED_IMAGES;
     for (const index of forwardIndexes) {
-        if (predecodeIndexes.size >= MAX_PREDECODED_IMAGES) { break; }
+        if (predecodeIndexes.size >= predecodeCount) { break; }
         predecodeIndexes.add(index);
     }
 
@@ -2359,20 +2378,38 @@ function preloadImages() {
         if (predecodeIndexes.has(index)) {
             const source = getReaderImageSource(index);
             predecodeSources.add(source);
-            loadImage(index)
-                .then((src) => decodeImage(src))
+            const predecodeTask = loadImage(index)
+                .then((loadedImage) => decodeImage(loadedImage))
                 .catch(() => {})
                 .finally(() => {
                     predecodeSources.delete(source);
                     prunePreloadedImages();
                 });
+            predecodeTasks.push(predecodeTask);
+        } else if (preloadStrategy === "blob") {
+            deferredBlobIndexes.push(index);
         } else {
             loadImage(index).catch(() => {});
         }
     }
     for (let i = 1; i <= preloadPrev; i++) {
         if (currentPage - i < 0) { break; }
-        loadImage(currentPage - i).catch(() => {});
+        const index = currentPage - i;
+        if (preloadStrategy === "blob") {
+            deferredBlobIndexes.push(index);
+        } else {
+            loadImage(index).catch(() => {});
+        }
+    }
+    const preloadDeferredBlobs = () => {
+        for (const index of deferredBlobIndexes) {
+            preloadBlobBytesWithFallback(index).catch(() => {});
+        }
+    };
+    if (predecodeTasks.length > 0) {
+        Promise.allSettled(predecodeTasks).then(preloadDeferredBlobs);
+    } else {
+        preloadDeferredBlobs();
     }
 }
 
@@ -2389,7 +2426,16 @@ function prunePreloadedImages() {
             .filter(Boolean),
     );
 
-    while (preloadedOrder.length > MAX_PRELOADED_IMAGES) {
+    const pageFactor = doublePageMode ? 2 : 1;
+    const configuredPreloadCount = Math.max(0, Number(preloadCount) || 0);
+    const forwardWindow = configuredPreloadCount * pageFactor;
+    const backwardWindow = configuredPreloadCount === 0 ? 0 : pageFactor;
+    const displayedWindow = pageFactor;
+    const maximumPreloadedImages = Math.max(
+        MIN_PRELOADED_IMAGES,
+        forwardWindow + backwardWindow + displayedWindow,
+    );
+    while (preloadedOrder.length > maximumPreloadedImages) {
         const evictIndex = preloadedOrder.findIndex((candidate) => {
             const loadedSrc = preloadedImg[candidate];
             return !predecodeSources.has(candidate)
@@ -2424,13 +2470,18 @@ window.addEventListener("pagehide", () => {
     revokePreloadedImages();
 });
 
-async function decodeImage(src) {
+async function decodeImage(loadedImage) {
+    const src = typeof loadedImage === "string" ? loadedImage : loadedImage?.src;
     if (!src) return;
     if (!predecodedImg[src]) {
-        const img = new Image();
-        img.decoding = "async";
-        img.src = src;
+        const loadedCandidate = typeof loadedImage === "object" ? loadedImage.image : null;
+        const img = loadedCandidate || new Image();
+        if (!loadedCandidate) {
+            img.decoding = "async";
+            img.src = src;
+        }
         predecodedImg[src] = img;
+        if (loadedCandidate) predecodedPromises[src] = Promise.resolve(img);
     }
 
     predecodedOrder = predecodedOrder.filter((existingSrc) => existingSrc !== src);
@@ -2475,7 +2526,7 @@ async function loadImage(index) {
             width: displayedImage.naturalWidth,
             height: displayedImage.naturalHeight,
         };
-        return src;
+        return { src, image: displayedImage };
     }
 
     try {
@@ -2486,7 +2537,7 @@ async function loadImage(index) {
     } catch (e) {
         if (src !== rawSrc) {
             const fallback = await preloadImageWithBlobUrl(index, rawSrc);
-            preloadedImg[src] = fallback;
+            preloadedImg[src] = fallback.src;
             touchPreloadedImage(src);
             return fallback;
         }
@@ -2494,7 +2545,7 @@ async function loadImage(index) {
     }
 }
 
-async function preloadImageWithBlobUrl(index, src) {
+async function preloadBlobBytes(index, src) {
     if (!preloadedImg[src]) {
         if (!preloadedPromises[src]) {
             preloadedPromises[src] = fetch(src)
@@ -2513,24 +2564,57 @@ async function preloadImageWithBlobUrl(index, src) {
         preloadedImg[src] = await preloadedPromises[src];
     }
     touchPreloadedImage(src);
+    return { src: preloadedImg[src] };
+}
+
+async function preloadBlobBytesWithFallback(index, requestedSrc = getReaderImageSource(index)) {
+    const rawSrc = pages[index];
+    const src = requestedSrc;
+    try {
+        return await preloadBlobBytes(index, src);
+    } catch (error) {
+        if (src !== rawSrc) {
+            const fallback = await preloadBlobBytes(index, rawSrc);
+            preloadedImg[src] = fallback.src;
+            touchPreloadedImage(src);
+            return fallback;
+        }
+        throw error;
+    }
+}
+
+async function preloadImageWithBlobUrl(index, src) {
+    let loadedImage = null;
+    const loaded = await preloadBlobBytes(index, src);
 
     // Cache natural dimensions for spread/wide-page decisions, separate from
     // the byte sizes in preloadedSizes. Decoded off the already-fetched blob.
     if (!preloadedDimensions[index]) {
-        const blobUrl = preloadedImg[src];
+        const blobUrl = loaded.src;
         preloadedDimensions[index] = await new Promise((resolve) => {
             const probe = new Image();
-            probe.onload = () => resolve({ width: probe.naturalWidth, height: probe.naturalHeight });
+            probe.onload = () => {
+                const dimensions = { width: probe.naturalWidth, height: probe.naturalHeight };
+                probe.onload = null;
+                probe.onerror = null;
+                loadedImage = probe;
+                resolve(dimensions);
+            };
             // Don't hang navigation if the blob can't be decoded.
-            probe.onerror = () => resolve({ width: 0, height: 0 });
+            probe.onerror = () => {
+                probe.onload = null;
+                probe.onerror = null;
+                resolve({ width: 0, height: 0 });
+            };
             probe.src = blobUrl;
         });
     }
 
-    return preloadedImg[src];
+    return { src: loaded.src, image: loadedImage };
 }
 
 async function preloadImageWithBrowserCache(index, src) {
+    let loadedImage = null;
     if (!preloadedImg[src]) {
         if (!preloadedPromises[src]) {
             preloadedPromises[src] = new Promise((resolve, reject) => {
@@ -2542,7 +2626,7 @@ async function preloadImageWithBrowserCache(index, src) {
                         width: img.naturalWidth,
                         height: img.naturalHeight,
                     };
-                    resolve(src);
+                    resolve({ src, image: img });
                 };
                 img.onerror = () => reject(new Error(`Could not load ${src}`));
                 img.src = src;
@@ -2550,10 +2634,12 @@ async function preloadImageWithBrowserCache(index, src) {
                 delete preloadedPromises[src];
             });
         }
-        preloadedImg[src] = await preloadedPromises[src];
+        const loaded = await preloadedPromises[src];
+        preloadedImg[src] = loaded.src;
+        loadedImage = loaded.image;
     }
     touchPreloadedImage(src);
-    return preloadedImg[src];
+    return { src: preloadedImg[src], image: loadedImage };
 }
 
 function toggleFitMode(e) {
@@ -2659,7 +2745,7 @@ function registerPreload() {
     const storageVal = (localStorage.preloadCount === "" ? null : localStorage.preloadCount);
 
     const requested = Number(inputVal ?? storageVal ?? 2);
-    preloadCount = Number.isFinite(requested) ? Math.max(0, Math.min(MAX_PRELOADED_IMAGES, Math.trunc(requested))) : 2;
+    preloadCount = Number.isFinite(requested) ? Math.max(0, Math.min(MAX_PRELOAD_COUNT, Math.trunc(requested))) : 2;
     $("#preload-input").val(preloadCount);
     localStorage.preloadCount = preloadCount;
 }

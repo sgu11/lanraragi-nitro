@@ -225,6 +225,21 @@ sub _thumbnail_mime ($format) {
     }->{$format} // "application/octet-stream";
 }
 
+sub _page_mime ($format) {
+    return {
+        avif => "image/avif",
+        bmp  => "image/bmp",
+        gif  => "image/gif",
+        heic => "image/heic",
+        heif => "image/heif",
+        jpeg => "image/jpeg",
+        jpg  => "image/jpeg",
+        jxl  => "image/jxl",
+        png  => "image/png",
+        webp => "image/webp",
+    }->{ lc( $format // "" ) } // "application/octet-stream";
+}
+
 sub _render_thumbnail_file ( $self, $thumbname, $format ) {
     $self->res->headers->cache_control('public, max-age=2592000, immutable');
     $self->res->headers->header('Vary', 'Accept');
@@ -741,7 +756,7 @@ sub serve_page {
         if ($response_info) {
             $render_args{content_type} = $response_info->{mime};
         } else {
-            $render_args{format} = substr( $file_ext, 1 );
+            $render_args{content_type} = _page_mime( substr( $file_ext, 1 ) );
         }
         $self->render_file(%render_args);
     }
