@@ -103,7 +103,7 @@ test("reader overlay uses render containment and reader preload has an A/B strat
     assert.match(reader, /if \(\$\("#archivePagesOverlay"\)\.attr\("loaded"\) === "true"\) updateArchiveOverlay\(\)/);
 });
 
-test("reader wheel page navigation debounce is tuned for low-latency service", async () => {
+test("reader wheel page navigation debounce is tuned for a low-latency service", async () => {
     const reader = await source("public/js/mod/reader_common.js");
 
     assert.match(reader, /setTimeout\(\(\) => \{ wheelDebounce = false; \}, 100\)/);

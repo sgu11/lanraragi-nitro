@@ -2,8 +2,8 @@
 
 LANraragi Nitro는
 [LANraragi](https://github.com/Difegue/LANraragi)를 기반으로 reader 사용성,
-library workflow, duplicate review, deployed reliability를 개선한 개인용
-feature fork입니다.
+library workflow, duplicate review, deployment reliability를 개선한 feature
+fork입니다.
 
 [English](README.md) · [Upstream project](https://github.com/Difegue/LANraragi)
 
@@ -15,8 +15,8 @@ feature fork입니다.
   page reload 없는 deletion refresh
 - Versioned fingerprint, focused comparison queue, 안전한 archive 처리를 갖춘
   cover 중심 duplicate review
-- 대규모 deployed library를 위한 Redis, archive ingestion, thumbnail,
-  reader cache, request hot-path 안정성 개선
+- 대규모 library를 위한 Redis, archive ingestion, thumbnail, reader cache,
+  request hot-path 안정성 개선
 - OLED variant를 포함한 추가 Catppuccin theme
 
 ## 호환성

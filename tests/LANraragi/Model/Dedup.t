@@ -167,18 +167,18 @@ note("dedup title normalization and source extraction");
 
     is(
         LANraragi::Model::Dedup::dedup_source_key_from_tags(
-            "artist:a, source:https://gallery_source.org/g/3196863/25acc1dc92/, language:korean"
+            "artist:a, source:https://gallery.example/items/3196863/token/, language:korean"
         ),
-        "gallery_source:3196863",
-        "extracts EH source id"
+        "gallery.example/items/3196863/token",
+        "normalizes an HTTPS source"
     );
 
     is(
         LANraragi::Model::Dedup::dedup_source_key_from_tags(
-            "source:gallery_source.net/g/52249, language:english"
+            "source:catalog.example/items/52249/?view=compact, language:english"
         ),
-        "gallery_source:52249",
-        "extracts gallery_source source id"
+        "catalog.example/items/52249",
+        "normalizes source query and trailing slash"
     );
 
     is(

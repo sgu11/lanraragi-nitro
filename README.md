@@ -1,8 +1,8 @@
 # LANraragi Nitro
 
-LANraragi Nitro is a personal feature fork of
+LANraragi Nitro is a feature fork of
 [LANraragi](https://github.com/Difegue/LANraragi), focused on reader usability,
-library workflows, duplicate review, and deployed reliability.
+library workflows, duplicate review, and deployment reliability.
 
 [한국어](README.ko.md) · [Upstream project](https://github.com/Difegue/LANraragi)
 
@@ -16,7 +16,7 @@ library workflows, duplicate review, and deployed reliability.
 - Cover-focused duplicate review with versioned fingerprints, focused
   comparison queues, and safer archive handling.
 - Redis, archive-ingestion, thumbnail, reader-cache, and request-path
-  reliability improvements for larger deployed libraries.
+  reliability improvements for larger libraries.
 - Additional Catppuccin themes, including an OLED variant.
 
 ## Compatibility

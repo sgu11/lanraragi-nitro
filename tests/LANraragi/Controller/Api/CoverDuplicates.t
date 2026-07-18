@@ -261,7 +261,7 @@ note("POST /api/duplicates/cover/status logs a review decision");
     $CoverStatusState::archives{$id_a} = {
         title => 'Archive A',
         name => 'a.cbz',
-        tags => 'language:korean, source:gallery_source.la/galleries/1.html',
+        tags => 'language:korean, source:gallery.example/items/1',
         pagecount => '10',
         arcsize => '1000',
         cover_fp => encode_json({ w => 100, h => 200 }),
@@ -269,7 +269,7 @@ note("POST /api/duplicates/cover/status logs a review decision");
     $CoverStatusState::archives{$id_b} = {
         title => 'Archive B',
         name => 'b.cbz',
-        tags => 'language:english, source:gallery_source.la/galleries/1.html',
+        tags => 'language:english, source:gallery.example/items/1',
         pagecount => '12',
         arcsize => '1200',
         cover_fp => encode_json({ w => 100, h => 200 }),

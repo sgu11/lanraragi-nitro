@@ -122,7 +122,7 @@ reset_state();
     });
     $ReviewLogTestData::hash{$id_a}{title} = 'Alpha Korean';
     $ReviewLogTestData::hash{$id_a}{name} = 'alpha.cbz';
-    $ReviewLogTestData::hash{$id_a}{tags} = 'artist:a, language:korean, source:gallery_source.la/galleries/123.html';
+    $ReviewLogTestData::hash{$id_a}{tags} = 'artist:a, language:korean, source:gallery.example/items/123';
     $ReviewLogTestData::hash{$id_a}{pagecount} = '100';
     $ReviewLogTestData::hash{$id_a}{arcsize} = '200000000';
     $ReviewLogTestData::hash{$id_a}{coverhash} = 'aaaaaaaaaaaaaaaa';
@@ -132,7 +132,7 @@ reset_state();
 
     $ReviewLogTestData::hash{$id_b}{title} = 'Alpha English';
     $ReviewLogTestData::hash{$id_b}{name} = 'alpha-en.cbz';
-    $ReviewLogTestData::hash{$id_b}{tags} = 'artist:a, language:english, source:gallery_source.la/galleries/123.html';
+    $ReviewLogTestData::hash{$id_b}{tags} = 'artist:a, language:english, source:gallery.example/items/123';
     $ReviewLogTestData::hash{$id_b}{pagecount} = '98';
     $ReviewLogTestData::hash{$id_b}{arcsize} = '120000000';
     $ReviewLogTestData::hash{$id_b}{coverhash} = 'aaaaaaaabaaaaaaa';
@@ -226,7 +226,7 @@ reset_state();
                     arcid => 'wrong-archive-a',
                     title => "Visible A $long",
                     name => "visible-a.cbz-$long",
-                    tags => "artist:a, language:ko-KR, source:gallery_source.la/galleries/999.html, $long",
+                    tags => "artist:a, language:ko-KR, source:gallery.example/items/999, $long",
                     pagecount => '10',
                     arcsize => '200000',
                     tag_count => '3',
@@ -241,7 +241,7 @@ reset_state();
                     arcid => 'wrong-archive-b',
                     title => 'Visible B',
                     name => 'visible-b.cbz',
-                    tags => 'artist:a, language:english, source:gallery_source.la/galleries/999.html',
+                    tags => 'artist:a, language:english, source:gallery.example/items/999',
                     pagecount => '8',
                     arcsize => '120000',
                     tag_count => '3',

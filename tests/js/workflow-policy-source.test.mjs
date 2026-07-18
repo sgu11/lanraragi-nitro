@@ -14,7 +14,7 @@ test("branch pushes use the fast gate while guarded jobs remain conditional", ()
     const source = workflow("push-continuous-integration.yml");
 
     assert.match(source, /push:\n\s+branches:\n\s+- dev/);
-    assert.match(source, /name: Fast feature fork push gate/);
+    assert.match(source, /name: Fast fork push gate/);
     assert.match(source, /needs\.classify\.outputs\.full_gate == 'true'/);
     assert.match(source, /needs\.classify\.outputs\.perl == 'true'/);
     assert.match(source, /needs\.classify\.outputs\.long_browser == 'true'/);

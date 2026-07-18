@@ -42,7 +42,7 @@ sub normalize_title_for_dedup {
     $title =~ s/\[[^\]]*\]//g;
     $title =~ s/\([Cc]\d+[^)]*\)//g;
     $title =~ s/\b(?:dl|digital|scan|scanned|korean|english|japanese|raw|translated)\b//ig;
-    $title =~ s/\b(?:e[- ]?gallery source|gallery_source|gallery_source|gallery_source)\b[\w:\/.-]*//ig;
+    $title =~ s{\b(?:https?://)?[a-z0-9.-]+\.[a-z]{2,}(?:/[\w:/%.-]*)?}{}ig;
     $title =~ s/[_.,;:|+~!-]+/ /g;
     $title =~ s/\s+/ /g;
     return trim(clean_title($title));
@@ -61,13 +61,13 @@ sub work_key_for_dedup {
 sub dedup_source_key_from_tags {
     my ($tags) = @_;
     $tags //= '';
-    return "gallery_source:$1" if $tags =~ m{source:\s*https?://(?:gallery_source|gallery_source)\.org/g/(\d+)/}i;
-    return "gallery_source:$1" if $tags =~ m{source:\s*(?:gallery_source|gallery_source)\.org/g/(\d+)/}i;
-    return "gallery_source:$1" if $tags =~ m{source:\s*https?://gallery_source\.net/g/(\d+)}i;
-    return "gallery_source:$1" if $tags =~ m{source:\s*gallery_source\.net/g/(\d+)}i;
-    return "gallery_source:$1"  if $tags =~ m{source:\s*https?://gallery_source\.la/[^,]*?(\d+)\.html}i;
-    return "gallery_source:$1"  if $tags =~ m{source:\s*gallery_source\.la/[^,]*?(\d+)\.html}i;
-    return '';
+    return '' unless $tags =~ /(?:^|,)\s*source:\s*([^,]+)/i;
+
+    my $source = lc(trim($1));
+    $source =~ s{^https?://}{}i;
+    $source =~ s{[?#].*\z}{};
+    $source =~ s{/+\z}{};
+    return $source;
 }
 
 sub dedup_language_from_tags {

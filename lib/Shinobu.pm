@@ -135,7 +135,7 @@ sub initialize_from_new_process {
     my $class = ref($contentwatcher);
     $logger->debug("Watcher class is $class");
 
-    # Track the content directory inode to detect filesystem dataset changes
+    # Track the content directory inode to detect directory replacement
     # (inotify watches are inode-based and become stale if the inode changes)
     my $watched_ino = (stat $userdir)[1];
     $logger->debug("Content directory inode: $watched_ino");
@@ -156,7 +156,7 @@ sub initialize_from_new_process {
         }
 
         # Every 60 seconds, verify the content directory inode hasn't changed
-        # (filesystem receive/rollback/rename can change inodes, silently breaking inotify)
+        # (filesystem replacement or rename can change inodes and stale inotify)
         if ( ++$inode_check_counter >= 60 ) {
             $inode_check_counter = 0;
             my $current_ino = (stat $userdir)[1];

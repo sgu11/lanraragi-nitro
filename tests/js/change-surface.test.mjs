@@ -128,7 +128,7 @@ test("guarded Perl owners select the full gate", () => {
         "lib/LANraragi/Model/Archive.pm",
         "lib/LANraragi/Controller/Api/Archive.pm",
         "lib/LANraragi/Controller/Login.pm",
-        "lib/LANraragi/Plugin/Login/gallery_source.pm",
+        "lib/LANraragi/Plugin/Login/Pixiv.pm",
         "lib/LANraragi/Utils/Minion.pm",
         "lib/Worker.pm",
         "lib/Shinobu.pm",

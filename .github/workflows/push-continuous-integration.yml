@@ -36,7 +36,7 @@ env:
   INTEGRATION_TEST_REPOSITORY: ${{ inputs.integration_test_repository || 'psilabs-dev/aio-lanraragi' }}
   INTEGRATION_TEST_REF: ${{ inputs.integration_test_ref || '64b12b317ed85e6f1185328f6a0e3ca4b34cab87' }}
 
-name: feature fork Gate
+name: Fork Validation Gate
 
 jobs:
   classify:
@@ -85,8 +85,8 @@ jobs:
           path: /tmp/lrr-changes.txt
           retention-days: 1
 
-  privateForkGate:
-    name: Fast feature fork push gate
+  forkGate:
+    name: Fast fork push gate
     needs: classify
     runs-on: ubuntu-latest
     steps:
