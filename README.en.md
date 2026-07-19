@@ -40,12 +40,57 @@ the reader opens, upcoming spreads are decoded relative to the current display
 window. Navigation generations prevent stale asynchronous work from replacing
 the current page or progress value.
 
+## Adaptive offset
+
+Adaptive offset is a per-archive feature that keeps covers and wide pages
+single while aligning the first portrait double-page spread as either
+`Pair 2-3` or `Pair 3-4`.
+
+- The server detector analyzes early interior pages and stores `2`, `4`, or
+  `UNKNOWN`. It uses libvips first and ImageMagick as a fallback.
+- In `auto` mode, the reader combines that result with known wide pages to build
+  display windows, safely falling back to `Pair 2-3` for `UNKNOWN` results.
+- In the minimal or fullscreen reader, `Up`/`Down` or `W`/`S` shifts a spread by
+  one page for immediate pairing correction. An unambiguous correction is saved
+  as human-confirmed feedback only after the next ordinary page turn succeeds.
+- `J` toggles the current archive between adaptive `auto` mode and fixed
+  `Pair 2-3`. Shifted spreads retain their double-page stride across reloads and
+  ordinary previous/next navigation.
+
+## Reader performance comparison
+
+Lower is better. On 2026-07-19, official upstream
+[`b94e4805`](https://github.com/Difegue/LANraragi/commit/b94e4805677d4ca75e7d61ca13c4e3e99c4b99c8) and
+the same Reader pipeline published in Nitro
+[`653420ac`](https://github.com/sgu11/lanraragi-nitro/commit/653420ac72f0172f319f7dc27f2da47f78e108f0)
+were compared on the same 70-page WebP archive. The run used Chrome 150, a
+`1440x900` viewport, double-page mode, preload `5`, and progress writes off.
+
+```mermaid
+xychart-beta
+    title "Reader latency comparison - lower is better"
+    x-axis ["First visible p50", "First visible p95", "Warm turn p50", "Warm turn p95", "Warm turn max"]
+    y-axis "Latency (ms)" 0 --> 150
+    bar "Upstream" [130.6, 138.6, 18.6, 29.0, 49.8]
+    bar "Nitro" [104.4, 124.2, 25.7, 27.7, 31.0]
+```
+
+| Reader latency | Upstream | Nitro | Nitro relative result |
+| --- | ---: | ---: | ---: |
+| First-visible p50 | `130.6 ms` | **`104.4 ms`** | **20.1% lower** |
+| First-visible p95 | `138.6 ms` | **`124.2 ms`** | **10.4% lower** |
+| Warm page-turn p50 | **`18.6 ms`** | `25.7 ms` | 38.2% higher |
+| Warm page-turn p95 | `29.0 ms` | **`27.7 ms`** | **4.5% lower** |
+| Warm page-turn max | `49.8 ms` | **`31.0 ms`** | **37.8% lower** |
+
+Nitro lowers first-visible and warm tail latency, while upstream retains the
+lower warm p50. This is a regression baseline for one client and one archive
+cohort, not a universal benchmark across devices and libraries.
+
 ## Feature details
 
 ### Reader and progress
 
-- Covers and wide pages remain single, while portrait pages form double-page
-  windows using the active anchor and detected page side.
 - Explicit reloads, shifted spreads, and manga reading direction preserve the
   intended navigation stride.
 - Session position is separated from persistent reading progress so browser

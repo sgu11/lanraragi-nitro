@@ -40,12 +40,56 @@ Prewarm은 image를 미리 decode하지 않고 reader 진입에 필요한 HTTP c
 spread를 decode하며, 오래된 navigation 결과가 새 화면이나 progress를
 덮어쓰지 않도록 요청 세대를 구분합니다.
 
+## Adaptive offset
+
+Adaptive offset은 표지와 wide page를 한 장으로 유지하면서, portrait page의
+첫 double-page spread를 `Pair 2-3` 또는 `Pair 3-4`로 맞추는 archive별
+기능입니다.
+
+- Server detector는 초기 interior page를 분석해 `2`, `4`, `UNKNOWN` 중 하나를
+  저장합니다. libvips를 우선 사용하고 ImageMagick은 fallback으로 사용합니다.
+- `auto` mode에서는 감지 결과와 이미 확인한 wide page를 함께 사용해 display
+  window를 구성하며, `UNKNOWN`이면 안전하게 `Pair 2-3`으로 fallback합니다.
+- Minimal/fullscreen reader에서 `Up`/`Down` 또는 `W`/`S`로 spread를 한 page
+  이동해 pairing을 바로 수정할 수 있습니다. 모호하지 않은 수정은 다음 일반
+  page turn이 성공한 뒤에만 human-confirmed feedback으로 저장됩니다.
+- `J`는 현재 archive의 adaptive mode를 `auto`와 고정 `Pair 2-3` 사이에서
+  전환합니다. Shifted spread는 reload와 일반 prev/next navigation에서도
+  double-page stride를 유지합니다.
+
+## Reader 성능 비교
+
+짧을수록 좋습니다. 2026-07-19에 official upstream
+[`b94e4805`](https://github.com/Difegue/LANraragi/commit/b94e4805677d4ca75e7d61ca13c4e3e99c4b99c8)와
+공개 Nitro [`653420ac`](https://github.com/sgu11/lanraragi-nitro/commit/653420ac72f0172f319f7dc27f2da47f78e108f0)의
+동일 reader pipeline을 같은 70-page WebP archive에서 비교했습니다. Chrome
+150, `1440x900`, double-page on, preload `5`, progress write off 조건입니다.
+
+```mermaid
+xychart-beta
+    title "Reader latency 비교 - 짧을수록 좋음"
+    x-axis ["첫 표시 p50", "첫 표시 p95", "Warm 전환 p50", "Warm 전환 p95", "Warm 전환 max"]
+    y-axis "Latency (ms)" 0 --> 150
+    bar "Upstream" [130.6, 138.6, 18.6, 29.0, 49.8]
+    bar "Nitro" [104.4, 124.2, 25.7, 27.7, 31.0]
+```
+
+| Reader latency | Upstream | Nitro | Nitro 상대 결과 |
+| --- | ---: | ---: | ---: |
+| First-visible p50 | `130.6 ms` | **`104.4 ms`** | **20.1% 단축** |
+| First-visible p95 | `138.6 ms` | **`124.2 ms`** | **10.4% 단축** |
+| Warm page turn p50 | **`18.6 ms`** | `25.7 ms` | 38.2% 증가 |
+| Warm page turn p95 | `29.0 ms` | **`27.7 ms`** | **4.5% 단축** |
+| Warm page turn max | `49.8 ms` | **`31.0 ms`** | **37.8% 단축** |
+
+Nitro는 first-visible과 warm tail latency를 줄였지만 warm p50은 upstream보다
+느립니다. 이 결과는 한 client와 한 archive cohort의 회귀 기준선이며, 모든
+기기와 library를 대표하는 종합 benchmark는 아닙니다.
+
 ## 주요 기능 자세히 보기
 
 ### Reader와 progress
 
-- Cover와 wide page는 single-page로 유지하고, portrait page는 현재 anchor와
-  page-side 감지 결과에 따라 double-page window를 구성합니다.
 - 명시적인 page reload, shifted spread, manga reading direction에서도 동일한
   navigation stride를 유지합니다.
 - Session page와 영구 progress를 분리하여 Library에서 다시 열 때와 browser
