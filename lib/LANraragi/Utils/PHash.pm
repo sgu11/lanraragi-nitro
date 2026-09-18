@@ -5,7 +5,7 @@ use strict;
 use warnings;
 
 use Exporter 'import';
-our @EXPORT_OK = qw(compute_phash_64 hamming_hex);
+our @EXPORT_OK = qw(compute_phash_64 hamming_hex hamming_packed);
 
 use LANraragi::Utils::Vips;
 
@@ -24,9 +24,6 @@ sub _init_cos_table {
         push @COS_TABLE, \@row;
     }
 }
-
-# Popcount for an 8-bit value.
-my @POPCOUNT_8 = map { my $b = $_; my $c = 0; $c += ($b >> $_) & 1 for 0..7; $c } 0..255;
 
 # Computes a 64-bit perceptual hash for the image at $image_path.
 # Pipeline: stretch-resize 32x32 -> grayscale uchar -> 2D DCT-II (32x32 -> 8x8) ->
@@ -95,14 +92,14 @@ sub compute_phash_64 {
 # Counts differing bits between two 16-char hex strings (Hamming distance, 0..64).
 sub hamming_hex {
     my ($a, $b) = @_;
-    my $packed_a = pack("H*", $a);
-    my $packed_b = pack("H*", $b);
-    # Use string bitwise XOR (^.) since use v5.36 enables the bitwise feature
-    # which makes bare ^ numeric-only.
-    my $xor = $packed_a ^. $packed_b;
-    my $count = 0;
-    $count += $POPCOUNT_8[$_] for unpack("C*", $xor);
-    return $count;
+    return hamming_packed(pack("H*", $a), pack("H*", $b));
+}
+
+# Perl's unpack checksum counts bits in C. Bulk matchers pack each hash once,
+# avoiding both per-pair hex conversion and an eight-iteration Perl loop.
+sub hamming_packed {
+    my ($a, $b) = @_;
+    return unpack('%32b*', $a ^. $b);
 }
 
 1;

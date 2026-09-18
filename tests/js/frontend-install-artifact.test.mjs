@@ -27,6 +27,8 @@ test("clean frontend install builds the Swiper artifact consumed through the imp
     assert.doesNotMatch(indexModule, /window\.Swiper|swiper-bundle\.min\.js/);
     const vendorInputs = installer.match(/my @vendor_js = \([\s\S]*?my @vendor_bundle = \([\s\S]*?\);/)?.[0] || "";
     assert.doesNotMatch(`${vendorInputs}\n${importmap}\n${packageJson}`, /@preact\/signals|signals-core\.module\.js|signals\.module\.js/);
+    assert.match(installer, /\/es-module-shims\/dist\/es-module-shims\.js/);
+    assert.match(importmap, /\/js\/vendor\/es-module-shims\.js/);
     assert.match(installer, /unlink map \{ getcwd \. "\/public\/js\/vendor\/" \. \$_ \}/);
 
     const outdir = await mkdtemp(join(tmpdir(), "lrr-front-artifact-"));

@@ -3,8 +3,8 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-05-04 20:25+0200\n"
-"PO-Revision-Date: 2026-07-10 04:01+0000\n"
-"Last-Translator: UVJkiNTQ <lxdluke1234@gmail.com>\n"
+"PO-Revision-Date: 2026-08-03 09:01+0000\n"
+"Last-Translator: 無情天 <kofzhanganguo@126.com>\n"
 "Language-Team: Chinese (Simplified Han script) <https://hosted.weblate.org/"
 "projects/lanraragi/lanraragi-source/zh_Hans/>\n"
 "Language: zh\n"
@@ -12,7 +12,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
-"X-Generator: Weblate 2026.7.1.dev0\n"
+"X-Generator: Weblate 2026.8.dev0\n"
 
 # Sample Data
 # ------Start of Backup.html.tt2------
@@ -1547,10 +1547,12 @@ msgstr ""
 "readers#generic-opds-readers'>OPDS阅读器</a> 使用LANraragi。"
 
 msgid "This comic streams its pages from the web"
-msgstr ""
+msgstr "这部漫画通过网络串流播放页面"
 
 msgid "CBW files contain no images themselves; their pages are fetched from remote URLs on demand. Reading will fail for any page whose source is no longer online."
 msgstr ""
+"CBW 文件本身不包含图像；它们的页面是按需从远程 URL 获取的。如果某个页面的源文"
+"件已失效，则读取该页面将会失败。"
 
 msgid "Navigation Help"
 msgstr "Navigation Help"
@@ -2060,3 +2062,6 @@ msgstr "这是第一个压缩包"
 
 msgid "This is the last archive"
 msgstr "这是最后一个压缩包"
+
+msgid "Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review"
+msgstr "Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review"

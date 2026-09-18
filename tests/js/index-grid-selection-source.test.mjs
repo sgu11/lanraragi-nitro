@@ -16,6 +16,10 @@ test("fork grid selection is isolated behind a context-menu seam", async () => {
 
     assert.match(gridSelection, /document\.addEventListener\("pointerdown", handlePointerDown, true\)/);
     assert.match(gridSelection, /document\.addEventListener\("pointerup", handlePointerUp, true\)/);
+    assert.match(gridSelection, /document\.addEventListener\("keydown", handleKeyDown, true\)/);
+    assert.match(gridSelection, /event\.key !== "Delete" && event\.which !== 46/);
+    assert.match(gridSelection, /event\.preventDefault\(\);[\s\S]*event\.stopImmediatePropagation\(\);[\s\S]*confirmBulkDelete\(\);/);
+    assert.match(gridSelection, /input, textarea, select, \[contenteditable\]/);
     assert.doesNotMatch(gridSelection, /document\.addEventListener\("click", handleArchiveClick, true\)/);
     assert.match(gridSelection, /const\s+LONG_CLICK_MS\s*=\s*600;/);
     assert.match(gridSelection, /if\s*\(!rightClickTargetId \|\| rightLongClickFired\) return;/);

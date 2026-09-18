@@ -10,6 +10,16 @@ and plugin compatibility while extending its reader, library workflow,
 duplicate review, and image pipeline. It focuses on making large archive
 collections faster to browse, read, compare, and maintain.
 
+## September 2026 update
+
+- Add interruptible reader sliding transitions and touch navigation, with direction-aware warming bounded by decoded pixel memory.
+- Extend archive-local adaptive offsets with content revision checks, post-wide spread anchors, and optional internal worker integration.
+- Fix metadata tag saving and editor contrast; serialize plugin registry install, upload, and removal operations.
+- Improve search, duplicate review, backup restoration, and upload handling; refresh frontend dependencies.
+
+See the [worker documentation](tools/adaptive-offset-worker/README.md) for the optional service and protocol.
+The performance figures below are historical measurements from July 19, 2026; this update has not been benchmarked again.
+
 ## Feature overview
 
 | Area | Nitro-exclusive features | Practical effect |

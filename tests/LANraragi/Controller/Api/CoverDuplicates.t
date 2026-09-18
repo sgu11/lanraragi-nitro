@@ -44,12 +44,11 @@ package CoverCtrlRedis {
         my $cb = ref($_[-1]) eq 'CODE' ? pop @_ : undef;
         my ($k, @fields) = @_;
         if ($k eq 'LRR_COVER_DUPLICATE_PAIR_META') {
-            my $member = $fields[0] // '';
-            my $json = $member eq 'id_c|id_d'
-                ? encode_json({ pass => 'cover', cover_hamming => 12, status => 'new', cover_algo_version => 2, ts => 1 })
-                : encode_json({ pass => 'cover', cover_hamming => 4, status => 'new', cover_algo_version => 2, ts => 1 });
-            $cb->([$json], undef) if $cb;
-            return [$json];
+            my @json = map { $_ eq 'id_c|id_d'
+                ? encode_json({ pass => 'cover', cover_hamming => 12, status => 'new', cover_algo_version => 2, generation => 'fixture-generation', ts => 1 })
+                : encode_json({ pass => 'cover', cover_hamming => 4, status => 'new', cover_algo_version => 2, generation => 'fixture-generation', ts => 1 }) } @fields;
+            $cb->(\@json, undef) if $cb;
+            return \@json;
         }
         # Archive HMGET: return '0' for numeric fields to avoid warnings.
         my @vals = map {
@@ -100,6 +99,8 @@ note("GET /api/duplicates/cover/pairs respects threshold");
 
 note("DELETE /api/duplicates/cover/pairs");
 {
+    my $index = Test::MockModule->new('LANraragi::Model::Dedup::CoverIndex');
+    $index->redefine(delete_cover_pair => sub { 1 });
     package CoverCtrlRedis2 {
         sub new { bless {}, shift }
         sub sadd { 1 }
@@ -116,7 +117,7 @@ note("DELETE /api/duplicates/cover/pairs");
     $c->req->method('DELETE');
     $c->req->url->parse('/api/duplicates/cover/pairs');
     $c->req->headers->content_type('application/json');
-    $c->req->body('{"pair":"' . ('a' x 40) . '|' . ('b' x 40) . '"}');
+    $c->req->body('{"generation":"fixture-generation","pair":"' . ('a' x 40) . '|' . ('b' x 40) . '"}');
     LANraragi::Controller::Api::Coverduplicates::delete_pair($c);
     my $body = decode_json($c->res->body);
     ok($body->{dismissed}, "dismissed flag set");
@@ -148,6 +149,8 @@ note("GET /api/duplicates/cover/stats returns cover stats");
     package CoverCtrlRedis3 {
         sub new { bless {}, shift }
         sub zcard   { 5 }
+        sub zrange { qw(pair1 pair2 pair3 pair4 pair5) }
+        sub scard   { 2 }
         sub hgetall {
             my ($self, $key) = @_;
             return (cover_algo_version => 1)
@@ -159,8 +162,8 @@ note("GET /api/duplicates/cover/stats returns cover stats");
         sub hmget {
             my $self = shift;
             my $cb = ref($_[-1]) eq 'CODE' ? pop @_ : undef;
-            $cb->(['1',''], undef) if $cb;
-            return ['1',''];
+            $cb->(['1','', '0000000000000000'], undef) if $cb;
+            return ['1','', '0000000000000000'];
         }
         sub wait_all_responses { 1 }
         sub quit   { 1 }
@@ -239,6 +242,18 @@ note("POST /api/duplicates/cover/status logs a review decision");
 
     package main;
 
+    # The Redis atomic boundary is exercised against a real isolated server in
+    # CoverReviewAtomic.t; this controller fixture models its return contract.
+    my $index_mock = Test::MockModule->new('LANraragi::Model::Dedup::CoverIndex');
+    $index_mock->redefine(patch_pair_meta => sub {
+        my ($redis, $pair, $patch) = @_;
+        my $json = $redis->hget('LRR_COVER_DUPLICATE_PAIR_META', $pair);
+        return undef unless defined $json;
+        my $previous = decode_json($json);
+        $redis->hset('LRR_COVER_DUPLICATE_PAIR_META', $pair, encode_json({%$previous, %$patch}));
+        return $previous;
+    });
+
     %CoverStatusState::meta = ();
     %CoverStatusState::archives = ();
     @CoverStatusState::events = ();
@@ -254,14 +269,14 @@ note("POST /api/duplicates/cover/status logs a review decision");
     $CoverStatusState::meta{'LRR_COVER_DUPLICATE_PAIR_META'}{$pair} = encode_json({
         pass => 'cover',
         cover_hamming => 6,
-        cover_algo_version => 2,
+        cover_algo_version => 2, generation => 'fixture-generation',
         status => 'new',
         note => 'preserve me',
     });
     $CoverStatusState::archives{$id_a} = {
         title => 'Archive A',
         name => 'a.cbz',
-        tags => 'language:korean, source:gallery.example/items/1',
+        tags => 'language:korean, source:hitomi.la/galleries/1.html',
         pagecount => '10',
         arcsize => '1000',
         cover_fp => encode_json({ w => 100, h => 200 }),
@@ -269,7 +284,7 @@ note("POST /api/duplicates/cover/status logs a review decision");
     $CoverStatusState::archives{$id_b} = {
         title => 'Archive B',
         name => 'b.cbz',
-        tags => 'language:english, source:gallery.example/items/1',
+        tags => 'language:english, source:hitomi.la/galleries/1.html',
         pagecount => '12',
         arcsize => '1200',
         cover_fp => encode_json({ w => 100, h => 200 }),
@@ -287,6 +302,7 @@ note("POST /api/duplicates/cover/status logs a review decision");
     $c->req->headers->content_type('application/json');
     $c->req->body(encode_json({
         pair => $pair,
+        generation => "fixture-generation",
         status => 'same_cover',
         context => {
             input_method => 'keyboard',
@@ -337,7 +353,7 @@ note("POST /api/duplicates/cover/status logs a review decision");
     $CoverStatusState::meta{'LRR_COVER_DUPLICATE_PAIR_META'}{$pair} = encode_json({
         pass => 'cover',
         cover_hamming => 6,
-        cover_algo_version => 2,
+        cover_algo_version => 2, generation => 'fixture-generation',
         status => 'new',
     });
     $CoverStatusState::archives{$id_a} = { title => 'Archive A' };
@@ -350,6 +366,7 @@ note("POST /api/duplicates/cover/status logs a review decision");
     $c_fail->req->headers->content_type('application/json');
     $c_fail->req->body(encode_json({
         pair => $pair,
+        generation => "fixture-generation",
         status => 'variant',
         context => { input_method => 'button' },
     }));
@@ -439,13 +456,15 @@ note("Mojolicious route name resolves the cover duplicate controller");
     package CoverCtrlRedisRoute {
         sub new { bless {}, shift }
         sub zcard   { 0 }
+        sub zrange { () }
+        sub scard   { 1 }
         sub hgetall { () }
         sub get     { undef }
         sub hmget {
             my $self = shift;
             my $cb = ref($_[-1]) eq 'CODE' ? pop @_ : undef;
-            $cb->(['1',''], undef) if $cb;
-            return ['1',''];
+            $cb->(['1','', '0000000000000000'], undef) if $cb;
+            return ['1','', '0000000000000000'];
         }
         sub wait_all_responses { 1 }
         sub quit { 1 }
@@ -467,7 +486,35 @@ note("Mojolicious route name resolves the cover duplicate controller");
 
 note("POST /api/duplicates/cover/rebuild queues Minion job");
 {
-    pass("rebuild endpoint queues Minion job (integration tested via model tests)");
+    my @queued;
+    my $minion = Test::MockObject->new;
+    $minion->mock(enqueue => sub { shift; push @queued, [@_]; return 123 });
+    my $config_mock = Test::MockModule->new('LANraragi::Model::Config');
+    $config_mock->redefine(get_minion => sub { $minion });
+    my $app = Mojolicious->new;
+    $app->routes->namespaces(['LANraragi::Controller']);
+    $app->routes->post('/rebuild')->to('api-coverduplicates#rebuild');
+    $app->routes->post('/verify')->to('api-coverduplicates#verify');
+    $app->routes->get('/pairs')->to('api-coverduplicates#pairs');
+    $app->routes->post('/status')->to('api-coverduplicates#update_status');
+    my $t = Test::Mojo->new($app);
+    $t->post_ok('/rebuild?threshold=0')->status_is(200)->json_is('/job', 123);
+    is_deeply($queued[-1][1], [0], 'zero threshold reaches the background scan unchanged');
+    for my $threshold ('-1', '65', 'abc', '1.5') {
+        $t->post_ok("/rebuild?threshold=$threshold")->status_is(400);
+    }
+    for my $query ('offset=-1', 'limit=0', 'limit=201', 'threshold=abc', 'status=bogus') {
+        $t->get_ok("/pairs?$query")->status_is(400);
+    }
+    my $a = 'a' x 40;
+    my $b = 'b' x 40;
+    $t->post_ok('/verify', json => {pairs => ["$b|$a", "$a|$b"]})->status_is(200);
+    is($queued[-1][0], 'verify_cover_duplicates', 'queues bounded content verification');
+    is_deeply($queued[-1][1], [["$a|$b"]], 'canonicalizes and deduplicates pairs');
+    $t->post_ok('/verify', json => {pairs => ["$a|$a"]})->status_is(400);
+    $t->post_ok('/verify', json => {pairs => [("$a|$b") x 25]})->status_is(400);
+    $t->post_ok('/status', json => ["$a|$b"])->status_is(400);
+    $t->post_ok('/status', json => {pair => "$a|$a", status => 'same_cover'})->status_is(400);
 }
 
 note("Cover deck isolation verified via model tests");

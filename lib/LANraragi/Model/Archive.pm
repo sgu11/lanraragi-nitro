@@ -10,7 +10,7 @@ use utf8;
 use Cwd 'abs_path';
 use Redis;
 use Mojo::JSON  qw(decode_json encode_json);
-use Time::HiRes qw(gettimeofday tv_interval usleep);
+use Time::HiRes qw(gettimeofday tv_interval);
 use File::Path  qw(remove_tree);
 use File::Basename;
 use File::Copy "cp";
@@ -22,19 +22,16 @@ use LANraragi::Utils::TempFolder qw(get_temp);
 use LANraragi::Utils::Logging    qw(get_logger);
 use LANraragi::Utils::Archive    qw(extract_single_file extract_thumbnail is_cbw cbw_content_digest detect_cbw_image);
 use LANraragi::Utils::Database   qw(invalidate_cache set_title set_tags set_summary get_archive_json get_archive_json_multi);
-use LANraragi::Utils::ImageBorderCrop qw(CROP_ALGORITHM_VERSION crop_blank_borders);
+use LANraragi::Utils::ImageTransform qw(_crop_cache_key _crop_resize_cache_key _crop_nocrop_cache_key _apply_border_crop);
+use LANraragi::Utils::ImagePipeline;
 use LANraragi::Utils::ImageResponse qw(render_thumbnail_placeholder);
-use LANraragi::Utils::PageCache  qw(fetch put clear_by_id);
+use LANraragi::Utils::Login      qw(is_logged_in_api);
+use LANraragi::Utils::PageCache  qw(fetch put clear_by_id get_generation is_current_generation);
 use LANraragi::Utils::Redis      qw(redis_decode redis_encode);
 use LANraragi::Utils::Vips       ();
 use LANraragi::Model::Dedup::CoverIndex;
 use LANraragi::Utils::Path       qw(unlink_path get_archive_path);
 use LANraragi::Model::Metrics;
-
-use constant CROP_MIN_AREA_SAVINGS_RATIO => 0.05;
-use constant CROP_SINGLEFLIGHT_LOCK_TTL_SECONDS => 30;
-use constant CROP_SINGLEFLIGHT_WAIT_ATTEMPTS    => 10;
-use constant CROP_SINGLEFLIGHT_WAIT_USEC        => 50_000;
 
 # get_title(id)
 #   Returns the title for the archive matching the given id.
@@ -113,6 +110,18 @@ sub generate_page_thumbnails {
 
     my $force = $self->req->param('force');
     $force = ( $force && $force eq "true" ) || "0";    # Prevent undef warnings by checking the variable first
+
+    if ( $force && !is_logged_in_api($self) ) {
+        $self->render(
+            openapi => {
+                operation => "generate_page_thumbnails",
+                success   => 0,
+                error     => "Authentication is required to force thumbnail regeneration."
+            },
+            status => 401
+        );
+        return;
+    }
 
     my $logger   = get_logger( "Archives", "lanraragi" );
     my $thumbdir = LANraragi::Model::Config->get_thumbdir;
@@ -289,7 +298,13 @@ sub serve_thumbnail {
     my ( $self, $id ) = @_;
 
     my $page = $self->req->param('page');
-    $page = 0 unless $page;
+    $page = 0 unless defined($page) && length($page);
+    unless ( $page =~ /^\d+$/ ) {
+        return $self->render(
+            openapi => { operation => "serve_thumbnail", success => 0, error => "Invalid thumbnail page." },
+            status  => 400
+        );
+    }
     my $is_first_page = $page == 0;
 
     my $no_fallback = $self->req->param('no_fallback');
@@ -328,6 +343,26 @@ sub serve_thumbnail {
 
         if ($no_fallback) {
 
+            # A public miss may enqueue work, so bind it to a real archive and
+            # one of that archive's pages instead of accepting arbitrary keys.
+            my $archive_redis = LANraragi::Model::Config->get_redis;
+            my $exists        = $archive_redis->exists($id);
+            my $pagecount     = $exists ? ( $archive_redis->hget( $id, "pagecount" ) // 0 ) : 0;
+            $archive_redis->quit;
+
+            unless ($exists) {
+                return $self->render(
+                    openapi => { operation => "serve_thumbnail", success => 0, error => "Archive not found." },
+                    status  => 404
+                );
+            }
+            if ( $page > 0 && $page > $pagecount ) {
+                return $self->render(
+                    openapi => { operation => "serve_thumbnail", success => 0, error => "Thumbnail page is out of range." },
+                    status  => 400
+                );
+            }
+
             # Queue a Minion job to generate the thumbnail. The config-DB lock coalesces
             # duplicate misses for the same page/format while the job is active.
             my $format   = _thumbnail_format();
@@ -351,11 +386,12 @@ sub serve_thumbnail {
     _render_thumbnail_file( $self, $thumbname, substr( $file_ext, 1 ) );
 }
 
-sub get_page_data ( $id, $path, $metrics = undef ) {
+sub get_page_data ( $id, $path, $metrics = undef, $generation = undef ) {
+    $generation //= get_generation($id);
     my $archive = _resolve_archive_path($id);
     my $cache_path = _content_cache_path( $archive, $path );
     my $cachekey = "page/$id/$cache_path";
-    my $content  = fetch($cachekey);
+    my $content  = fetch($cachekey, $generation);
     if ( !defined($content) ) {
         $metrics->{cache_status} = "miss" if defined $metrics;
 
@@ -363,10 +399,11 @@ sub get_page_data ( $id, $path, $metrics = undef ) {
         my $extract_start = [gettimeofday];
         $content = extract_single_file( $archive, $path );
         $metrics->{extract_seconds} = tv_interval($extract_start) if defined $metrics;
-        put( $cachekey, $content );
+        put( $cachekey, $content, $generation );
     } else {
         $metrics->{cache_status} = "hit" if defined $metrics;
     }
+    die "Archive content changed during image request\n" unless is_current_generation($id, $generation);
     return $content;
 }
 
@@ -457,192 +494,6 @@ sub invalidate_archive_path_cache {
     _bump_archive_path_cache_generation();
 }
 
-sub _crop_cache_key ( $id, $path, $format ) {
-    return "crop_page/v" . CROP_ALGORITHM_VERSION . "/$id/$path/$format";
-}
-
-sub _crop_resize_cache_key ( $id, $path, $threshold, $quality ) {
-    return "crop_resize_page/v" . CROP_ALGORITHM_VERSION . "/$id/$path/$threshold/$quality";
-}
-
-sub _crop_nocrop_cache_key ( $id, $path ) {
-    return "crop_page_nocrop/v" . CROP_ALGORITHM_VERSION . "/$id/$path";
-}
-
-sub _crop_singleflight_lock_key ( $id, $path, $format ) {
-    return "LRR_PAGECROPJOB:v" . CROP_ALGORITHM_VERSION . ":$id:$path:$format";
-}
-
-sub _claim_crop_singleflight_lock ($lock_key) {
-    my $redis = eval { LANraragi::Model::Config->get_redis_config };
-    return if $@ || !$redis;
-
-    my ( $sec, $usec ) = gettimeofday;
-    my $token = "$$:$sec:$usec";
-    my $claimed = eval { $redis->set( $lock_key, $token, "NX", "EX", CROP_SINGLEFLIGHT_LOCK_TTL_SECONDS ) };
-    return ( $redis, $token ) if $claimed;
-    return ( $redis, undef );
-}
-
-sub _release_crop_singleflight_lock ( $redis, $lock_key, $token ) {
-    return if !$redis;
-    eval {
-        if ( defined $token ) {
-            my $stored = $redis->get($lock_key);
-            $redis->del($lock_key) if defined $stored && $stored eq $token;
-        }
-        1;
-    };
-    $redis->quit();
-}
-
-sub _cached_border_crop_result ( $crop_key, $nocrop_key, $content, $metrics = undef ) {
-    my $cached = fetch($crop_key);
-    if ( defined $cached ) {
-        $metrics->{cache_status} = "hit" if defined $metrics;
-        return ( $cached, 1, 1 );
-    }
-
-    if ( defined fetch($nocrop_key) ) {
-        $metrics->{cache_status} = "nocrop" if defined $metrics;
-        return ( $content, 0, 1 );
-    }
-
-    return;
-}
-
-sub _wait_for_border_crop_result ( $crop_key, $nocrop_key, $content, $metrics = undef ) {
-    for ( 1 .. CROP_SINGLEFLIGHT_WAIT_ATTEMPTS ) {
-        usleep(CROP_SINGLEFLIGHT_WAIT_USEC);
-        my @result = _cached_border_crop_result( $crop_key, $nocrop_key, $content, $metrics );
-        return @result if @result;
-    }
-    return;
-}
-
-sub _compute_and_cache_border_crop ( $id, $path, $format, $content, $metrics, $crop_key ) {
-    my ( $result, $was_cropped ) = _apply_border_crop( $id, $path, $format, $content, $metrics );
-    put( $crop_key, $result ) if $was_cropped;
-    return ( $result, $was_cropped );
-}
-
-sub _apply_border_crop_singleflight ( $id, $path, $format, $content, $metrics, $crop_key ) {
-    my $nocrop_key = _crop_nocrop_cache_key( $id, $path );
-    my @cached = _cached_border_crop_result( $crop_key, $nocrop_key, $content, $metrics );
-    return @cached[ 0, 1 ] if @cached;
-
-    my $lock_key = _crop_singleflight_lock_key( $id, $path, $format );
-    my ( $redis, $token ) = _claim_crop_singleflight_lock($lock_key);
-
-    if ( $redis && !defined $token ) {
-        my @waited = _wait_for_border_crop_result( $crop_key, $nocrop_key, $content, $metrics );
-        _release_crop_singleflight_lock( $redis, $lock_key, undef );
-        return @waited[ 0, 1 ] if @waited;
-        return _compute_and_cache_border_crop( $id, $path, $format, $content, $metrics, $crop_key );
-    }
-
-    return _compute_and_cache_border_crop( $id, $path, $format, $content, $metrics, $crop_key ) if !$redis;
-
-    my ( $result, $was_cropped );
-    my $error;
-    eval {
-        my @winner_cached = _cached_border_crop_result( $crop_key, $nocrop_key, $content, $metrics );
-        if (@winner_cached) {
-            ( $result, $was_cropped ) = @winner_cached[ 0, 1 ];
-        } else {
-            ( $result, $was_cropped ) =
-              _compute_and_cache_border_crop( $id, $path, $format, $content, $metrics, $crop_key );
-        }
-        1;
-    } or $error = $@;
-
-    _release_crop_singleflight_lock( $redis, $lock_key, $token );
-    die $error if $error;
-    return ( $result, $was_cropped );
-}
-
-sub _image_dimensions_from_blob ($content) {
-    return unless defined $content && length($content);
-
-    my ( $vips_width, $vips_height ) = _image_dimensions_from_blob_vips($content);
-    return ( $vips_width, $vips_height ) if $vips_width && $vips_height;
-
-    # Wrap the entire PerlMagick probe: a broken Image::Magick install can
-    # die at ->new, BlobToImage, or Get (e.g. missing dylib), not only at
-    # require. Any of those failures must fall through to "no dimensions".
-    my ( $width, $height ) = eval {
-        require Image::Magick;
-        my $image = Image::Magick->new;
-        return unless $image;
-        return if $image->BlobToImage($content);
-        $image->Get( "width", "height" );
-    };
-    return unless $width && $height;
-    return ( $width, $height );
-}
-
-sub _image_dimensions_from_blob_vips ($content) {
-    return unless LANraragi::Utils::Vips::is_vips_loaded();
-
-    my ( $width, $height );
-    my $image;
-    my $ok = eval {
-        LANraragi::Utils::Vips::init("LANraragi");
-        $image  = LANraragi::Utils::Vips::new_from_buffer($content);
-        $width  = LANraragi::Utils::Vips::width($image);
-        $height = LANraragi::Utils::Vips::height($image);
-        1;
-    };
-
-    eval { LANraragi::Utils::Vips::unref_image($image) if $image; 1 };
-    return if !$ok || $@ || !$width || !$height;
-    return ( $width, $height );
-}
-
-sub _crop_area_savings_ratio ( $content, $cropped ) {
-    my ( $original_width, $original_height ) = _image_dimensions_from_blob($content);
-    my ( $cropped_width,  $cropped_height )  = _image_dimensions_from_blob($cropped);
-    return 0 unless $original_width && $original_height && $cropped_width && $cropped_height;
-
-    my $original_area = $original_width * $original_height;
-    my $cropped_area  = $cropped_width * $cropped_height;
-    return 0 if $original_area <= 0 || $cropped_area >= $original_area;
-
-    return 1 - ( $cropped_area / $original_area );
-}
-
-sub _apply_border_crop ( $id, $path, $format, $content, $metrics = undef ) {
-    my $nocrop_key = _crop_nocrop_cache_key( $id, $path );
-    if ( defined fetch($nocrop_key) ) {
-        $metrics->{cache_status} = "nocrop" if defined $metrics;
-        return ( $content, 0 );
-    }
-
-    my $crop_start = [gettimeofday];
-    my $cropped = crop_blank_borders( $content, $format );
-    $metrics->{crop_seconds} = tv_interval($crop_start) if defined $metrics;
-
-    if ( defined $cropped && length($cropped) ) {
-        # Time the dimension-probe separately from the detector so the Phase 0
-        # metrics can tell detector cost (crop_blank_borders) from the
-        # _crop_area_savings_ratio double-decode cost (CROP-3). Today this is
-        # two full-resolution libvips decodes just to read width/height.
-        my $dims_start = [gettimeofday];
-        my $area_savings = _crop_area_savings_ratio( $content, $cropped );
-        $metrics->{crop_dims_seconds} = tv_interval($dims_start) if defined $metrics;
-        if ( $area_savings < CROP_MIN_AREA_SAVINGS_RATIO ) {
-            put( $nocrop_key, "1" );
-            $metrics->{cache_status} = "nocrop_area" if defined $metrics;
-            return ( $content, 0 );
-        }
-        return ( $cropped, 1 );
-    }
-
-    put( $nocrop_key, "1" );
-    $metrics->{cache_status} = "nocrop" if defined $metrics;
-    return ( $content, 0 );
-}
-
 sub serve_page {
     my ( $self, $id, $path ) = @_;
 
@@ -661,6 +512,7 @@ sub serve_page {
         crop_dims_seconds => 0,
     );
     my $crop_borders = ( $self->req->param('crop') // "" ) eq "border";
+    my $generation = get_generation($id);
 
     my ( $n, $p, $file_ext ) = fileparse( $path, qr/\.[^.]*/ );
     my $format = substr( $file_ext, 1 ) || "jpg";
@@ -668,98 +520,69 @@ sub serve_page {
     my $is_cbw_page = defined($archive) && is_cbw($archive);
     my $cache_path = $is_cbw_page ? _content_cache_path( $archive, $path ) : $path;
 
-    # Apply resizing transformation if set in Settings
-    if ( LANraragi::Model::Config->enable_resize ) {
-        $image_metrics{variant} = $crop_borders ? "cropped_resized" : "resized";
+    my $resize = LANraragi::Model::Config->enable_resize;
+    my $threshold = $resize ? LANraragi::Model::Config->get_threshold : undef;
+    my $quality = $resize ? LANraragi::Model::Config->get_readquality : undef;
+    my $cachekey = $resize
+        ? ($crop_borders ? _crop_resize_cache_key($id, $cache_path, $threshold, $quality)
+                         : "resize_page/$id/$cache_path/$threshold/$quality")
+        : _crop_cache_key($id, $cache_path, $format);
+    $image_metrics{variant} = $resize ? ($crop_borders ? "cropped_resized" : "resized")
+                                     : ($crop_borders ? "cropped" : "original");
 
-        # Store resized files in a subfolder of the ID's temp folder, keyed by quality
-        my $threshold = LANraragi::Model::Config->get_threshold;
-        my $quality   = LANraragi::Model::Config->get_readquality;
-
-        my $cachekey = $crop_borders
-          ? _crop_resize_cache_key( $id, $cache_path, $threshold, $quality )
-          : "resize_page/$id/$cache_path/$threshold/$quality";
-        my $content  = fetch($cachekey);
-        if ( !defined($content) ) {
-            $image_metrics{cache_status} = "miss";
-            my %page_metrics;
-            my $page_content = get_page_data( $id, $path, \%page_metrics );
-            $format = detect_cbw_image($page_content)->{format} if $is_cbw_page;
-            if ($crop_borders) {
-                ( $page_content ) = _apply_border_crop( $id, $cache_path, $format, $page_content, \%image_metrics );
-            }
-            my $resize_start = [gettimeofday];
-            $content = LANraragi::Model::Reader::resize_image( $page_content, $quality, $threshold );
-            $image_metrics{extract_seconds} = $page_metrics{extract_seconds} // 0;
-            $image_metrics{resize_seconds}  = tv_interval($resize_start);
-            put( $cachekey, $content );
-        } else {
-            $image_metrics{cache_status} = "hit";
-        }
-
-        # Archive IDs are content-hashed, so (id, path) is stable; private because No-Fun Mode can gate access.
+    my $failed = sub ($error) {
+        $logger->warn("Image processing failed: $error");
+        $self->render(status => 503, text => "Image processing failed. Retry shortly.");
+    };
+    my $render = sub ($result) {
+        return $failed->("Archive content changed during image request") unless is_current_generation($id, $generation);
+        my $content = $result->{content};
         $self->res->headers->cache_control('private, max-age=3600, immutable');
-
         LANraragi::Model::Metrics::record_image_serving_metrics(
-            %image_metrics,
-            duration_seconds => tv_interval($serving_start),
-            bytes            => length($content)
+            %image_metrics, %{ $result->{metrics} // {} },
+            duration_seconds => tv_interval($serving_start), bytes => length($content)
         );
+        my $mime = $is_cbw_page ? detect_cbw_image($content)->{mime}
+                               : ($resize ? 'image/jpeg' : _page_mime(substr($file_ext, 1)));
+        $self->render_file(data => $content, content_disposition => 'inline', content_type => $mime);
+    };
 
-        my $response_info = $is_cbw_page ? detect_cbw_image($content) : undef;
-        my %render_args = (
-            data                => $content,
-            content_disposition => "inline"
-        );
-        if ($response_info) {
-            $render_args{content_type} = $response_info->{mime};
-        } else {
-            $render_args{format} = "jpg";
-        }
-        $self->render_file(%render_args);
-    } else {
-
-        # CBW response bytes, not URL suffixes, are authoritative for format.
-        my $content = $is_cbw_page ? get_page_data( $id, $path, \%image_metrics ) : undef;
-        my $response_info = $is_cbw_page ? detect_cbw_image($content) : undef;
-        $format = $response_info->{format} if $response_info;
-        my $cachekey = _crop_cache_key( $id, $cache_path, $format );
-        $content = $crop_borders ? fetch($cachekey) : $content;
-        if ($crop_borders && defined($content)) {
-            $image_metrics{variant}      = "cropped";
-            $image_metrics{cache_status} = "hit";
-        } else {
-            $content = get_page_data( $id, $path, \%image_metrics ) unless defined $content;
-            if ($crop_borders) {
-                $image_metrics{variant}      = "cropped";
-                $image_metrics{cache_status} = "miss";
-                my $was_cropped;
-                ( $content, $was_cropped ) =
-                  _apply_border_crop_singleflight( $id, $cache_path, $format, $content, \%image_metrics, $cachekey );
-            }
-        }
-        $logger->debug( "Data size:" . length($content) );
-
-        $self->res->headers->cache_control('private, max-age=3600, immutable');
-
-        LANraragi::Model::Metrics::record_image_serving_metrics(
-            %image_metrics,
-            duration_seconds => tv_interval($serving_start),
-            bytes            => length($content)
-        );
-
-        # Serve extracted file directly
-        my %render_args = (
-            data                => $content,
-            content_disposition => "inline"
-        );
-        if ($response_info) {
-            $render_args{content_type} = $response_info->{mime};
-        } else {
-            $render_args{content_type} = _page_mime( substr( $file_ext, 1 ) );
-        }
-        $self->render_file(%render_args);
+    if (!$resize && !$crop_borders) {
+        my %metrics;
+        my $content = eval { get_page_data($id, $path, \%metrics, $generation) };
+        return $failed->($@) if $@;
+        return $render->({content => $content, metrics => \%metrics});
     }
+
+    # Cache hits render immediately. Misses share a variant-specific subprocess
+    # and cross-worker file lease, without sleeping in the web event loop.
+    my $lookup = sub {
+        my $content = fetch($cachekey, $generation);
+        if (!defined $content && !$resize && defined fetch(_crop_nocrop_cache_key($id, $cache_path), $generation)) {
+            $content = fetch("page/$id/$cache_path", $generation);
+        }
+        return defined $content ? {content => $content, metrics => {cache_status => 'hit'}} : undef;
+    };
+    if (my $cached = $lookup->()) { return $render->($cached); }
+    $self->render_later;
+    return LANraragi::Utils::ImagePipeline::run_p("$cachekey/generation/$generation", $lookup, sub {
+        my %metrics = (cache_status => 'miss');
+        my %page_metrics;
+        my $content = get_page_data($id, $path, \%page_metrics, $generation);
+        my $source_format = $is_cbw_page ? detect_cbw_image($content)->{format} : $format;
+        my $cropped = 0;
+        if ($crop_borders) {
+            ($content, $cropped) = _apply_border_crop($id, $cache_path, $source_format, $content, \%metrics, $generation);
+        }
+        if ($resize) {
+            my $started = [gettimeofday];
+            $content = LANraragi::Model::Reader::resize_image($content, $quality, $threshold);
+            $metrics{resize_seconds} = tv_interval($started);
+        }
+        $metrics{extract_seconds} = $page_metrics{extract_seconds} // 0;
+        put($cachekey, $content, $generation) if $resize || $cropped;
+        return {content => $content, metrics => \%metrics};
+    })->then($render)->catch($failed);
 }
 
 sub update_metadata {
@@ -841,7 +664,8 @@ sub remove_toc_entry {
 }
 
 # Deletes the archive with the given id from redis, and the matching archive file/thumbnail.
-sub delete_archive ($id) {
+sub delete_archive ( $id, $options = undef ) {
+    $options //= {};
 
     my $redis    = LANraragi::Model::Config->get_redis;
     my $filename = get_archive_path( $redis, $id );
@@ -895,6 +719,8 @@ sub delete_archive ($id) {
         $redis_cfg->quit;
     };
 
+    LANraragi::Utils::Database::update_indexes( $id, $oldtags, "" );
+
     # Remove matching data from the search indexes
     my $redis_search = LANraragi::Model::Config->get_redis_search;
     $redis_search->zrem( "LRR_TITLES", "$oldtitle\0$id" );
@@ -903,11 +729,11 @@ sub delete_archive ($id) {
     $redis_search->srem( "LRR_TANKGROUPED", $id );
     $redis_search->quit();
 
-    LANraragi::Utils::Database::update_indexes( $id, $oldtags, "" );
     invalidate_cache();
 
-    if ( -e $filename ) {
-        my $status = unlink_path($filename);
+    if ( -e $filename || $options->{preserve_file} ) {
+        # Upload replacement has already installed the new bytes at this path.
+        my $status = $options->{preserve_file} ? 1 : unlink_path($filename);
 
         my $thumbdir  = LANraragi::Model::Config->get_thumbdir;
         my $subfolder = substr( $id, 0, 2 );

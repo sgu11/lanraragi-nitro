@@ -24,6 +24,21 @@ const progressWriteQueue = createProgressWriteQueue({
         }),
 });
 
+async function readAPIResponse(response) {
+    if (response.status === 204) return {};
+    let data;
+    try {
+        data = await response.json();
+    } catch (error) {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`, { cause: error });
+        throw error;
+    }
+    if (!response.ok || data?.errors || (data && Object.hasOwn(data, "success") && !data.success)) {
+        throw new Error(data?.errors?.[0]?.message || data?.error || data?.message || `HTTP ${response.status}`);
+    }
+    return data;
+}
+
 /**
  * Call that shows a popup to the user on success/failure.
  * Returns the promise so you can add final callbacks if needed.
@@ -43,7 +58,7 @@ export function callAPI(endpoint, method, successMessage, errorMessage, successC
     if (dedupKey && inflight.has(dedupKey)) {
         dataPromise = inflight.get(dedupKey);
     } else {
-        dataPromise = fetch(endpointUrl, { method: verb }).then((response) => response.json());
+        dataPromise = fetch(endpointUrl, { method: verb }).then(readAPIResponse);
         if (dedupKey) {
             inflight.set(dedupKey, dataPromise);
             // then(onFulfilled, onRejected) rather than finally() so cleanup doesn't
@@ -78,7 +93,7 @@ export function callAPI(endpoint, method, successMessage, errorMessage, successC
                         });
                     }
 
-                    if (successCallback !== null) return successCallback(data);
+                    if (typeof successCallback === "function") return successCallback(data);
 
                     return null;
                 }
@@ -93,10 +108,10 @@ export function callAPI(endpoint, method, successMessage, errorMessage, successC
  * @param {*} method
  * @returns The data from the API call. If any error occurs, this will throw.
  */
-export function callAPISilent(endpoint, method) {
+export function callAPISilent(endpoint, method, options = {}) {
     let endpointUrl = new LRR.ApiURL(endpoint);
-    return fetch(endpointUrl, { method })
-        .then((response) => response.json())
+    return fetch(endpointUrl, { ...options, method })
+        .then(readAPIResponse)
         .then((data) => {
             // Handle OpenAPI-style error messages (HTTP status code + message)
             if (Object.hasOwn(data, "errors")) {
@@ -126,7 +141,7 @@ export function callAPIBody(endpoint, method, body, successMessage, errorMessage
     let endpointUrl = new LRR.ApiURL(endpoint);
     const headers = contentType ? { "Content-Type": contentType } : undefined;
     return fetch(endpointUrl, { method, body, headers })
-        .then((response) => response.json())
+        .then(readAPIResponse)
         .then((data) => {
             if (Object.prototype.hasOwnProperty.call(data, "success") && !data.success) {
                 throw new Error(data.error);
@@ -143,7 +158,7 @@ export function callAPIBody(endpoint, method, body, successMessage, errorMessage
                     });
                 }
 
-                if (successCallback !== null) return successCallback(data);
+                if (typeof successCallback === "function") return successCallback(data);
 
                 return null;
             }
@@ -163,7 +178,7 @@ export function callAPIBody(endpoint, method, body, successMessage, errorMessage
 export function checkJobStatus(jobId, useDetail, callback, failureCallback, progressCallback = null) {
     let endpoint = new LRR.ApiURL(useDetail ? `/api/minion/${jobId}/detail` : `/api/minion/${jobId}`);
     fetch(endpoint, { method: "GET" })
-        .then((response) => response.json())
+        .then(readAPIResponse)
         .then((data) => {
             if (data.error) throw new Error(data.error);
 
@@ -209,22 +224,27 @@ export function saveFormData(formSelector) {
     const postData = new FormData($(formSelector)[0]);
 
     return fetch(window.location.href, { method: "POST", body: postData })
-        .then((response) => response.json())
+        .then(readAPIResponse)
         .then((data) => {
             if (data.success) {
                 LRR.toast({
                     heading: I18N.SaveSuccess,
                     icon: "success",
                 });
+                return data;
             } else {
                 throw new Error(data.message);
             }
         })
-        .catch((error) => LRR.showErrorToast(I18N.SaveError, error));
+        .catch((error) => {
+            LRR.showErrorToast(I18N.SaveError, error);
+            return null;
+        });
 }
 
 export function triggerScript(namespace) {
     const scriptArg = $(`#${namespace}_ARG`).val();
+    const params = new URLSearchParams({ plugin: namespace, arg: scriptArg });
 
     if (isScriptRunning) {
         LRR.showErrorToast(I18N.ScriptRunning, I18N.ScriptRunningDesc);
@@ -236,9 +256,11 @@ export function triggerScript(namespace) {
     $(".stdbtn").hide();
 
     // Save data before triggering script
-    saveFormData("#editPluginForm")
-        .then(callAPI(`/api/plugins/queue?plugin=${namespace}&arg=${scriptArg}`, "POST", null, I18N.ScriptError,
+    let jobQueued = false;
+    return saveFormData("#editPluginForm")
+        .then((saved) => saved && callAPI(`/api/plugins/queue?${params}`, "POST", null, I18N.ScriptError,
             (data) => {
+                jobQueued = true;
                 // Check minion job state periodically while we're on this page
                 checkJobStatus(
                     data.job,
@@ -266,7 +288,14 @@ export function triggerScript(namespace) {
                     },
                 );
             },
-        ));
+        ))
+        .finally(() => {
+            if (!jobQueued) {
+                isScriptRunning = false;
+                $(".script-running").hide();
+                $(".stdbtn").show();
+            }
+        });
 }
 
 export function cleanTemporaryFolder() {
@@ -385,7 +414,7 @@ export function removeArchiveFromCategory(arcId, catId) {
 export function deleteArchive(arcId, callback = () => {}, { callbackDelayMs = 1500, failureCallback = () => {} } = {}) {
     let endpoint = new LRR.ApiURL(`/api/archives/${arcId}`);
     return fetch(endpoint, { method: "DELETE" })
-        .then((response) => response.json())
+        .then(readAPIResponse)
         .then((data) => {
             if (!data.success) {
                 LRR.toast({
@@ -424,7 +453,7 @@ export function deleteArchive(arcId, callback = () => {}, { callbackDelayMs = 15
 export function deleteTankoubon(id, callback = () => {}, { callbackDelayMs = 1500, failureCallback = () => {} } = {}) {
     const endpoint = new LRR.ApiURL(`/api/tankoubons/${id}`);
     return fetch(endpoint, { method: "DELETE" })
-        .then((response) => response.json())
+        .then(readAPIResponse)
         .then((data) => {
             if (!data.success) throw new Error(data.error);
 

@@ -94,7 +94,7 @@ test("custom duplicate delete actions skip the confirmation modal", async () => 
     const nextHandlerStart = script.indexOf("$(\"#dupes-queue-list\").on(\"click\"", actionHandlerStart);
     const actionHandler = script.slice(actionHandlerStart, nextHandlerStart);
 
-    assert.match(actionHandler, /Duplicates\.performReviewAction\(\{[\s\S]*archiveId[\s\S]*Duplicates\.deleteArchive\(archiveId\)/);
+    assert.match(actionHandler, /Duplicates\.performReviewAction\(\{[\s\S]*archiveId[\s\S]*Duplicates\.deleteArchive\(archiveId, pair\)/);
     assert.doesNotMatch(actionHandler, /confirmDeleteArchive/);
     assert.doesNotMatch(actionHandler, /confirmTitle/);
     assert.match(script, /DuplicatesImmediateDelete/);

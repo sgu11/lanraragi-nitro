@@ -4,6 +4,8 @@ use strict;
 use warnings;
 
 use Mojo::JSON qw(decode_json);
+use Mojo::Util qw(md5_sum);
+use LANraragi::Utils::RedisScript qw(evalsha_cached);
 
 use LANraragi::Utils::Database ();
 use LANraragi::Utils::Logging  ();
@@ -12,6 +14,8 @@ use LANraragi::Model::Config;
 use LANraragi::Model::Dedup;
 use LANraragi::Model::Dedup::CoverIndex;
 use LANraragi::Model::Dedup::CoverFingerprint;
+use LANraragi::Model::Dedup::ContentVerification;
+use LANraragi::Model::Dedup::ReviewLog;
 
 # Fork-only Minion tasks for the duplicate-detection suite (pagehash, coverhash,
 # relation/lead-signal matching and their backfills). Kept out of
@@ -53,36 +57,55 @@ sub _dedup_config_from_redis {
 sub _coverhash_inflight_fresh {
     my ($redis_cfg, $id) = @_;
     my $started = $redis_cfg->hget(COVER_HASH_INFLIGHT_KEY, $id) // '';
-    return 0 unless $started =~ /^\d+$/;
-    return (time() - $started) < COVER_HASH_INFLIGHT_TTL ? 1 : 0;
+    return 0 unless $started =~ /^(\d+)(?::|$)/;
+    return (time() - $1) < COVER_HASH_INFLIGHT_TTL ? 1 : 0;
 }
 
-sub _mark_coverhash_inflight {
+sub _claim_coverhash_inflight {
     my ($redis_cfg, $id) = @_;
-    $redis_cfg->hset(COVER_HASH_INFLIGHT_KEY, $id, time());
+    my $now = time();
+    my $token = "$now:" . md5_sum( join ':', $$, rand(), $id );
+    my $script = <<'LUA';
+local value = redis.call('HGET', ARGV[1], ARGV[2]) or ''
+local started = tonumber(string.match(value, '^(%d+)'))
+if started and tonumber(ARGV[3]) - started < tonumber(ARGV[4]) then return 0 end
+redis.call('HSET', ARGV[1], ARGV[2], ARGV[5])
+return 1
+LUA
+    return evalsha_cached( $redis_cfg, 'claim_coverhash', $script,
+        COVER_HASH_INFLIGHT_KEY, $id, $now, COVER_HASH_INFLIGHT_TTL, $token ) ? $token : undef;
 }
 
 sub _clear_coverhash_inflight {
-    my ($redis_cfg, $id) = @_;
-    $redis_cfg->hdel(COVER_HASH_INFLIGHT_KEY, $id);
+    my ($redis_cfg, $id, $token) = @_;
+    return if !defined $token || !length $token;
+    my $script = <<'LUA';
+if redis.call('HGET', ARGV[1], ARGV[2]) == ARGV[3] then
+    return redis.call('HDEL', ARGV[1], ARGV[2])
+end
+return 0
+LUA
+    return evalsha_cached( $redis_cfg, 'release_coverhash', $script, COVER_HASH_INFLIGHT_KEY, $id, $token );
 }
 
 sub _enqueue_coverhash_unless_inflight {
     my ($redis_cfg, $minion, $id) = @_;
-    return 0 if _coverhash_inflight_fresh($redis_cfg, $id);
-
-    $minion->enqueue(
-        compute_coverhash => [ $id ] => { priority => 0 }
-    );
-    _mark_coverhash_inflight($redis_cfg, $id);
+    my $token = _claim_coverhash_inflight($redis_cfg, $id);
+    return 0 unless defined $token;
+    my $job_id = eval { $minion->enqueue( compute_coverhash => [ $id, $token ] => { priority => 0 } ); };
+    if (!$job_id) {
+        my $error = $@ || 'Minion did not return a coverhash job id';
+        _clear_coverhash_inflight($redis_cfg, $id, $token);
+        die "$error\n";
+    }
     return 1;
 }
 
 sub _run_find_cover_duplicates_isolated {
-    my ($job, $redis, $redis_cfg, $threshold_arg) = @_;
+    my ($job, $redis, $redis_cfg, $threshold_arg, $retry_failed) = @_;
 
     my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
-    my $cfg    = _dedup_config_from_redis($redis_cfg);
+    my $cfg    = LANraragi::Model::Dedup::CoverIndex::cover_config_from_redis($redis_cfg);
     my $minion = LANraragi::Model::Config->get_minion;
 
     # One-time legacy cleanup.
@@ -99,23 +122,26 @@ sub _run_find_cover_duplicates_isolated {
     my $skipped  = 0;
     my @cover_states;
     for my $id (@ids) {
-        $redis->hmget($id, "coverhash_v", "coverhash_err",
+        $redis->hmget($id, "coverhash_v", "coverhash_err", "coverhash",
             sub { push @cover_states, [ $id, $_[0] ] });
     }
     $redis->wait_all_responses;
 
     for my $state (@cover_states) {
         my ($id, $reply) = @$state;
-        my ($v, $err) = @{ $reply // [] };
+        my ($v, $err, $hash) = @{ $reply // [] };
         $v   //= '';
         $err //= '';
-        if ($v eq $cfg->{cover_algo_version}) {
+        if ($v eq $cfg->{cover_algo_version} && LANraragi::Model::Dedup::_valid_hash($hash)) {
             $skipped++;
             next;
         }
         if ($err =~ /^\Q$cfg->{cover_algo_version}\E:/) {
-            $skipped++;
-            next;
+            unless ($retry_failed) {
+                $skipped++;
+                next;
+            }
+            $redis->hdel($id, 'coverhash_err');
         }
         $pending++;
         if (_enqueue_coverhash_unless_inflight($redis_cfg, $minion, $id)) {
@@ -126,9 +152,11 @@ sub _run_find_cover_duplicates_isolated {
     }
 
     if ($pending > 0) {
-        $minion->enqueue(
+        $redis_cfg->hset(LANraragi::Model::Dedup::CoverIndex::CONFIG_KEY(), 'cover_sweep_complete', 0);
+        my $next_job = $minion->enqueue(
             find_cover_duplicates_isolated => [ $threshold_arg ] => { priority => 0, delay => 30 }
         );
+        die "Could not queue follow-up cover scan\n" unless $next_job;
         $redis->quit;
         $redis_cfg->quit;
         $logger->info(
@@ -143,6 +171,7 @@ sub _run_find_cover_duplicates_isolated {
             skipped        => $skipped,
             sweep_deferred => 1,
             requeued       => 1,
+            next_job       => $next_job,
             legacy_cleaned => $cleaned,
         });
         return;
@@ -153,6 +182,15 @@ sub _run_find_cover_duplicates_isolated {
     my $result = LANraragi::Model::Dedup::CoverIndex::run_cover_candidate_sweep(
         $redis, $redis_cfg, $threshold, $logger
     );
+    $redis_cfg->hset(LANraragi::Model::Dedup::CoverIndex::CONFIG_KEY(), 'cover_sweep_complete', $result->{sweep_done} ? 1 : 0)
+        if exists $result->{sweep_done};
+
+    if ($result->{truncated} && !$result->{sweep_done}) {
+        $result->{next_job} = $minion->enqueue(
+            find_cover_duplicates_isolated => [$threshold_arg] => { priority => 0, delay => 1 }
+        );
+        die "Could not queue follow-up cover scan\n" unless $result->{next_job};
+    }
 
     $redis->quit;
     $redis_cfg->quit;
@@ -164,6 +202,44 @@ sub _run_find_cover_duplicates_isolated {
 
 sub add_tasks {
     my $minion = shift;
+
+    $minion->add_task(
+        verify_cover_duplicates => sub {
+            my ($job, $pairs) = @_;
+            die "Expected at most 24 pairs\n" unless ref $pairs eq 'ARRAY' && @$pairs && @$pairs <= 24;
+            # One streaming verification batch at a time bounds disk pressure.
+            my $guard = $minion->guard('cover_content_verification', 7200);
+            return $job->retry({ delay => 10 }) unless $guard;
+            my $redis = LANraragi::Model::Config->get_redis;
+            my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+            my (%cache, %counts, %results);
+            my $completed = 0;
+            $job->note(completed => 0, total => scalar @$pairs);
+            for my $raw (@$pairs) {
+                my $pair = LANraragi::Model::Dedup::ReviewLog::canonical_pair($raw);
+                next unless defined $pair && defined $redis_cfg->zscore(
+                    LANraragi::Model::Dedup::CoverIndex::PAIR_KEY(), $pair);
+                my $expected = $redis_cfg->hget(LANraragi::Model::Dedup::CoverIndex::PAIR_META_KEY(), $pair);
+                next unless defined $expected;
+                my ($a, $b) = split /\|/, $pair;
+                my $result = eval {
+                    LANraragi::Model::Dedup::ContentVerification::verify_pair($redis, $a, $b, \%cache);
+                };
+                $result //= { state => 'unavailable', checked_at => time(),
+                    method => 'sha256_image_multiset_v1' };
+                my $previous = LANraragi::Model::Dedup::CoverIndex::patch_pair_meta(
+                    $redis_cfg, $pair, { verification => $result }, $expected);
+                if (defined $previous) {
+                    $counts{$result->{state}}++;
+                    $results{$pair} = $result;
+                }
+                $job->note(completed => ++$completed, total => scalar @$pairs);
+            }
+            $redis->quit;
+            $redis_cfg->quit;
+            $job->finish({ counts => \%counts, pairs => \%results });
+        }
+    );
 
     $minion->add_task(
         compute_pagehashes => sub {
@@ -369,11 +445,17 @@ sub add_tasks {
     # ----------------------------------------------------------------------
     $minion->add_task(
         compute_coverhash => sub {
-            my ($job, $id) = @_;
+            my ($job, $id, $token) = @_;
             my $logger = LANraragi::Utils::Logging::get_logger("Minion", "minion");
             my $redis     = LANraragi::Model::Config->get_redis;
             my $redis_cfg = LANraragi::Model::Config->get_redis_config;
-            my $cfg       = _dedup_config_from_redis($redis_cfg);
+            my $cfg       = LANraragi::Model::Dedup::CoverIndex::cover_config_from_redis($redis_cfg);
+
+            # Jobs queued before token leases can only release their legacy marker.
+            if (!defined $token) {
+                my $legacy = $redis_cfg->hget(COVER_HASH_INFLIGHT_KEY, $id) // '';
+                $token = $legacy if $legacy =~ /^\d+$/;
+            }
 
             my ($rc, $err);
             eval { $rc = LANraragi::Model::Dedup::compute_coverhash_for_archive($redis, $id, $cfg); 1 }
@@ -381,7 +463,7 @@ sub add_tasks {
             if (defined $rc && $rc > 0) {
                 eval { LANraragi::Model::Dedup::CoverIndex::mark_band_buckets_stale($redis_cfg); };
             }
-            eval { _clear_coverhash_inflight($redis_cfg, $id); };
+            eval { _clear_coverhash_inflight($redis_cfg, $id, $token); };
             $redis->quit;
             $redis_cfg->quit;
 
@@ -474,18 +556,18 @@ sub add_tasks {
             my $cfg       = _dedup_config_from_redis($redis_cfg);
             $redis_cfg->quit;
 
+            my $source = LANraragi::Model::Dedup::_dedup_source_snapshot($redis, $id);
             my $rc = LANraragi::Model::Dedup::compute_leadhashes_for_archive($redis, $id, $cfg);
-            if ($rc >= 0) {
+            if ($source && $rc >= 0) {
                 my @vals = $redis->hmget($id, qw(title name tags pagecount arcsize));
                 my %h;
                 @h{qw(title name tags pagecount arcsize)} = @vals;
                 my $title = $h{title} || $h{name} || '';
-                $redis->hmset(
-                    $id,
-                    "dedup_title_key",  LANraragi::Model::Dedup::normalize_title_for_dedup($title),
-                    "dedup_work_key",   LANraragi::Model::Dedup::work_key_for_dedup($title),
-                    "dedup_source_key", LANraragi::Model::Dedup::dedup_source_key_from_tags($h{tags} // ''),
-                );
+                LANraragi::Model::Dedup::_publish_dedup_fields($redis, $id, $source, {
+                    dedup_title_key  => LANraragi::Model::Dedup::normalize_title_for_dedup($title),
+                    dedup_work_key   => LANraragi::Model::Dedup::work_key_for_dedup($title),
+                    dedup_source_key => LANraragi::Model::Dedup::dedup_source_key_from_tags($h{tags} // ''),
+                });
             }
             $redis->quit;
 
@@ -806,10 +888,12 @@ sub add_tasks {
     # the mixed deck. Used by the /duplicates_custom rebuild endpoint.
     $minion->add_task(
         find_cover_duplicates_isolated => sub {
-            my ($job, $threshold_arg) = @_;
+            my ($job, $threshold_arg, $retry_failed) = @_;
+            my $guard = $minion->guard('cover_candidate_sweep', 1800);
+            return $job->retry({ delay => 10 }) unless $guard;
             my $redis     = LANraragi::Model::Config->get_redis;
             my $redis_cfg = LANraragi::Model::Config->get_redis_config;
-            _run_find_cover_duplicates_isolated($job, $redis, $redis_cfg, $threshold_arg);
+            _run_find_cover_duplicates_isolated($job, $redis, $redis_cfg, $threshold_arg, $retry_failed);
         }
     );
 

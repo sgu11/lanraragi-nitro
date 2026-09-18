@@ -22,27 +22,26 @@ import { parseChangesInventory } from "./classify-change-surface.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
 
-/** Fork files that require individual bind mounts (see docs/DEPLOYMENT.md). */
+/** The import map owns module URLs; derive their mounts instead of duplicating
+ * every module name in deployment code. Classic scripts/CSS remain explicit. */
+export function moduleMountPaths(importmap) {
+    const paths = [...importmap.matchAll(/\/js\/\$version\/(mod\/[A-Za-z0-9_./-]+\.js)\?/g)]
+        .map((match) => `public/js/${match[1]}`);
+    if (!paths.length) throw new Error("Import map contains no local modules");
+    return [...new Set(paths)];
+}
+
 export const FORK_PUBLIC_MOUNT_PATHS = Object.freeze([
+    ...moduleMountPaths(readFileSync(join(REPO_ROOT, "templates/common/importmap.html.tt2"), "utf8")),
     "tools/openapi.yaml",
-    "public/js/mod/common.js",
+    "public/js/backup.js",
+    "public/js/batch.js",
+    "public/js/category.js",
+    "public/js/edit.js",
+    "public/js/logs.js",
+    "public/js/plugins.js",
     "public/js/duplicates.js",
-    "public/js/mod/index.js",
-    "public/js/mod/index_datatables.js",
-    "public/js/mod/index-order.js",
     "public/js/reader.js",
-    "public/js/mod/server.js",
-    "public/js/mod/reader-spread.js",
-    "public/js/mod/reader-progress.js",
-    "public/js/mod/progress-migration.js",
-    "public/js/mod/reader-chrome.js",
-    "public/js/mod/reader-crop.js",
-    "public/js/mod/reader-nav-keys.js",
-    "public/js/mod/reader_common.js",
-    "public/js/mod/archive-data-cache.js",
-    "public/js/mod/perf.js",
-    "public/js/mod/index_contextmenu.js",
-    "public/js/mod/index_grid_selection.js",
     "public/css/lrr.css",
     "public/css/reader-chrome.css",
     "public/js/duplicates_custom.js",
@@ -131,6 +130,12 @@ export function auditMounts(mounts, required = FORK_PUBLIC_MOUNT_PATHS) {
 }
 
 function main(argv = process.argv.slice(2)) {
+    if (argv.includes("--emit-compose")) {
+        for (const path of FORK_PUBLIC_MOUNT_PATHS) {
+            console.log(`      - ./LANraragi/${path}:${requiredDestination(path)}:ro`);
+        }
+        return;
+    }
     let mountsFile = null;
     let changesFile = null;
     for (let i = 0; i < argv.length; i++) {

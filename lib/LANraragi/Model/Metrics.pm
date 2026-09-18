@@ -62,7 +62,7 @@ sub get_prometheus_api_metrics {
     my @output;
     my @metric_keys = $metrics_redis->keys("metrics:worker:*");
     my %aggregated_api_metrics;
-    my %active_workers;
+    my $worker_count = $metrics_redis->hlen("metrics:active_workers");
 
     foreach my $key ( @metric_keys ) {
 
@@ -75,36 +75,32 @@ sub get_prometheus_api_metrics {
             ( $worker_pid, $endpoint, $method ) = ( $1, $2, $3 );
             $endpoint =~ s/_/\//g;
         }
-        if ( defined $worker_pid ) {
-            $active_workers{$worker_pid} = 1;
+        next unless defined $worker_pid && $endpoint && $method;
 
-            next unless $endpoint && $method;
+        my %metric_data = $metrics_redis->hgetall($key);
+        next unless %metric_data;
 
-            my %metric_data = $metrics_redis->hgetall($key);
-            next unless %metric_data;
+        my $escaped_endpoint = LANraragi::Utils::Metrics::escape_label_value($endpoint);
+        my $escaped_method = LANraragi::Utils::Metrics::escape_label_value($method);
+        my $labels = qq{endpoint="$escaped_endpoint",method="$escaped_method"};
 
-            my $escaped_endpoint = LANraragi::Utils::Metrics::escape_label_value($endpoint);
-            my $escaped_method = LANraragi::Utils::Metrics::escape_label_value($method);
-            my $labels = qq{endpoint="$escaped_endpoint",method="$escaped_method"};
+        # Aggregate metrics
+        $aggregated_api_metrics{"lanraragi_api_requests_total"}{$labels} += $metric_data{count} || 0;
+        $aggregated_api_metrics{"lanraragi_api_duration_seconds_total"}{$labels} += $metric_data{duration_sum} || 0;
+        $aggregated_api_metrics{"lanraragi_http_request_size_bytes_total"}{$labels} += $metric_data{request_size_sum} || 0;
+        $aggregated_api_metrics{"lanraragi_http_response_size_bytes_total"}{$labels} += $metric_data{response_size_sum} || 0;
 
-            # Aggregate metrics
-            $aggregated_api_metrics{"lanraragi_api_requests_total"}{$labels} += $metric_data{count} || 0;
-            $aggregated_api_metrics{"lanraragi_api_duration_seconds_total"}{$labels} += $metric_data{duration_sum} || 0;
-            $aggregated_api_metrics{"lanraragi_http_request_size_bytes_total"}{$labels} += $metric_data{request_size_sum} || 0;
-            $aggregated_api_metrics{"lanraragi_http_response_size_bytes_total"}{$labels} += $metric_data{response_size_sum} || 0;
-
-            foreach my $field ( keys %metric_data ) {
-                if ( $field =~ /^status_(\d{3})$/ ) {
-                    my $status_labels = qq{$labels,status_code="$1"};
-                    $aggregated_api_metrics{"lanraragi_api_responses_total"}{$status_labels} += $metric_data{$field} || 0;
-                }
+        foreach my $field ( keys %metric_data ) {
+            if ( $field =~ /^status_(\d{3})$/ ) {
+                my $status_labels = qq{$labels,status_code="$1"};
+                $aggregated_api_metrics{"lanraragi_api_responses_total"}{$status_labels} += $metric_data{$field} || 0;
             }
+        }
 
-            foreach my $upper_bound ( REQUEST_DURATION_BUCKETS ) {
-                my $field = _bucket_field($upper_bound);
-                my $bucket_labels = qq{$labels,le="$upper_bound"};
-                $aggregated_api_metrics{"lanraragi_api_duration_seconds_bucket"}{$bucket_labels} += $metric_data{$field} || 0;
-            }
+        foreach my $upper_bound ( REQUEST_DURATION_BUCKETS ) {
+            my $field = _bucket_field($upper_bound);
+            my $bucket_labels = qq{$labels,le="$upper_bound"};
+            $aggregated_api_metrics{"lanraragi_api_duration_seconds_bucket"}{$bucket_labels} += $metric_data{$field} || 0;
         }
     }
 
@@ -162,7 +158,6 @@ sub get_prometheus_api_metrics {
     }
 
     # API worker count metric
-    my $worker_count = scalar keys %active_workers;
     push @output, "# TYPE lanraragi_active_workers gauge";
     push @output, "# HELP lanraragi_active_workers Number of active LANraragi workers";
     push @output, "lanraragi_active_workers $worker_count";
@@ -179,100 +174,84 @@ sub _safe_image_metric_label {
     return $value;
 }
 
+# Phase counters share one bounded per-worker buffer. No Redis round trip on
+# the image/search hot path; the application's one-second timer flushes it.
+my %PHASE_METRICS_CACHE;
+my $PHASE_METRICS_PID = $$;
+
+sub _phase_metrics_pid {
+    if ($PHASE_METRICS_PID != $$) {
+        %PHASE_METRICS_CACHE = ();
+        $PHASE_METRICS_PID = $$;
+    }
+}
+
+sub _buffer_phase_metrics {
+    my ($key, $fields) = @_;
+    _phase_metrics_pid();
+    $PHASE_METRICS_CACHE{$key}{$_} += $fields->{$_} for keys %$fields;
+}
+
+sub flush_phase_metrics {
+    _phase_metrics_pid();
+    return unless %PHASE_METRICS_CACHE;
+    my $redis;
+    my $ok = eval {
+        $redis = LANraragi::Model::Config->get_redis_metrics;
+        die "Metrics Redis unavailable\n" unless $redis;
+        for my $key (keys %PHASE_METRICS_CACHE) {
+            for my $field (keys %{ $PHASE_METRICS_CACHE{$key} }) {
+                my $value = $PHASE_METRICS_CACHE{$key}{$field};
+                $redis->hincrbyfloat($key, $field, $value, sub { die $_[1] if $_[1] });
+            }
+        }
+        $redis->wait_all_responses;
+        1;
+    };
+    my $error = $@;
+    $redis->quit if $redis;
+    if ($ok) {
+        %PHASE_METRICS_CACHE = ();
+    } else {
+        get_logger("Metrics", "lanraragi")->error("Failed to flush phase metrics: $error");
+    }
+}
+
 sub record_image_serving_metrics {
     my (%args) = @_;
-
     return unless LANraragi::Model::Config->enable_metrics;
-
-    my $kind         = _safe_image_metric_label( $args{kind} );
-    my $variant      = _safe_image_metric_label( $args{variant} );
-    my $cache_status = _safe_image_metric_label( $args{cache_status} );
-    my $key          = "metrics:image:$kind:$variant:$cache_status";
-
-    my $redis = LANraragi::Model::Config->get_redis_metrics;
-    return unless $redis;
-
-    my $error;
-    eval {
-        $redis->hincrby( $key, "count", 1, sub { } );
-        $redis->hincrbyfloat( $key, "duration_sum",         $args{duration_seconds} // 0, sub { } );
-        $redis->hincrbyfloat( $key, "extract_duration_sum", $args{extract_seconds}  // 0, sub { } );
-        $redis->hincrbyfloat( $key, "crop_duration_sum",    $args{crop_seconds}     // 0, sub { } );
-        $redis->hincrbyfloat( $key, "crop_dims_duration_sum", $args{crop_dims_seconds} // 0, sub { } );
-        $redis->hincrbyfloat( $key, "resize_duration_sum",  $args{resize_seconds}   // 0, sub { } );
-        $redis->hincrby( $key, "bytes_sum", $args{bytes} // 0, sub { } );
-        # Pipeline the seven increments into one round-trip (REDIS-3) instead of
-        # seven serialized hincrby/hincrbyfloat calls per page-flip.
-        $redis->wait_all_responses;
-    };
-    $error = $@;
-    $redis->quit();
-
-    if ($error) {
-        my $logger = get_logger( "Metrics", "lanraragi" );
-        $logger->error("Failed to update image serving metrics: $error");
-    }
+    my $key = join ':', 'metrics:image', map { _safe_image_metric_label($args{$_}) } qw(kind variant cache_status);
+    _buffer_phase_metrics($key, {
+        count => 1,
+        duration_sum => $args{duration_seconds} // 0,
+        extract_duration_sum => $args{extract_seconds} // 0,
+        crop_duration_sum => $args{crop_seconds} // 0,
+        crop_dims_duration_sum => $args{crop_dims_seconds} // 0,
+        resize_duration_sum => $args{resize_seconds} // 0,
+        bytes_sum => $args{bytes} // 0,
+    });
 }
 
-# Search-engine phase timings, keyed by searchcache status (hit/miss/bypass).
-# Phase sums let the Prometheus side compute where do_search wall time goes:
-# preamble (counts + connections), cacheget (check_cache GET + thaw), filter
-# (token intersection), sort (order build/fetch + apply).
 sub record_search_metrics {
     my (%args) = @_;
-
     return unless LANraragi::Model::Config->enable_metrics;
-
-    my $cache_status = _safe_image_metric_label( $args{cache_status} );
-    my $key          = "metrics:search:engine:$cache_status";
-
-    my $redis = LANraragi::Model::Config->get_redis_metrics;
-    return unless $redis;
-
-    my $error;
-    eval {
-        $redis->hincrby( $key, "count", 1, sub { } );
-        $redis->hincrbyfloat( $key, "duration_sum", $args{duration_seconds} // 0, sub { } );
-        $redis->hincrbyfloat( $key, "preamble_sum", $args{preamble_seconds} // 0, sub { } );
-        $redis->hincrbyfloat( $key, "cacheget_sum", $args{cacheget_seconds} // 0, sub { } );
-        $redis->hincrbyfloat( $key, "filter_sum",   $args{filter_seconds}   // 0, sub { } );
-        $redis->hincrbyfloat( $key, "sort_sum",     $args{sort_seconds}     // 0, sub { } );
-        $redis->wait_all_responses;
-    };
-    $error = $@;
-    $redis->quit();
-
-    if ($error) {
-        my $logger = get_logger( "Metrics", "lanraragi" );
-        $logger->error("Failed to update search metrics: $error");
-    }
+    my $key = "metrics:search:engine:" . _safe_image_metric_label($args{cache_status});
+    _buffer_phase_metrics($key, {
+        count => 1,
+        duration_sum => $args{duration_seconds} // 0,
+        preamble_sum => $args{preamble_seconds} // 0,
+        cacheget_sum => $args{cacheget_seconds} // 0,
+        filter_sum => $args{filter_seconds} // 0,
+        sort_sum => $args{sort_seconds} // 0,
+    });
 }
 
-# Row-build (per-page JSON assembly) timing for search responses.
 sub record_search_rowbuild_metrics {
     my (%args) = @_;
-
     return unless LANraragi::Model::Config->enable_metrics;
-
-    my $key = "metrics:search:rowbuild:all";
-
-    my $redis = LANraragi::Model::Config->get_redis_metrics;
-    return unless $redis;
-
-    my $error;
-    eval {
-        $redis->hincrby( $key, "count", 1, sub { } );
-        $redis->hincrbyfloat( $key, "duration_sum", $args{duration_seconds} // 0, sub { } );
-        $redis->hincrby( $key, "rows_sum", $args{rows} // 0, sub { } );
-        $redis->wait_all_responses;
-    };
-    $error = $@;
-    $redis->quit();
-
-    if ($error) {
-        my $logger = get_logger( "Metrics", "lanraragi" );
-        $logger->error("Failed to update search rowbuild metrics: $error");
-    }
+    _buffer_phase_metrics('metrics:search:rowbuild:all', {
+        count => 1, duration_sum => $args{duration_seconds} // 0, rows_sum => $args{rows} // 0,
+    });
 }
 
 sub get_prometheus_search_metrics {
@@ -621,15 +600,16 @@ sub collect_request_metrics {
     my $controller      = shift;
     my $start_time      = $controller->stash('metrics.start_time');
     return unless $start_time;
+    return unless $controller->match->endpoint;
 
     my $duration        = tv_interval($start_time);
     my $method          = $controller->req->method;
-    my $path            = $controller->req->url->path->to_string;
+    $method = 'OTHER' unless $method =~ /\A(?:GET|HEAD|POST|PUT|DELETE|OPTIONS|PATCH|CONNECT|TRACE)\z/;
     my $status_code     = $controller->res->code || 0;
 
     my $request_size    = $controller->req->content->body_size || 0;
     my $response_size   = $controller->res->content->body_size || 0;
-    my $endpoint        = LANraragi::Utils::Metrics::extract_endpoint($path);
+    my $endpoint        = LANraragi::Utils::Metrics::extract_route_endpoint($controller->match->endpoint);
     return unless $endpoint;
 
     my $endpoint_encoded = _encode_endpoint($endpoint);
@@ -736,6 +716,7 @@ sub cleanup_metrics {
             my $count = scalar(@all_keys);
             $logger->info("Cleaned up $count metrics keys.");
         }
+        $metrics_redis->del("metrics:active_workers");
     };
     my $error = $@;
     $metrics_redis->quit();
@@ -780,6 +761,70 @@ sub flush_request_metrics_to_redis {
     %REQUEST_METRICS_CACHE        = ();
     $REQUEST_METRICS_UPDATE_COUNT = 0;
     $REQUEST_METRICS_LAST_FLUSH   = $now;
+}
+
+# Register worker in the active workers registry
+sub register_worker {
+    my $pid = shift;
+
+    my $redis   = LANraragi::Model::Config->get_redis_metrics;
+    my $logger  = get_logger( "Metrics", "lanraragi" );
+    my $error;
+    eval {
+        $redis->hset("metrics:active_workers", $pid, 1);
+    };
+    $error = $@;
+    $redis->quit();
+
+    if ($error) {
+        $logger->error("Failed to register worker process $pid: $error");
+    }
+}
+
+# Unregister worker from the active workers registry and clean up its gauge metrics.
+sub unregister_worker {
+    my $pid = shift;
+
+    my $redis   = LANraragi::Model::Config->get_redis_metrics;
+    my $logger  = get_logger( "Metrics", "lanraragi" );
+    my $error;
+    eval {
+        $redis->hdel("metrics:active_workers", $pid);
+        $redis->hdel(
+            "metrics:http:$pid",
+            qw(virtual_memory_bytes resident_memory_bytes open_fds max_fds start_time_seconds)
+        );
+        $logger->debug("Cleaned up gauges of exited worker $pid.");
+    };
+    $error = $@;
+    $redis->quit();
+
+    if ($error) {
+        $logger->error("Failed to clean up gauges of exited process $pid: $error");
+    }
+}
+
+# Unregister shinobu and clean up gauge metrics.
+sub unregister_shinobu {
+
+    my $metrics_redis = LANraragi::Model::Config->get_redis_metrics;
+    my $logger        = get_logger( "Metrics", "lanraragi" );
+    my $error;
+    eval {
+        foreach my $key ( $metrics_redis->keys("metrics:shinobu:*") ) {
+            $metrics_redis->hdel(
+                $key,
+                qw(virtual_memory_bytes resident_memory_bytes open_fds max_fds start_time_seconds)
+            );
+        }
+        $logger->debug("Cleaned up shinobu gauges.");
+    };
+    $error = $@;
+    $metrics_redis->quit();
+
+    if ($error) {
+        $logger->error("Failed to clean up shinobu gauges: $error");
+    }
 }
 
 1;

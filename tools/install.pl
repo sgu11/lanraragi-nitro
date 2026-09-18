@@ -27,19 +27,20 @@ my @vendor_css = (
 my @vendor_js = (
     "/blueimp-file-upload/js/jquery.fileupload.js",       "/blueimp-file-upload/js/vendor/jquery.ui.widget.js",
     "/datatables.net/js/jquery.dataTables.min.js",        "/jqcloud2/dist/jqcloud.min.js",
-    "/jquery/dist/jquery.min.js",                         "/react-toastify/dist/react-toastify.esm.js",
+    "/jquery/dist/jquery.min.js",                         [ "/react-toastify/dist/react-toastify.esm.mjs", "react-toastify.esm.js" ],
     "/jquery-contextmenu/dist/jquery.ui.position.min.js", "/jquery-contextmenu/dist/jquery.contextMenu.min.js",
     "/tippy.js/dist/tippy-bundle.umd.min.js",             "/\@popperjs/core/dist/umd/popper.min.js",
     "/allcollapsible/dist/js/allcollapsible.min.js",      "/awesomplete/awesomplete.min.js",
     "/\@jcubic/tagger/tagger.js",                         "/marked/lib/marked.esm.js",
     "/preact/dist/preact.module.js",
-    "/clsx/dist/clsx.m.js",                               "/preact/compat/dist/compat.module.js",
+    [ "/clsx/dist/clsx.mjs", "clsx.m.js" ],                               "/preact/compat/dist/compat.module.js",
     "/preact/hooks/dist/hooks.module.js",                 "/sweetalert2/dist/sweetalert2.esm.min.js",
     "/fscreen/dist/fscreen.esm.js",                       "/clipboard/dist/clipboard.min.js",
     "/raty-js/build/raty.min.js",
     [ "/dompurify/dist/purify.es.mjs", "purify.js" ],
     "/sortablejs/Sortable.min.js",
     [ "/htm/dist/htm.mjs", "htm.js" ],
+    '/es-module-shims/dist/es-module-shims.js',
 );
 
 my @vendor_bundle = (
@@ -51,8 +52,8 @@ my @vendor_woff = (
     "/\@fortawesome/fontawesome-free/webfonts/fa-regular-400.woff2",
     "/geist/dist/fonts/geist-sans/Geist-Regular.woff2",
     "/geist/dist/fonts/geist-sans/Geist-SemiBold.woff2",
-    "/inter-ui/Inter (web)/Inter-Regular.woff",
-    "/inter-ui/Inter (web)/Inter-Bold.woff",
+    "/inter-ui/web/Inter-Regular.woff2",
+    "/inter-ui/web/Inter-Bold.woff2",
 );
 
 say("⢀⢀⢀⢀⢀⢀⢀⢀⢀⢀⢀⢀⢀⢀⢀⣠⣴⣶⣿⠿⠟⠛⠓⠒⠤");

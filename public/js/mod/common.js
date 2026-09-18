@@ -3,6 +3,7 @@
  */
 import { h, render } from "preact";
 import htm from "htm";
+import DOMPurify from "dompurify";
 import Swal from "sweetalert2";
 import { ToastContainer, toast as emitToast } from "react-toastify";
 
@@ -559,7 +560,7 @@ export function toast(c) {
         initializeToasts();
     }
 
-    const innerHtml = `${c.heading ? `<h2>${c.heading}</h2>` : ""}${c.text ?? ""}`;
+    const innerHtml = DOMPurify.sanitize(`${c.heading ? `<h2>${c.heading}</h2>` : ""}${c.text ?? ""}`);
     return emitToast(
         html`<div dangerouslySetInnerHTML=${{ __html: innerHtml }} />`, (() => {
             const toastType = c.icon || c.typel;

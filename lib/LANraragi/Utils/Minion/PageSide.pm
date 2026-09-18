@@ -20,7 +20,13 @@ sub add_tasks {
 
         eval {
             my $result = LANraragi::Utils::PageSide::detect_and_store_first_spread_start($id);
-            $job->finish($result);
+            if ($result->{error} && !$result->{stale}) {
+                my $retries = $job->retries // 0;
+                return $job->retry({ delay => 5 * (2 ** $retries) }) if $retries < 2;
+                $job->fail({ errors => [$result->{error}] });
+            } else {
+                $job->finish($result);
+            }
         };
         if ($@) {
             $job->fail( { errors => ["$@"] } );

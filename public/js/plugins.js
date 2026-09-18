@@ -21,7 +21,7 @@ Plugins.initializeAll = function () {
 
     // Handler for file uploading.
     $("#fileupload").fileupload({
-        url: "/config/plugins/upload",
+        url: new LRR.ApiURL("/config/plugins/upload").toString(),
         dataType: "json",
         done(e, data) {
             if (data.result.success) {

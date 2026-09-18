@@ -55,12 +55,22 @@ Edit.initializeAll = function () {
         },
     )
         .finally(() => {
-            const input = $("#tagText")[0];
+            let input = $("#tagText")[0];
 
             Edit.showTags();
 
             // Initialize tagger unless we're on a mobile OS (#531)
             if (!LRR.isMobile()) {
+                // Tagger 0.6.2 uses HTMLInputElement's native value setter.
+                // Keep the multiline textarea on mobile, but give Tagger an
+                // input so adding/removing tags cannot throw Illegal invocation.
+                const taggerInput = document.createElement("input");
+                for (const attribute of input.attributes) {
+                    taggerInput.setAttribute(attribute.name, attribute.value);
+                }
+                taggerInput.value = input.value;
+                input.replaceWith(taggerInput);
+                input = taggerInput;
                 Edit.tagInput = tagger(input, {
                     allow_duplicates: false,
                     allow_spaces: true,
@@ -237,6 +247,15 @@ Edit.updateOneShotArg = function () {
 };
 
 Edit.saveMetadata = function () {
+    // Tagger only copies confirmed tags into tagText. Include text still being
+    // typed when Save Metadata (or a plugin's implicit save) is invoked.
+    if (Edit.tagInput) {
+        const pendingInput = $(".tagger-new input")[0];
+        if (pendingInput && pendingInput.value.trim()) {
+            pendingInput.value.split(",").forEach((tag) => Edit.addTag(tag.trim()));
+            pendingInput.value = "";
+        }
+    }
     Edit.hideTags();
     const id = $("#archiveID").val();
 
@@ -274,7 +293,8 @@ Edit.deleteArchive = function () {
         text: confirmText,
         icon: "warning",
         showCancelButton: true,
-        focusConfirm: false,
+        focusConfirm: true,
+        allowEnterKey: true,
         confirmButtonText: I18N.ConfirmYes,
         reverseButtons: true,
         confirmButtonColor: "#d33",
@@ -297,7 +317,8 @@ Edit.getTags = function () {
     window.localStorage.setItem("last-plugin-id", pluginID);
     const archivID = $("#archiveID").val();
     const pluginArg = $("#arg").val();
-    Server.callAPI(`/api/plugins/use?plugin=${pluginID}&id=${archivID}&arg=${pluginArg}`, "POST", null, I18N.EditFetchTagError,
+    const params = new URLSearchParams({ plugin: pluginID, id: archivID, arg: pluginArg });
+    Server.callAPI(`/api/plugins/use?${params}`, "POST", null, I18N.EditFetchTagError,
         (result) => {
             if (result.data.title && result.data.title !== "") {
                 $("#title").val(result.data.title);

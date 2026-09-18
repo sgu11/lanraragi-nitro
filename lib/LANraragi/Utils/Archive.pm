@@ -44,7 +44,7 @@ use LANraragi::Utils::Vips       ();
 # Relies on Libarchive (for zip, cbz), VIPS (for PDFs) and Mojo::UserAgent (for CBW web comics).
 use Exporter 'import';
 our @EXPORT_OK =
-  qw(is_file_in_archive extract_file_from_archive extract_single_file extract_thumbnail generate_thumbnail get_filelist is_cbw parse_cbw_urls cbw_content_digest detect_cbw_image validate_cbw_image);
+  qw(is_file_in_archive extract_file_from_archive extract_single_file extract_thumbnail generate_thumbnail get_filelist is_cbw parse_cbw_urls cbw_content_digest detect_cbw_image validate_cbw_image validate_public_http_url verify_public_http_peer);
 
 use constant CBW_MAX_XML_BYTES      => 1024 * 1024;
 use constant CBW_MAX_URL_BYTES      => 8192;
@@ -238,6 +238,25 @@ sub _validate_cbw_url ($value) {
     return ( $url, $addresses[0] );
 }
 
+# Validate a user-provided download URL before a request is made. Every DNS
+# answer must be globally routable; callers pin the returned address and then
+# verify the connected peer to close redirect and DNS-rebinding SSRF paths.
+sub validate_public_http_url ($value) {
+    my $url = eval { _parse_cbw_url($value) };
+    if ($@) {
+        ( my $error = $@ ) =~ s/CBW image/Download/g;
+        die $error;
+    }
+
+    my @addresses = _resolve_cbw_host_addresses( $url->host, $url->port // ( $url->scheme eq 'https' ? 443 : 80 ) );
+    die "Could not resolve download host.\n" unless @addresses;
+    for my $address (@addresses) {
+        die "Download host resolved to an unsafe address.\n" unless _is_public_ip($address);
+    }
+    @addresses = sort @addresses;
+    return ( $url, $addresses[0] );
+}
+
 sub _resolve_cbw_host_addresses ( $host, $port = 443 ) {
     $host =~ s/^\[|\]$//g;
     my ( $error, @resolved ) = getaddrinfo( $host, $port, { socktype => SOCK_STREAM } );
@@ -320,6 +339,12 @@ sub _new_cbw_user_agent ( $scheme, $host ) {
 sub _verify_cbw_peer ( $remote, $validated ) {
     die "CBW connection did not report its peer address.\n" unless defined($remote) && length($remote);
     die "CBW connection peer did not match the validated address.\n" unless _same_ip( $remote, $validated );
+    return 1;
+}
+
+sub verify_public_http_peer ( $remote, $validated ) {
+    die "Download connection did not report its peer address.\n" unless defined($remote) && length($remote);
+    die "Download connection peer did not match the validated address.\n" unless _same_ip( $remote, $validated );
     return 1;
 }
 

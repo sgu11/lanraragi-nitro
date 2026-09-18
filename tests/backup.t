@@ -23,19 +23,19 @@ use LANraragi::Model::Backup;
 # Would've liked to compare JSON strings directly here, but since the key order is non-deterministic it's easier to compare the result hashes.
 my %expected_backup =
   %{ decode_json qq({"archives":[
-          {"arcid":"be447b58ea66137c415ee306ee2ac44b308ee484","filename":null,"tags":"series:Neon Genesis Evangelion, artist:Yoshiyuki Sadamoto, chapter:1, character:Shinji Ikari, character:Misato Katsuragi, science fiction","thumbhash":null,"title":"\u4f7f\u5f92\u3001\u8972\u6765", "summary":"", "spreadstart":null, "stamps":"[\\\"STAMPS_0_1777224824660\\\", \\\"STAMPS_0_1777224824661\\\", \\\"STAMPS_1_1777224824662\\\", \\\"STAMPS_2_1777224824663\\\", \\\"STAMPS_3_1777224824664\\\"]"},
-          {"arcid":"e4c422fd10943dc169e3489a38cdbf57101a5f7e","filename":null,"tags":"parody: jojo's bizarre adventure, date_added:1700000000","thumbhash":null,"title":"Rohan Kishibe goes to Gucci", "summary":"", "spreadstart":null, "stamps":null},
-          {"arcid":"4857fd2e7c00db8b0af0337b94055d8445118630","filename":null,"tags":"artist:shirow masamune, date_added:1620000000","thumbhash":null,"title":"Ghost in the Shell 1.5 - Human-Error Processor vol01ch01", "summary":"", "spreadstart":null, "stamps":null},
-          {"arcid":"e69e43e1355267f7d32a4f9b7f2fe108d2401ebf","filename":null,"tags":"character:segata sanshiro, male:very cool","thumbhash":null,"title":"Saturn Backup Cartridge - Japanese Manual", "summary":"", "spreadstart":null, "stamps":null},
-          {"arcid":"e69e43e1355267f7d32a4f9b7f2fe108d2401ebg","filename":null,"tags":"character:segata, female:very cool too","thumbhash":null,"title":"Saturn Backup Cartridge - American Manual", "summary":"", "spreadstart":null, "stamps":null},
-          {"arcid":"28697b96f0ac5858be2614ed10ca47742c9522fd","filename":null,"tags":"parody:fate grand order,  group:wadamemo,  artist:wada rco,  artbook,  full color, male:very cool too","thumbhash":null,"title":"Fate GO MEMO", "summary":"", "spreadstart":null, "stamps":null},
-          {"arcid":"2810d5e0a8d027ecefebca6237031a0fa7b91eb3","filename":null,"tags":"parody:fate grand order,  character:abigail williams,  character:artoria pendragon alter,  character:asterios,  character:ereshkigal,  character:gilgamesh,  character:hans christian andersen,  character:hassan of serenity,  character:hector,  character:helena blavatsky,  character:irisviel von einzbern,  character:jeanne alter,  character:jeanne darc,  character:kiara sessyoin,  character:kiyohime,  character:lancer,  character:martha,  character:minamoto no raikou,  character:mochizuki chiyome,  character:mordred pendragon,  character:nitocris,  character:oda nobunaga,  character:osakabehime,  character:penthesilea,  character:queen of sheba,  character:rin tosaka,  character:saber,  character:sakata kintoki,  character:scheherazade,  character:sherlock holmes,  character:suzuka gozen,  character:tamamo no mae,  character:ushiwakamaru,  character:waver velvet,  character:xuanzang,  character:zhuge liang,  group:wadamemo,  artist:wada rco,  artbook,  full color","thumbhash":null,"title":"Fate GO MEMO 2", "summary":"", "spreadstart":null, "stamps":null},
-          {"arcid":"28697b96f0ac5777be2614ed10ca47742c9522fa","filename":null,"tags":"year of shadow, character:vector the crocodile, date_added:1650000000","thumbhash":null,"title":"Find the Computer Room", "summary":"", "spreadstart":null, "stamps":null},
-          {"arcid":"28697b96f0ac5858be2666ed10ca47742c955555","filename":null,"tags":"medjed, character:doubles guy, character:king of GETs, check this 5, date_added:1600000000","thumbhash":null,"title":"All about Egypt", "summary":"CURSE OF RA", "spreadstart":null, "stamps":null},
-          {"arcid":"d0be2dc421be4fcd0172e5afceea3970e2f3d940","filename":null,"tags":"fruit:apple","thumbhash":null,"title":"Apple Archive", "summary":"", "spreadstart":null, "stamps":null},
-          {"arcid":"250e77f12a5ab6972a0895d290c4792f0a326ea8","filename":null,"tags":"fruit:banana","thumbhash":null,"title":"Banana Archive", "summary":"", "spreadstart":null, "stamps":null},
-          {"arcid":"7e41c6480852a4a914e48c7a3a4084f193e963d9","filename":null,"tags":"fruit:cherry","thumbhash":null,"title":"Cherry Archive", "summary":"", "spreadstart":null, "stamps":null},
-          {"arcid":"af8978b1797b72acfff9595a5a2a373ec3d9106d","filename":null,"tags":"fruit:dragon","thumbhash":null,"title":"Dragon Fruit Archive", "summary":"", "spreadstart":null, "stamps":null}
+          {"arcid":"be447b58ea66137c415ee306ee2ac44b308ee484","filename":null,"tags":"series:Neon Genesis Evangelion, artist:Yoshiyuki Sadamoto, chapter:1, character:Shinji Ikari, character:Misato Katsuragi, science fiction","thumbhash":null,"title":"\u4f7f\u5f92\u3001\u8972\u6765", "summary":"", "spreadstart":null, "stamps":"[\\\"STAMPS_0_1777224824660\\\", \\\"STAMPS_0_1777224824661\\\", \\\"STAMPS_1_1777224824662\\\", \\\"STAMPS_2_1777224824663\\\", \\\"STAMPS_3_1777224824664\\\"]", "toc":"{\\\"5\\\":\\\"Chapter 1\\\",\\\"20\\\":\\\"Chapter 2\\\"}"},
+          {"arcid":"e4c422fd10943dc169e3489a38cdbf57101a5f7e","filename":null,"tags":"parody: jojo's bizarre adventure, date_added:1700000000","thumbhash":null,"title":"Rohan Kishibe goes to Gucci", "summary":"", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"4857fd2e7c00db8b0af0337b94055d8445118630","filename":null,"tags":"artist:shirow masamune, date_added:1620000000","thumbhash":null,"title":"Ghost in the Shell 1.5 - Human-Error Processor vol01ch01", "summary":"", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"e69e43e1355267f7d32a4f9b7f2fe108d2401ebf","filename":null,"tags":"character:segata sanshiro, male:very cool","thumbhash":null,"title":"Saturn Backup Cartridge - Japanese Manual", "summary":"", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"e69e43e1355267f7d32a4f9b7f2fe108d2401ebg","filename":null,"tags":"character:segata, female:very cool too","thumbhash":null,"title":"Saturn Backup Cartridge - American Manual", "summary":"", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"28697b96f0ac5858be2614ed10ca47742c9522fd","filename":null,"tags":"parody:fate grand order,  group:wadamemo,  artist:wada rco,  artbook,  full color, male:very cool too","thumbhash":null,"title":"Fate GO MEMO", "summary":"", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"2810d5e0a8d027ecefebca6237031a0fa7b91eb3","filename":null,"tags":"parody:fate grand order,  character:abigail williams,  character:artoria pendragon alter,  character:asterios,  character:ereshkigal,  character:gilgamesh,  character:hans christian andersen,  character:hassan of serenity,  character:hector,  character:helena blavatsky,  character:irisviel von einzbern,  character:jeanne alter,  character:jeanne darc,  character:kiara sessyoin,  character:kiyohime,  character:lancer,  character:martha,  character:minamoto no raikou,  character:mochizuki chiyome,  character:mordred pendragon,  character:nitocris,  character:oda nobunaga,  character:osakabehime,  character:penthesilea,  character:queen of sheba,  character:rin tosaka,  character:saber,  character:sakata kintoki,  character:scheherazade,  character:sherlock holmes,  character:suzuka gozen,  character:tamamo no mae,  character:ushiwakamaru,  character:waver velvet,  character:xuanzang,  character:zhuge liang,  group:wadamemo,  artist:wada rco,  artbook,  full color","thumbhash":null,"title":"Fate GO MEMO 2", "summary":"", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"28697b96f0ac5777be2614ed10ca47742c9522fa","filename":null,"tags":"year of shadow, character:vector the crocodile, date_added:1650000000","thumbhash":null,"title":"Find the Computer Room", "summary":"", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"28697b96f0ac5858be2666ed10ca47742c955555","filename":null,"tags":"medjed, character:doubles guy, character:king of GETs, check this 5, date_added:1600000000","thumbhash":null,"title":"All about Egypt", "summary":"CURSE OF RA", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"d0be2dc421be4fcd0172e5afceea3970e2f3d940","filename":null,"tags":"fruit:apple","thumbhash":null,"title":"Apple Archive", "summary":"", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"250e77f12a5ab6972a0895d290c4792f0a326ea8","filename":null,"tags":"fruit:banana","thumbhash":null,"title":"Banana Archive", "summary":"", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"7e41c6480852a4a914e48c7a3a4084f193e963d9","filename":null,"tags":"fruit:cherry","thumbhash":null,"title":"Cherry Archive", "summary":"", "spreadstart":null, "stamps":null, "toc":null},
+          {"arcid":"af8978b1797b72acfff9595a5a2a373ec3d9106d","filename":null,"tags":"fruit:dragon","thumbhash":null,"title":"Dragon Fruit Archive", "summary":"", "spreadstart":null, "stamps":null, "toc":null}
         ],
         "categories":[
           {"archives":["e69e43e1355267f7d32a4f9b7f2fe108d2401ebf","e69e43e1355267f7d32a4f9b7f2fe108d2401ebg"],"catid":"SET_1589141306","name":"Segata Sanshiro","search":""},
@@ -77,5 +77,38 @@ cmp_deeply( \@sorted_computed, \@sorted_expected, "Backup tankoubon comparison" 
 @sorted_expected = sort { $a->{stamp_id} cmp $b->{stamp_id} } @{ $expected_backup{"stamps"} };
 
 cmp_deeply( \@sorted_computed, \@sorted_expected, "Backup stamps comparison" );
+
+for my $case (
+    [ '{}', qr/'categories' must be an array/, 'missing required collections' ],
+    [ '[]', qr/root must be an object/, 'non-object root' ],
+    [
+        '{"categories":[{"catid":"SET_1","name":"Broken","archives":{}}],"archives":[]}',
+        qr/category identifier has an invalid format/,
+        'invalid nested category data'
+    ],
+    [
+        '{"categories":[{"catid":"LRR_CONFIG","name":"Injected","archives":[]}],"archives":[]}',
+        qr/category identifier has an invalid format/,
+        'Redis key injection through a category identifier'
+    ],
+) {
+    my ( $payload, $expected_error, $description ) = @$case;
+    my $redis_requested = 0;
+    local *LANraragi::Model::Config::get_redis = sub {
+        $redis_requested++;
+        die "restore accessed Redis before validation\n";
+    };
+
+    my $ok = eval { LANraragi::Model::Backup::restore_from_JSON($payload); 1 };
+    ok( !$ok, "$description is rejected" );
+    like( $@, $expected_error, "$description reports a useful error" );
+    is( $redis_requested, 0, "$description cannot mutate Redis" );
+}
+
+my $legacy_payload = LANraragi::Model::Backup::_validate_restore_payload(
+    decode_json('{"categories":[],"archives":[]}')
+);
+is_deeply( $legacy_payload->{tankoubons}, [], 'legacy backups default missing tankoubons' );
+is_deeply( $legacy_payload->{stamps}, [], 'legacy backups default missing stamps' );
 
 done_testing();

@@ -32,6 +32,8 @@ note('testing archive endpoints...');
         "/api/archives/:id/download", "archive download endpoint");
     is(LANraragi::Utils::Metrics::extract_endpoint("/api/archives/$archive_id/progress/15"), 
         "/api/archives/:id/progress/:page", "archive progress endpoint");
+    is(LANraragi::Utils::Metrics::extract_endpoint("/api/archives/$archive_id/stamps/15"),
+        "/api/archives/:id/stamps/:index", "archive stamp index normalization");
     is(LANraragi::Utils::Metrics::extract_endpoint("/api/archives/$archive_id/files"), 
         "/api/archives/:id/files", "archive files endpoint");
     is(LANraragi::Utils::Metrics::extract_endpoint("/api/archives/$archive_id/metadata"), 
@@ -74,6 +76,8 @@ note('testing tankoubon endpoints...');
         "/api/tankoubons/:id", "tankoubon ID normalization");
     is(LANraragi::Utils::Metrics::extract_endpoint("/api/tankoubons/$tankoubon_id/$archive_id"), 
         "/api/tankoubons/:id/:archive", "tankoubon with archive ID normalization");
+    is(LANraragi::Utils::Metrics::extract_endpoint("/api/tankoubons/$tankoubon_id/progress/15"),
+        "/api/tankoubons/:id/progress/:page", "tankoubon progress endpoint");
 }
 
 note('testing minion endpoints...');
@@ -123,6 +127,10 @@ note('testing other API endpoints...');
         "/api/search/random", "random search endpoint unchanged");
     is(LANraragi::Utils::Metrics::extract_endpoint("/api/database/stats"), 
         "/api/database/stats", "database stats endpoint unchanged");
+    is(LANraragi::Utils::Metrics::extract_endpoint("/api/database/backup/123"),
+        "/api/database/backup/:jobid", "database backup job normalization");
+    is(LANraragi::Utils::Metrics::extract_endpoint("/api/stamps/my-stamp"),
+        "/api/stamps/:id", "stamp ID normalization");
     is(LANraragi::Utils::Metrics::extract_endpoint("/metrics"), 
         "/metrics", "metrics endpoint unchanged");
 }

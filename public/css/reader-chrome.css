@@ -128,3 +128,11 @@ body.reader-minimal-chrome .sb {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Current images retain their flex layout; only temporary effects are fixed. */
+#display[data-reader-swipe] { touch-action: pan-y pinch-zoom; }
+.reader-slide-effects { position: fixed; inset: 0; pointer-events: none; overflow: clip; z-index: 19; }
+.reader-slide-effects > img { display: none; }
+#slide-duration { max-width: 100%; }
+#display:not(.double-mode) > #img_doublepage { display: none; }
+#display[data-reader-slide] { clip-path: inset(0); }

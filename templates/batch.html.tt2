@@ -27,7 +27,7 @@
 
 </head>
 
-<body>
+<body class="batch-page">
 
 	<div class='ido' style='text-align:center'>
 		<h2 class='ih' style='text-align:center'>[% c.lh("Batch Operations") %]</h2>
@@ -37,14 +37,14 @@
 		[% c.lh("Archives with no tags or from your last selection have been pre-checked.") %]<br><br>
 
 		<div style='margin-left:auto; margin-right:auto;'>
-			<div style='text-align:left; width:400px !important' class='left-column'>
+			<div style='text-align:left' class='left-column'>
 
 				<!-- Task Selector -->
 				<table class="tag-options" style="margin-left: auto;margin-right: auto;">
 					<tbody>
 						<tr>
 							<td>
-								<h2>[% c.lh("Task :") %]</h2>
+								<h2><label for="batch-operation">[% c.lh("Task :") %]</label></h2>
 							</td>
 							<td>
 								<select id="batch-operation" class="favtag-btn" style="font-size:20px; height:30px">
@@ -64,7 +64,7 @@
 					<table>
 						<tbody>
 							<tr class="operation plugin-operation">
-								<td>[% c.lh("Use plugin :") %]</td>
+								<td><label for="plugin">[% c.lh("Use plugin :") %]</label></td>
 								<td>
 									<select id="plugin" class="favtag-btn">
 										[% FOREACH plugins %]
@@ -74,7 +74,7 @@
 								</td>
 							</tr>
 							<tr class="operation plugin-operation">
-								<td>[% c.lh("Timeout (max 20s):") %]</td>
+								<td><label for="timeout">[% c.lh("Timeout (max 20s):") %]</label></td>
 								<td>
 									<input type="number" id="timeout" min="0" max="20" value="0"> seconds
 								</td>
@@ -171,12 +171,11 @@
 					<b id="msm-banner-count"></b>
 					<br /><br />
 					<input type='button' id="batch-reset-selection" value='[% c.lh("Discard Selection") %]' class='stdbtn' />
-					<input type='button' id="check-uncheck" value='[% c.lh("Check/Uncheck all") %]' class='stdbtn' checked='false'>
 				</div>
 
 				<div class="tag-options" style="text-align:center">
 					<br />
-					<input type='button' style="display:none" id="check-uncheck" value='[% c.lh("Check/Uncheck all") %]' class='stdbtn' checked='false'>
+					<input type='button' style="display:none" id="check-uncheck" value='[% c.lh("Check/Uncheck all") %]' class='stdbtn'>
 					<input type='button' id="start-batch" value='[% c.lh("Start Task") %]' class='stdbtn'>
 				</div>
 
@@ -197,7 +196,7 @@
 			</div>
 
 			<div class="id1 right-column"
-				style='text-align:center; min-width:400px; width: 60% !important; height:500px;'>
+				style='text-align:center; height:500px;'>
 				<div id="arclist-container" style="display:none; overflow-y: auto; height: 100%;">
 					<div id="archivesection">
 						<ul class="checklist" id="archivelist" style="list-style: none; padding-left: 0; margin: 0;"></ul>

@@ -75,12 +75,12 @@ test("change-aware audit rejects a modified public file missing from inventory",
     const mounted = parseMountsInventory(text);
     const required = [
         ...FORK_PUBLIC_MOUNT_PATHS,
-        ...requiredMountPathsFromChanges("M\tpublic/js/batch.js\n"),
+        ...requiredMountPathsFromChanges("M\tpublic/js/upload.js\n"),
     ];
     const result = auditMounts(mounted, required);
 
     assert.equal(result.ok, false);
-    assert.ok(result.missing.includes("public/js/batch.js"));
+    assert.ok(result.missing.includes("public/js/upload.js"));
 });
 
 test("CLI exits non-zero for incomplete inventory and zero for complete", () => {
@@ -102,7 +102,7 @@ test("CLI combines the live mount inventory with changed public files", () => {
     const script = join(root, "tools/audit-public-mounts.mjs");
     const temporary = mkdtempSync(join(tmpdir(), "lrr-mount-audit-"));
     const changes = join(temporary, "changes.txt");
-    writeFileSync(changes, "M\tpublic/js/batch.js\n", "utf8");
+    writeFileSync(changes, "M\tpublic/js/upload.js\n", "utf8");
 
     try {
         const result = spawnSync(process.execPath, [
@@ -115,7 +115,7 @@ test("CLI combines the live mount inventory with changed public files", () => {
         });
 
         assert.notEqual(result.status, 0, result.stdout + result.stderr);
-        assert.match(result.stderr, /public\/js\/batch\.js/);
+        assert.match(result.stderr, /public\/js\/upload\.js/);
     } finally {
         rmSync(temporary, { recursive: true, force: true });
     }

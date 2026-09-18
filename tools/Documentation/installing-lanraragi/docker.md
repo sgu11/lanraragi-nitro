@@ -24,7 +24,7 @@ Once you're done, execute:
 docker run --name=lanraragi -p 3000:3000 \
 --mount type=bind,source=[YOUR_CONTENT_DIRECTORY],target=/home/koyomi/lanraragi/content \
 --mount type=bind,source=[YOUR_DATABASE_DIRECTORY],target=/home/koyomi/lanraragi/database \
---mount type=bind,source=[YOUR_THUMBNAIL_DIRECTORY],target=/home/koyomi/lanraragi/thumb
+--mount type=bind,source=[YOUR_THUMBNAIL_DIRECTORY],target=/home/koyomi/lanraragi/thumb \
 difegue/lanraragi
 ```
 {% hint style="info" %}
@@ -154,7 +154,7 @@ docker rm lanraragi
 docker run --name=lanraragi -p 3000:3000 \
            --mount type=bind,source=[YOUR_CONTENT_DIRECTORY],target=/home/koyomi/lanraragi/content \
            --mount type=bind,source=[YOUR_DATABASE_DIRECTORY],target=/home/koyomi/lanraragi/database \
-           --mount type=bind,source=[YOUR_THUMBNAIL_DIRECTORY],target=/home/koyomi/lanraragi/thumb
+           --mount type=bind,source=[YOUR_THUMBNAIL_DIRECTORY],target=/home/koyomi/lanraragi/thumb \
            difegue/lanraragi
 ```
 

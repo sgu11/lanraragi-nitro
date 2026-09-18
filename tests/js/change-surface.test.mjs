@@ -123,12 +123,28 @@ test("Perl test and test-harness changes select Perl validation", () => {
     }
 });
 
+test("test action images require full validation without rebuilding production", () => {
+    for (const path of [
+        ".github/action-run-tests/entrypoint.sh",
+        ".github/action-run-tests/Dockerfile",
+        ".github/action-run-tests/action.yml",
+    ]) {
+        const result = classifyChangeSurface(`M\t${path}\n`);
+        assert.equal(result.tier, 1, path);
+        assert.equal(result.lane, "guarded", path);
+        assert.equal(result.full_gate, true, path);
+        assert.equal(result.perl, true, path);
+    }
+    const mixed = classifyChangeSurface("M\t.github/action-run-tests/entrypoint.sh\nM\ttools/build/docker/Dockerfile\n");
+    assert.equal(mixed.tier, 3, "production image changes still require a rebuild");
+});
+
 test("guarded Perl owners select the full gate", () => {
     for (const path of [
         "lib/LANraragi/Model/Archive.pm",
         "lib/LANraragi/Controller/Api/Archive.pm",
         "lib/LANraragi/Controller/Login.pm",
-        "lib/LANraragi/Plugin/Login/Pixiv.pm",
+        "lib/LANraragi/Plugin/Login/EHentai.pm",
         "lib/LANraragi/Utils/Minion.pm",
         "lib/Worker.pm",
         "lib/Shinobu.pm",

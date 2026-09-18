@@ -296,6 +296,7 @@ sub _unlink_temp {
 
 sub compute_cover_fingerprint_for_archive {
     my ($redis, $id, $config) = @_;
+    my $source = LANraragi::Model::Dedup::_dedup_source_snapshot($redis, $id) or return -1;
     my $algo = FP_VERSION;
 
     my $existing_v = $redis->hget($id, "cover_fp_v");
@@ -303,14 +304,14 @@ sub compute_cover_fingerprint_for_archive {
 
     my $file = $redis->hget($id, "file");
     unless ($file && -e $file) {
-        $redis->hset($id, "cover_fp_err", "$algo:archive_missing");
+        LANraragi::Model::Dedup::_publish_dedup_fields($redis, $id, $source, { cover_fp_err => "$algo:archive_missing" });
         return -1;
     }
 
     my @filelist = _get_filelist($file, $id);
     my $n = scalar @filelist;
     if ($n == 0) {
-        $redis->hset($id, "cover_fp_err", "$algo:empty_archive");
+        LANraragi::Model::Dedup::_publish_dedup_fields($redis, $id, $source, { cover_fp_err => "$algo:empty_archive" });
         return -1;
     }
 
@@ -356,16 +357,12 @@ sub compute_cover_fingerprint_for_archive {
     _unlink_temp($extracted, $extracted_dir);
 
     if ($err || !$fp) {
-        $redis->hset($id, "cover_fp_err", "$algo:extract_failed");
+        LANraragi::Model::Dedup::_publish_dedup_fields($redis, $id, $source, { cover_fp_err => "$algo:extract_failed" });
         return -1;
     }
 
-    $redis->hmset($id,
-        "cover_fp",   encode_json($fp),
-        "cover_fp_v", $algo,
-    );
-    $redis->hdel($id, "cover_fp_err");
-    return 1;
+    return LANraragi::Model::Dedup::_publish_dedup_fields($redis, $id, $source,
+        { cover_fp => encode_json($fp), cover_fp_v => $algo }, ['cover_fp_err']);
 }
 
 # Backward-compatible: also computes the legacy coverhash for archives

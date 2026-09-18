@@ -1,0 +1,17 @@
+#!/usr/bin/env perl
+use v5.36;
+use strict;
+use warnings;
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+use Mojo::Server::Prefork;
+use LANraragi::Utils::AdaptiveOffsetWorker;
+
+# Native work runs in a killable request child. Two prefork workers bound the
+# number of in-flight batches; no durable queue, app data, or image cache.
+Mojo::Server::Prefork->new(
+    app => LANraragi::Utils::AdaptiveOffsetWorker->new,
+    listen => ['http://0.0.0.0:8766'], workers => 2, max_clients => 4,
+    heartbeat_timeout => 30, graceful_timeout => 20, inactivity_timeout => 20,
+    backlog => 16,
+)->run;

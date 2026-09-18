@@ -1,5 +1,11 @@
 # Complete fork public mount inventory (fixture for audit-public-mounts.mjs)
 ./LANraragi/tools/openapi.yaml:/home/koyomi/lanraragi/tools/openapi.yaml:ro
+./LANraragi/public/js/backup.js:/home/koyomi/lanraragi/public/js/backup.js:ro
+./LANraragi/public/js/batch.js:/home/koyomi/lanraragi/public/js/batch.js:ro
+./LANraragi/public/js/category.js:/home/koyomi/lanraragi/public/js/category.js:ro
+./LANraragi/public/js/edit.js:/home/koyomi/lanraragi/public/js/edit.js:ro
+./LANraragi/public/js/logs.js:/home/koyomi/lanraragi/public/js/logs.js:ro
+./LANraragi/public/js/plugins.js:/home/koyomi/lanraragi/public/js/plugins.js:ro
 ./LANraragi/public/js/mod/common.js:/home/koyomi/lanraragi/public/js/mod/common.js:ro
 ./LANraragi/public/js/duplicates.js:/home/koyomi/lanraragi/public/js/duplicates.js:ro
 ./LANraragi/public/js/mod/index.js:/home/koyomi/lanraragi/public/js/mod/index.js:ro
@@ -22,3 +28,17 @@
 ./LANraragi/public/css/reader-chrome.css:/home/koyomi/lanraragi/public/css/reader-chrome.css:ro
 ./LANraragi/public/js/duplicates_custom.js:/home/koyomi/lanraragi/public/js/duplicates_custom.js:ro
 ./LANraragi/public/css/duplicates_custom.css:/home/koyomi/lanraragi/public/css/duplicates_custom.css:ro
+
+./LANraragi/public/js/mod/reader-image-loader.js:/home/koyomi/lanraragi/public/js/mod/reader-image-loader.js:ro
+
+./LANraragi/public/js/mod/reader-overlay.js:/home/koyomi/lanraragi/public/js/mod/reader-overlay.js:ro
+
+./LANraragi/public/js/mod/reader-options.js:/home/koyomi/lanraragi/public/js/mod/reader-options.js:ro
+./LANraragi/public/js/mod/batch-session.js:/home/koyomi/lanraragi/public/js/mod/batch-session.js
+./LANraragi/public/js/mod/batch-archive-loader.js:/home/koyomi/lanraragi/public/js/mod/batch-archive-loader.js
+./LANraragi/public/js/mod/reader-display.js:/home/koyomi/lanraragi/public/js/mod/reader-display.js
+./LANraragi/public/js/mod/reader-stamps.js:/home/koyomi/lanraragi/public/js/mod/reader-stamps.js
+./LANraragi/public/js/mod/reader-navigation.js:/home/koyomi/lanraragi/public/js/mod/reader-navigation.js
+./LANraragi/public/js/mod/reader-slide.js:/home/koyomi/lanraragi/public/js/mod/reader-slide.js:ro
+./LANraragi/public/js/mod/reader-slide-controller.js:/home/koyomi/lanraragi/public/js/mod/reader-slide-controller.js:ro
+./LANraragi/public/js/mod/reader-slide-motion.js:/home/koyomi/lanraragi/public/js/mod/reader-slide-motion.js:ro

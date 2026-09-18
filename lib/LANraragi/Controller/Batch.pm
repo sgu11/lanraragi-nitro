@@ -68,14 +68,19 @@ sub socket {
         message => sub {
             my ( $self, $msg ) = @_;
 
-            $logger->debug("Received WS message $msg");
-
             # encode message before json-decoding it in case it has UTF8 characters in the argument overrides
             $msg = encode( 'UTF-8', $msg );
-            $logger->trace("Encoded message $msg");
 
             # JSON-decode message and perform the requested action
-            my $command    = decode_json($msg);
+            my $command = eval { decode_json($msg) };
+            unless ( ref($command) eq 'HASH'
+                && defined $command->{operation} && !ref($command->{operation})
+                && defined $command->{archive} && !ref($command->{archive})
+                && $command->{archive} =~ /\A[0-9a-fA-F]{40}\z/
+                && ( !exists $command->{args} || ref($command->{args}) eq 'ARRAY' ) ) {
+                $client->finish( 1007 => 'Invalid batch command.' );
+                return;
+            }
             my $operation  = $command->{'operation'};
             my $pluginname = $command->{"plugin"};
             my $id         = $command->{"archive"};
@@ -94,7 +99,7 @@ sub socket {
                 }
 
                 # Global arguments can come from the database or the user override
-                my @args_override = @{ $command->{"args"} };
+                my @args_override = @{ $command->{"args"} // [] };
 
                 # get the saved defaults
                 my %args = get_plugin_parameters($pluginname);
@@ -106,9 +111,13 @@ sub socket {
                         # Decode user overrides
                         $args{customargs} = [ map { redis_decode($_) } @args_override ];
                     } else {
-                        my @keys = sort grep { $_ !~ m/^enabled$/ } keys %args;
-                        while ( my ( $idx, $key ) = each @keys ) {
-                            $args{customargs}{$key} = redis_decode( $args_override[$idx] );
+                        # Match the declared parameter order used by the form;
+                        # saved settings also contain plugin registration metadata.
+                        my %pluginfo = $plugin->plugin_info();
+                        my @keys = sort keys %{ $pluginfo{parameters} // {} };
+                        for my $idx ( 0 .. $#keys ) {
+                            last if $idx > $#args_override;
+                            $args{ $keys[$idx] } = redis_decode( $args_override[$idx] );
                         }
                     }
 

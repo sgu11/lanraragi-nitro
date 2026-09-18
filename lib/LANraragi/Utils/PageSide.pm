@@ -7,6 +7,8 @@ use feature qw(signatures);
 no warnings 'experimental::signatures';
 
 use List::Util qw(max min);
+use Time::HiRes ();
+use LANraragi::Utils::RedisScript qw(evalsha_cached);
 
 use LANraragi::Model::Config;
 use LANraragi::Utils::Archive  qw(extract_single_file get_filelist);
@@ -214,7 +216,10 @@ sub detect_recent_first_spread_starts ( $job, $requested_limit = undef ) {
     $logger->info("detect_recent_first_spread_starts: processing " . scalar(@ids) . " archives (limit=$limit_label)");
 
     for my $id (@ids) {
-        eval { detect_and_store_first_spread_start($id); };
+        eval {
+            my $result = detect_and_store_first_spread_start($id);
+            die "$result->{error}\n" if $result->{error};
+        };
         if ($@) {
             push @errors, "$id: $@";
             $logger->warn("detect_recent_first_spread_starts failed for $id: $@");
@@ -235,25 +240,32 @@ sub detect_recent_first_page_sides ( $job, $requested_limit = undef ) {
 }
 
 sub detect_and_store_first_spread_start ($id) {
+    if (length($ENV{ADAPTIVE_OFFSET_WORKER_URL} // '')) {
+        require LANraragi::Utils::AdaptiveOffsetState;
+        return LANraragi::Utils::AdaptiveOffsetState::detect_and_store($id);
+    }
     my $logger = get_logger( "PageSide", "lanraragi" );
     my $redis  = LANraragi::Model::Config->get_redis;
 
+    # Capture cache identity before I/O. The commit compares it atomically with
+    # invalidations and human feedback; a cache hit must never write anything.
+    my ($current_v, $current_start, $current_reason, $confidence, $revision, $stored_file) =
+      $redis->hmget($id, qw(firstspreadstart_v firstspreadstart firstspreadstart_reason
+                           firstspreadstart_confidence firstspreadstart_revision file));
     my $result;
     eval {
-        my $current_v      = $redis->hget( $id, "firstspreadstart_v" )      // "";
-        my $current_start  = $redis->hget( $id, "firstspreadstart" )        // "";
-        my $current_reason = $redis->hget( $id, "firstspreadstart_reason" ) // "";
-        if ( $current_start ne "" && ( $current_v eq FIRST_SPREAD_START_VERSION || $current_reason eq "user_slide" ) ) {
+        if ( ($current_start // "") ne "" && ($current_reason // "") ne "error"
+          && ( ($current_v // "") eq FIRST_SPREAD_START_VERSION || ($current_reason // "") eq "user_slide" ) ) {
             $result = {
                 first_spread_start => $current_start,
-                confidence         => $redis->hget( $id, "firstspreadstart_confidence" ) // 0,
+                confidence         => $confidence // 0,
                 reason             => $current_reason || "cached",
                 cached             => 1
             };
         } else {
             my $file = get_archive_path( $redis, $id );
             die "Archive file does not exist for $id\n" unless defined $file && -e $file;
-
+            my $signature = _file_signature($file);
             my @filelist = get_filelist( $file, $id );
             die "Archive has no readable image pages: $id\n" unless @filelist;
 
@@ -261,10 +273,13 @@ sub detect_and_store_first_spread_start ($id) {
             my $last = min( $#filelist, 9 );
             for my $page_index ( 2 .. $last ) {
                 my $contents = extract_single_file( $file, $filelist[$page_index] );
-                next unless defined $contents && length $contents;
-                push @samples, detect_page_side( $contents, $page_index );
+                die "Unable to read page $page_index for $id\n" unless defined $contents && length $contents;
+                my $sample = detect_page_side( $contents, $page_index );
+                die "Unable to decode page $page_index for $id\n"
+                  if $sample->{reason} eq "decode_failed" || $sample->{reason} eq "invalid_dimensions";
+                push @samples, $sample;
             }
-
+            die "Archive changed during detection for $id\n" if $signature ne _file_signature($file);
             $result = choose_first_spread_start( \@samples );
         }
     };
@@ -273,14 +288,16 @@ sub detect_and_store_first_spread_start ($id) {
         chomp( my $err = "$@" );
         $logger->warn("First spread-start detection failed for $id: $err");
         $result = {
-            first_spread_start => "UNKNOWN",
-            confidence         => 0,
+            first_spread_start => $current_start // "UNKNOWN",
+            confidence         => $confidence // 0,
             reason             => "error",
             error              => $err
         };
     }
-
-    _store_first_spread_start( $redis, $id, $result );
+    unless ($result->{cached}) {
+        my $stored = _store_first_spread_start($redis, $id, $result, $revision // 0, $stored_file // "");
+        $result->{stale} = 1 unless $stored;
+    }
     $redis->quit;
     return $result;
 }
@@ -296,46 +313,66 @@ sub _normalize_first_spread_start ($start) {
     return;
 }
 
-sub clear_first_spread_start_detection ( $redis, $id ) {
-    return unless $redis && $id;
-    $redis->hdel(
-        $id,
-        qw(
-          firstspreadstart firstspreadstart_confidence firstspreadstart_reason firstspreadstart_v firstspreadstart_err
-          firstpageside firstpageside_confidence firstpageside_reason firstpageside_v firstpageside_err
-        )
-    );
+sub _file_signature ($file) {
+    my @stat = Time::HiRes::stat($file);
+    die "Archive disappeared during detection\n" unless @stat;
+    return join(":", @stat[0, 1, 7, 9, 10]);
 }
 
-sub _store_first_spread_start ( $redis, $id, $result ) {
-    my $spread_start = _normalize_first_spread_start( $result->{first_spread_start} ) // "UNKNOWN";
-    $redis->hset( $id, "firstspreadstart",            $spread_start );
-    $redis->hset( $id, "firstspreadstart_confidence", $result->{confidence} // 0 );
-    $redis->hset( $id, "firstspreadstart_reason",     $result->{reason}     // "" );
-    $redis->hset( $id, "firstspreadstart_v",          FIRST_SPREAD_START_VERSION );
+sub clear_first_spread_start_detection ( $redis, $id ) {
+    return unless $redis && $id;
+    # Keep the revision even when dropping all evidence so in-flight work from
+    # the previous content cannot repopulate the cache.
+    my $script = <<'LUA';
+local id = ARGV[1]
+if redis.call('EXISTS', id) == 0 then return 0 end
+redis.call('HINCRBY', id, 'firstspreadstart_revision', 1)
+return redis.call('HDEL', id,
+  'firstspreadstart', 'firstspreadstart_confidence', 'firstspreadstart_reason', 'firstspreadstart_v',
+  'firstspreadstart_err', 'firstspreadstart_status',
+  'firstpageside', 'firstpageside_confidence', 'firstpageside_reason', 'firstpageside_v', 'firstpageside_err')
+LUA
+    return evalsha_cached($redis, 'clear_first_spread_start', $script, $id);
+}
 
-    if ( defined $result->{error} && $result->{error} ne "" ) {
-        $redis->hset( $id, "firstspreadstart_err", $result->{error} );
-    } else {
-        $redis->hdel( $id, "firstspreadstart_err" );
-    }
+sub _store_first_spread_start ( $redis, $id, $result, $revision = 0, $file = "" ) {
+    my $spread_start = _normalize_first_spread_start( $result->{first_spread_start} ) // "UNKNOWN";
+    my $script = <<'LUA';
+local id, revision, file, value, confidence, reason, version, err = unpack(ARGV)
+if redis.call('EXISTS', id) == 0 then return 0 end
+if reason == 'user_slide' then
+  redis.call('HINCRBY', id, 'firstspreadstart_revision', 1)
+else
+  if (redis.call('HGET', id, 'firstspreadstart_revision') or '0') ~= revision then return 0 end
+  if (redis.call('HGET', id, 'file') or '') ~= file then return 0 end
+  if redis.call('HGET', id, 'firstspreadstart_reason') == 'user_slide' then return 0 end
+end
+if err ~= '' then
+  -- Acquisition failures do not replace a layout or become a valid UNKNOWN cache.
+  redis.call('HSET', id, 'firstspreadstart_err', err, 'firstspreadstart_status', 'error')
+else
+  redis.call('HSET', id, 'firstspreadstart', value, 'firstspreadstart_confidence', confidence,
+    'firstspreadstart_reason', reason, 'firstspreadstart_v', version,
+    'firstspreadstart_status', value == 'UNKNOWN' and 'unknown' or 'detected')
+  redis.call('HDEL', id, 'firstspreadstart_err')
+end
+return 1
+LUA
+    return evalsha_cached($redis, 'store_first_spread_start', $script, $id, $revision, $file,
+      $spread_start, $result->{confidence} // 0, $result->{reason} // "",
+      FIRST_SPREAD_START_VERSION, $result->{error} // "");
 }
 
 sub store_user_first_spread_start ( $redis, $id, $start ) {
     return unless $redis && $id;
     my $spread_start = _normalize_first_spread_start($start);
     return unless defined $spread_start && ( $spread_start eq "2" || $spread_start eq "4" );
-
-    _store_first_spread_start(
-        $redis,
-        $id,
-        {
-            first_spread_start => $spread_start,
-            confidence         => 1,
-            reason             => "user_slide"
-        }
-    );
-    return $spread_start;
+    my $stored = _store_first_spread_start($redis, $id, {
+        first_spread_start => $spread_start,
+        confidence => 1,
+        reason => "user_slide"
+    });
+    return $stored ? $spread_start : undef;
 }
 
 sub detect_page_side ( $contents, $page_index ) {

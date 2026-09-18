@@ -6,7 +6,23 @@ use utf8;
 
 use Exporter 'import';
 
-our @EXPORT_OK = qw(extract_endpoint escape_label_value);
+our @EXPORT_OK = qw(extract_endpoint extract_route_endpoint escape_label_value);
+
+# Matched wildcard routes also accept arbitrary missing paths. Their route
+# templates, rather than request paths, keep metric labels finite even for 404s.
+sub extract_route_endpoint {
+    my ($route) = @_;
+    return unless $route;
+    my @parts;
+    while ($route) {
+        unshift @parts, $route->pattern->unparsed // '';
+        $route = $route->parent;
+    }
+    my $path = join '', @parts;
+    $path =~ s{/+}{/}g;
+    $path =~ s{<([A-Za-z_][A-Za-z_0-9]*)(?::[^>]+)?>}{:$1}g;
+    return length($path) ? $path : '/';
+}
 
 # Extract endpoint path from request and normalize to route templates to prevent cardinality explosion.
 # During normalization, query parameters are removed and path parameters are replaced with router placeholders.
@@ -24,6 +40,7 @@ sub extract_endpoint {
     # Archive endpoints
     $path =~ s{/api/archives/[a-f0-9]{40}(/|$)}{/api/archives/:id$1}g;
     $path =~ s{/api/archives/:id/progress/\d+}{/api/archives/:id/progress/:page};
+    $path =~ s{/api/archives/:id/stamps/\d+$}{/api/archives/:id/stamps/:index};
 
     # Category endpoints
     $path =~ s{/api/categories/bookmark_link/[^/]+(/|$)}{/api/categories/bookmark_link/:id$1}g;
@@ -37,9 +54,16 @@ sub extract_endpoint {
         }
     }ge;
 
-    # Tankoubon endpoints  
+    # Tankoubon endpoints
     $path =~ s{/api/tankoubons/[^/]+/[a-f0-9]{40}(/|$)}{/api/tankoubons/:id/:archive$1}g;
     $path =~ s{/api/tankoubons/[^/]+(/|$)}{/api/tankoubons/:id$1}g;
+    $path =~ s{/api/tankoubons/:id/progress/\d+$}{/api/tankoubons/:id/progress/:page};
+
+    # Stamp endpoints
+    $path =~ s{/api/stamps/[^/]+(/|$)}{/api/stamps/:id$1}g;
+
+    # Database endpoints
+    $path =~ s{/api/database/backup/\d+$}{/api/database/backup/:jobid};
 
     # Minion endpoints
     $path =~ s{/api/minion/([^/]+)/queue(/|$)}{/api/minion/:jobname/queue$2}g;
@@ -87,11 +111,16 @@ sub read_proc_stat {
     return unless -r "/proc/self/stat";
 
     open my $fh, '<', "/proc/self/stat" or return;
-    my $stat_line = <$fh>;
+    my $stat_line = do { local $/; <$fh> };
     close $fh;
 
     return unless $stat_line;
-    my @fields = split /\s+/, $stat_line;
+    # The parenthesized comm field may contain spaces and closing parentheses.
+    # Start indexing at field 3 (state), after its final closing parenthesis.
+    my ($tail) = $stat_line =~ /\A\d+ \(.*\) (.*)\z/s;
+    return unless defined $tail;
+    my @fields = split /\s+/, $tail;
+    return unless @fields >= 20;
     my $ticks_per_sec = eval { require POSIX; POSIX::sysconf(POSIX::_SC_CLK_TCK()) };
     return unless $ticks_per_sec;
 
@@ -99,9 +128,9 @@ sub read_proc_stat {
     return unless defined $boot_time;
 
     return {
-        utime     => ($fields[13] || 0) / $ticks_per_sec,                   # User CPU time in seconds
-        stime     => ($fields[14] || 0) / $ticks_per_sec,                   # System CPU time in seconds
-        starttime => $boot_time + (($fields[21] || 0) / $ticks_per_sec),    # Process start time (absolute)
+        utime     => ($fields[11] || 0) / $ticks_per_sec,                   # User CPU time in seconds
+        stime     => ($fields[12] || 0) / $ticks_per_sec,                   # System CPU time in seconds
+        starttime => $boot_time + (($fields[19] || 0) / $ticks_per_sec),    # Process start time (absolute)
     };
 }
 

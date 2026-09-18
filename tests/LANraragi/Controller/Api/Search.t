@@ -153,6 +153,31 @@ note("Tachiyomi-compatible API search responses are cached briefly by identical 
     is( $calls, 1, "second identical Tachiyomi API search reuses cached response" );
 }
 
+note("Tachiyomi progress-dependent searches bypass the response cache");
+{
+    no warnings 'redefine';
+    my $redis = FakeSearchRedis->new;
+    local *LANraragi::Model::Config::get_redis_search = sub { return $redis };
+    local *LANraragi::Model::Category::get_category = sub { return ( search => 'read:>0' ) };
+    local *LANraragi::Controller::Api::Search::get_archive_json_multi = sub { archive_rows(@_) };
+    for my $params (
+        { filter => 'read:>0' }, { hidecompleted => 'true' },
+        { sortby => 'lastread' }, { category => 'SET_1589138380' }
+    ) {
+        my $calls = 0;
+        local *LANraragi::Model::Search::do_search = sub {
+            $calls++;
+            return ( 2, 1, $calls == 1 ? $archive_id_a : $archive_id_b );
+        };
+        for my $expected ( $archive_id_a, $archive_id_b ) {
+            my $ctx = FakeSearchController->new( user_agent => 'Mihon', params => $params );
+            LANraragi::Controller::Api::Search::handle_api($ctx);
+            is( $ctx->last_render->{openapi}{data}[0]{arcid}, $expected, 'live search reflects changed membership' );
+        }
+        is( $calls, 2, 'progress-sensitive request bypasses response cache' );
+    }
+}
+
 note("Tachiyomi-compatible random count=1 is briefly sticky for the same client/query");
 {
     no warnings 'redefine';

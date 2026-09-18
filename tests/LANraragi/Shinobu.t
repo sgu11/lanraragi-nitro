@@ -372,4 +372,22 @@ note('same-ID arcsize mismatch clears stale page-cache variants');
     is_deeply( \@page_cache_clears, [$id], "same-ID arcsize mismatch clears page-cache variants" );
 }
 
+note('delayed delete events preserve replacement uploads');
+{
+    my ( $fh, $filename ) = tempfile( UNLINK => 1 );
+    print {$fh} 'replacement bytes';
+    close $fh;
+    my $redis = ShinobuTransactionalRedis->new;
+    $redis->hset('LRR_FILEMAP', $filename, 'replacement');
+    my $config = Test::MockModule->new('LANraragi::Model::Config');
+    $config->redefine('get_redis_config', sub { $redis });
+    my $shinobu = Test::MockModule->new('Shinobu');
+    $shinobu->redefine('invalidate_cache', sub {});
+    Shinobu::deleted_file_callback($filename);
+    is($redis->hget('LRR_FILEMAP', $filename), 'replacement', 'replacement mapping survives a stale delete event');
+    unlink $filename;
+    Shinobu::deleted_file_callback($filename);
+    ok(!$redis->hexists('LRR_FILEMAP', $filename), 'an actual deletion still removes the mapping');
+}
+
 done_testing();

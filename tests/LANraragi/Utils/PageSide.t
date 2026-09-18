@@ -192,34 +192,39 @@ subtest "returns unknown when fewer than two interior samples are confident" => 
     is( $result->{first_spread_start}, "UNKNOWN", "single confident sample is not enough" );
 };
 
-subtest "clears spread-start and legacy page-side detection fields" => sub {
-    my @deleted;
-    my $redis = Test::MockObject->new;
-    $redis->mock( hdel => sub { my ( $self, $id, @fields ) = @_; push @deleted, @fields; return scalar @fields; } );
+require './tests/redis_test_server.pl';
+my ($storage, $storage_guard) = start_test_redis();
 
-    clear_first_spread_start_detection( $redis, "abc" );
+subtest "atomic storage preserves human corrections and rejects stale content" => sub {
+    $storage->hset('abc', 'file', 'fixture.cbz');
+    my $auto = { first_spread_start => 2, confidence => 0.8, reason => 'vote' };
+    my $store = \&LANraragi::Utils::PageSide::_store_first_spread_start;
+    ok($store->($storage, 'abc', $auto, 0, 'fixture.cbz'), 'initial detector result stored');
+    is(store_user_first_spread_start($storage, 'abc', 4), '4', 'human anchor accepted');
+    ok(!$store->($storage, 'abc', $auto, 0, 'fixture.cbz'), 'late detector rejected');
+    is($storage->hget('abc', 'firstspreadstart'), '4', 'manual value wins');
+    is($storage->hget('abc', 'firstspreadstart_reason'), 'user_slide', 'provenance retained');
+    ok(!$store->($storage, 'abc', $auto, 1, 'fixture.cbz'), 'even current revision cannot replace manual value');
+    is(store_user_first_spread_start($storage, 'abc', 'UNKNOWN'), undef, 'invalid manual value rejected');
 
-    my %deleted = map { $_ => 1 } @deleted;
-    ok( $deleted{firstspreadstart},      "firstspreadstart is cleared" );
-    ok( $deleted{firstspreadstart_v},    "firstspreadstart_v is cleared" );
-    ok( $deleted{firstpageside},         "legacy firstpageside is cleared" );
-    ok( $deleted{firstpageside_v},       "legacy firstpageside_v is cleared" );
-};
+    $storage->hset('abc', 'firstpageside', 'LEFT');
+    clear_first_spread_start_detection($storage, 'abc');
+    ok(!defined $storage->hget('abc', 'firstspreadstart'), 'effective cache cleared');
+    ok(!defined $storage->hget('abc', 'firstpageside'), 'legacy cache cleared');
+    ok(!$store->($storage, 'abc', $auto, 1, 'fixture.cbz'), 'pre-invalidation result rejected');
+    ok(!$store->($storage, 'abc', $auto, 2, 'other.cbz'), 'different file rejected');
+    ok($store->($storage, 'abc', $auto, 2, 'fixture.cbz'), 'new-content result accepted');
 
-subtest "stores reader-confirmed spread starts with human provenance" => sub {
-    my %stored;
-    my @deleted;
-    my $redis = Test::MockObject->new;
-    $redis->mock( hset => sub { my ( $self, $id, $field, $value ) = @_; $stored{$field} = $value; return 1; } );
-    $redis->mock( hdel => sub { my ( $self, $id, @fields ) = @_; push @deleted, @fields; return scalar @fields; } );
-
-    is( store_user_first_spread_start( $redis, "abc", 4 ), "4", "Pair 3-4 feedback is accepted" );
-    is( $stored{firstspreadstart},            "4",          "human-selected anchor is stored" );
-    is( $stored{firstspreadstart_confidence}, 1,            "human feedback is authoritative" );
-    is( $stored{firstspreadstart_reason},     "user_slide", "human provenance is stored" );
-    ok( $stored{firstspreadstart_v}, "current spread detector version is stored" );
-    ok( grep { $_ eq "firstspreadstart_err" } @deleted, "stale detector errors are cleared" );
-    is( store_user_first_spread_start( $redis, "abc", "UNKNOWN" ), undef, "non-human anchor is rejected" );
+    my $error = { first_spread_start => 'UNKNOWN', reason => 'error', error => 'temporary' };
+    ok($store->($storage, 'abc', $error, 2, 'fixture.cbz'), 'error state recorded');
+    is($storage->hget('abc', 'firstspreadstart'), '2', 'error preserves layout');
+    is($storage->hget('abc', 'firstspreadstart_status'), 'error', 'error distinct from unknown');
+    ok($store->($storage, 'abc', { first_spread_start => 'UNKNOWN', reason => 'weak' }, 2, 'fixture.cbz'), 'valid uncertainty accepted');
+    is($storage->hget('abc', 'firstspreadstart_status'), 'unknown', 'legitimate UNKNOWN is cached');
+    ok(!defined $storage->hget('abc', 'firstspreadstart_err'), 'success clears error');
+    $storage->del('abc');
+    ok(!$store->($storage, 'abc', $auto, 0, 'fixture.cbz'), 'deleted archive is not recreated');
+    is(store_user_first_spread_start($storage, 'abc', 2), undef, 'manual request cannot recreate deleted archive');
 };
 
 subtest "detector backfill preserves reader-confirmed spread starts across version changes" => sub {
@@ -230,7 +235,7 @@ subtest "detector backfill preserves reader-confirmed spread starts across versi
         firstspreadstart_v          => 0,
     );
     my $redis = Test::MockObject->new;
-    $redis->mock( hget => sub { my ( $self, $id, $field ) = @_; return $stored{$field}; } );
+    $redis->mock( hmget => sub { return map { $stored{$_} } @_[2 .. $#_]; } );
     $redis->mock( hset => sub { my ( $self, $id, $field, $value ) = @_; $stored{$field} = $value; return 1; } );
     $redis->mock( hdel => sub { delete $stored{$_} for @_[ 2 .. $#_ ]; return 1; } );
     $redis->mock( quit => sub { return 1; } );

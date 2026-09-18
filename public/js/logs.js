@@ -23,7 +23,8 @@ Logs.initializeAll = function () {
 };
 
 Logs.showLog = function (type) {
-    fetch(`/logs/${type}?lines=${$("#loglines").val()}`)
+    const params = new URLSearchParams({ lines: $("#loglines").val() });
+    fetch(new LRR.ApiURL(`/logs/${type}?${params}`))
         .then((response) => response.text())
         .then((data) => {
             $("#log-container").html(LRR.encodeHTML(data));

@@ -5,7 +5,7 @@ use utf8;
 use File::Temp qw(tempdir);
 use Test::More;
 
-BEGIN { use_ok( 'LANraragi::Utils::PageCache', qw(fetch put clear_by_id) ); }
+BEGIN { use_ok( 'LANraragi::Utils::PageCache', qw(fetch put clear clear_by_id get_generation is_current_generation) ); }
 
 note('PageCache mmap geometry never exceeds the configured cap');
 {
@@ -105,5 +105,37 @@ note('PageCache clears every page variant for one archive id');
         is( fetch($key), "value:$key", "clear_by_id keeps $key" );
     }
 }
+
+subtest 'invalidation fences every older image publication, including an empty cache' => sub {
+    my $tmpdir = tempdir( CLEANUP => 1 );
+    my $id = 'a' x 40;
+    my $other = 'b' x 40;
+    no warnings 'redefine';
+    local *LANraragi::Utils::PageCache::get_temp = sub { $tmpdir };
+    local *LANraragi::Utils::PageCache::get_logger = sub { FakePageCacheLogger->new };
+    local *LANraragi::Utils::PageCache::calc_max_size = sub { 2 };
+    local $ENV{LRR_PAGECACHE_PAGE_SIZE_MB} = 1;
+    LANraragi::Utils::PageCache::initialize();
+    my $previous = get_generation($id);
+    my $other_generation = get_generation($other);
+    clear_by_id($id);
+    ok(!is_current_generation($id, $previous), 'clear advances a generation before any bytes exist');
+    ok(is_current_generation($other, $other_generation), 'another archive generation is unchanged');
+    my @keys = ("page/$id/page.png", "resize_page/$id/page.png/1200/80",
+        "crop_page/v6/$id/page.png/png", "crop_resize_page/v6/$id/page.png/1200/80",
+        "crop_page_nocrop/v6/$id/page.png");
+    for my $key (@keys) {
+        ok(!put($key, 'stale', $previous), "old computation cannot publish $key");
+        is(fetch($key), undef, 'stale bytes are absent');
+    }
+    my $current = get_generation($id);
+    ok(put($keys[0], 'current', $current), 'new generation can publish');
+    is(fetch($keys[0], $current), 'current', 'current reader has an immediate cache hit');
+    is(fetch($keys[0], $previous), undef, 'old reader cannot adopt a new generation cache entry');
+    clear();
+    ok(!is_current_generation($id, $current), 'full cache clear advances the global generation');
+    ok(!is_current_generation($other, $other_generation), 'full cache clear invalidates every archive');
+    ok(!put($keys[0], 'stale after clear', $current), 'full clear does not reset generations to an old value');
+};
 
 done_testing();

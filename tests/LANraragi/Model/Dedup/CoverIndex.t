@@ -22,8 +22,12 @@ package CoverTestData {
     our @hdel_seen;
     our @zadd_seen;
     our @hset_seen;
+    our @hmget_seen;
     our %kv;
     our %set;
+    our $wait_all_responses_calls;
+    our $all_archive_ids_calls;
+    our $backfill_archives;
 }
 
 # --- Test Redis mock ----------------------------------------------------
@@ -38,6 +42,10 @@ package CoverTestRedis {
     sub sismember {
         my ($self, $k, $m) = @_;
         $CoverTestData::set{$k}{$m} ? 1 : 0;
+    }
+    sub scard {
+        my ($self, $k) = @_;
+        scalar keys %{$CoverTestData::set{$k} // {}};
     }
     sub zcard {
         my ($self, $k) = @_;
@@ -110,6 +118,7 @@ package CoverTestRedis {
         my $self = shift;
         my $cb = ref($_[-1]) eq 'CODE' ? pop @_ : undef;
         my ($k, @fields) = @_;
+        push @CoverTestData::hmget_seen, [$k, @fields];
         my @vals = map {
             my $v = $CoverTestData::hash{$k}{$_} // '';
             # Return '0' for numeric fields to avoid "" + 0 warnings.
@@ -160,9 +169,55 @@ package CoverTestRedis {
         my %s = %{$CoverTestData::set{$k} // {}};
         return sort CORE::keys %s;
     }
+    sub script_load { die "Lua unavailable in CoverTestRedis\n" }
     sub exists  { 1 }
-    sub wait_all_responses { 1 }
+    sub wait_all_responses { $CoverTestData::wait_all_responses_calls++; 1 }
     sub quit   { 1 }
+}
+
+package CoverStatsScriptRedis {
+    our @ISA = ('CoverTestRedis');
+
+    sub new { bless {}, shift }
+
+    sub script_load {
+        my ($self, $script) = @_;
+        push @{$self->{script_load_seen}}, $script;
+        return 'cover-stats-sha';
+    }
+
+    sub evalsha {
+        my ($self, $sha, $key_count, @args) = @_;
+        push @{$self->{evalsha_seen}}, [$sha, $key_count, @args];
+
+        my ($set_key, $algo) = @args;
+        my @ids = sort keys %{$CoverTestData::set{$set_key} // {}};
+        my ($hashed, $errored, $pending) = (0, 0, 0);
+        for my $id (@ids) {
+            my $v   = $CoverTestData::hash{$id}{coverhash_v}   // '';
+            my $err = $CoverTestData::hash{$id}{coverhash_err} // '';
+            if    ($v eq $algo && ($CoverTestData::hash{$id}{coverhash} // '') =~ /\A[0-9a-f]{16}\z/i) { $hashed++ }
+            elsif (index($err, "$algo:") == 0) { $errored++ }
+            else                                 { $pending++ }
+        }
+        return Mojo::JSON::encode_json({
+            total   => scalar @ids,
+            hashed  => $hashed,
+            errored => $errored,
+            pending => $pending,
+        });
+    }
+
+    sub hmget { die "cover_stats fast path must not pipeline HMGET\n" }
+    sub wait_all_responses { die "cover_stats fast path must not wait for pipeline responses\n" }
+}
+
+package CoverStatsMalformedRedis {
+    our @ISA = ('CoverTestRedis');
+
+    sub new { bless {}, shift }
+    sub script_load { 'cover-stats-malformed-sha' }
+    sub evalsha { '[]' }
 }
 
 # --- Test helpers -------------------------------------------------------
@@ -173,8 +228,12 @@ sub reset_state {
     @CoverTestData::sadd_seen = ();
     @CoverTestData::zrem_seen = ();
     @CoverTestData::hdel_seen = ();
+    @CoverTestData::hmget_seen = ();
     %CoverTestData::kv = ();
     %CoverTestData::set = ();
+    $CoverTestData::wait_all_responses_calls = 0;
+    $CoverTestData::all_archive_ids_calls = 0;
+    $CoverTestData::backfill_archives = 0;
 }
 
 my $redis     = CoverTestRedis->new;
@@ -182,10 +241,43 @@ my $redis_cfg = CoverTestRedis->new;
 
 # Stub all_archive_ids
 my $db_mod = Test::MockModule->new('LANraragi::Utils::Database');
-$db_mod->redefine('all_archive_ids', sub { ('id1','id2','id3') });
+$db_mod->redefine('all_archive_ids', sub {
+    $CoverTestData::all_archive_ids_calls++;
+    my @ids = ('id1','id2','id3');
+    if ($CoverTestData::backfill_archives) {
+        $CoverTestData::set{'LRR_ALL_ARCHIVES'}{$_} = 1 for @ids;
+    }
+    return @ids;
+});
 
 # Stub find_cover_duplicate_pairs_in_memory
 my $dedup_mod = Test::MockModule->new('LANraragi::Model::Dedup');
+# These tests exercise deck selection with an in-memory Redis double. Real Lua
+# source/publication/review races are covered by SourceGeneration.t.
+$dedup_mod->redefine(_invalidate_dedup_source => sub {
+    my ($redis, $id) = @_;
+    $redis->hdel($id, $_) for qw(coverhash coverhash_v coverhash_err cover_fp cover_fp_v cover_fp_err);
+});
+my $index_mod = Test::MockModule->new('LANraragi::Model::Dedup::CoverIndex');
+$index_mod->redefine(_pair_generation => sub {
+    my ($redis, $pair, $raw) = @_;
+    return { %{decode_json($raw)}, generation => 'fixture-generation' };
+});
+$index_mod->redefine(delete_cover_pair => sub {
+    my ($redis, $pair, $generation) = @_;
+    return 0 unless $generation;
+    $redis->sadd('LRR_COVER_DUPLICATE_DISMISSED', $pair);
+    $redis->zrem('LRR_COVER_DUPLICATE_PAIRS', $pair);
+    $redis->hdel('LRR_COVER_DUPLICATE_PAIR_META', $pair);
+    return 1;
+});
+$index_mod->redefine(_publish_cover_pair => sub {
+    my ($redis, $pair, $score, $meta) = @_;
+    $redis->zadd('LRR_COVER_DUPLICATE_PAIRS', $score, $pair);
+    $redis->hset('LRR_COVER_DUPLICATE_PAIR_META', $pair, encode_json($meta));
+    return 1;
+});
+
 my $find_called = 0;
 my $mock_matcher_result = {};
 $dedup_mod->redefine('find_cover_duplicate_pairs_in_memory', sub {
@@ -293,7 +385,7 @@ reset_state();
     $CoverTestData::hash{'id3'}{'coverhash'}   = 'ffffffffffffffff';
     $CoverTestData::hash{'id3'}{'coverhash_v'} = '2';
 
-    LANraragi::Model::Dedup::CoverIndex::run_cover_candidate_sweep($redis, $redis_cfg, 22);
+    LANraragi::Model::Dedup::CoverIndex::run_cover_candidate_sweep($redis, $redis_cfg, 3);
     ok(scalar @CoverTestData::sadd_seen, "stale band bucket algo triggers a rebuild");
     is($CoverTestData::hash{'LRR_COVER_DEDUP_CONFIG'}{'band_buckets_algo_version'}, 2,
         "rebuild stamps the current algorithm version");
@@ -309,6 +401,110 @@ reset_state();
     is($s->{archives_total}, 3, "total archive count");
     is($s->{cover_algo_version}, 1, "cover algo version");
     is($s->{last_scan_ts}, 1000, "last scan timestamp");
+}
+
+note("=== cover_stats preserves exact pipelined fallback counts ===");
+reset_state();
+{
+    @CoverTestData::hgetall_return = (cover_algo_version => 3);
+    # A matching version wins even when an error from the same version remains.
+    $CoverTestData::hash{'id1'}{'coverhash_v'}   = '3';
+    $CoverTestData::hash{'id1'}{'coverhash'} = '0' x 16;
+    $CoverTestData::hash{'id1'}{'coverhash_err'} = '3: stale error';
+    $CoverTestData::hash{'id2'}{'coverhash_err'} = '3: extraction failed';
+    $CoverTestData::hash{'id3'}{'coverhash_v'}   = '2';
+    $CoverTestData::hash{'id3'}{'coverhash_err'} = '2: stale error';
+
+    my $s = LANraragi::Model::Dedup::CoverIndex::cover_stats($redis_cfg, $redis);
+    is($s->{archives_total}, 3, "fallback keeps the complete archive total");
+    is($s->{archives_with_coverhashes}, 1, "version match takes hashed precedence");
+    is($s->{archives_cover_errored}, 1, "current-version error is counted");
+    is($s->{archives_cover_pending}, 1, "stale version/error remains pending");
+    is(scalar @CoverTestData::hmget_seen, 3, "fallback issues one HMGET per archive");
+    is_deeply(
+        [ map { [ @{$_}[1, 2, 3] ] } @CoverTestData::hmget_seen ],
+        [ (['coverhash_v', 'coverhash_err', 'coverhash']) x 3 ],
+        "fallback keeps the original HMGET fields"
+    );
+    is($CoverTestData::wait_all_responses_calls, 1,
+        "fallback waits for the original response pipeline");
+}
+
+note("=== cover_stats aggregates maintained IDs inside Redis ===");
+reset_state();
+{
+    @CoverTestData::hgetall_return = (cover_algo_version => 3);
+    $CoverTestData::set{'LRR_ALL_ARCHIVES'}{$_} = 1 for qw(id1 id2 id3);
+    $CoverTestData::hash{'id1'}{'coverhash_v'}   = '3';
+    $CoverTestData::hash{'id1'}{'coverhash'} = '0' x 16;
+    $CoverTestData::hash{'id1'}{'coverhash_err'} = '3: stale error';
+    $CoverTestData::hash{'id2'}{'coverhash_err'} = '3: extraction failed';
+    $CoverTestData::hash{'id3'}{'coverhash_v'}   = '2';
+    $CoverTestData::hash{'id3'}{'coverhash_err'} = '2: stale error';
+    my $fast_redis = CoverStatsScriptRedis->new;
+
+    my $s = LANraragi::Model::Dedup::CoverIndex::cover_stats($redis_cfg, $fast_redis);
+    is($s->{archives_total}, 3, "fast path reports the maintained-set total");
+    is($s->{archives_with_coverhashes}, 1, "fast path preserves hashed precedence");
+    is($s->{archives_cover_errored}, 1, "fast path preserves errored count");
+    is($s->{archives_cover_pending}, 1, "fast path preserves pending count");
+    is($CoverTestData::all_archive_ids_calls, 0,
+        "nonempty maintained set does not transfer archive IDs to Perl");
+    is(scalar @{$fast_redis->{script_load_seen}}, 1, "fast path loads its aggregate script");
+    is_deeply(
+        $fast_redis->{evalsha_seen}[0],
+        ['cover-stats-sha', 0, 'LRR_ALL_ARCHIVES', 3],
+        "fast path passes zero Redis keys and the set/algo as script arguments"
+    );
+    like($fast_redis->{script_load_seen}[0], qr/SMEMBERS', ARGV\[1\]/,
+        "Lua reads the maintained archive set server-side");
+    like($fast_redis->{script_load_seen}[0], qr/HMGET', ids\[i\], 'coverhash_v', 'coverhash_err'/,
+        "Lua reads the exact cover stats fields server-side");
+    like($fast_redis->{script_load_seen}[0],
+        qr/if v == algo and .*? then.*?elseif string\.sub\(err, 1, string\.len\(algo\) \+ 1\) == algo \.\. ':'/s,
+        "Lua keeps the version-then-error precedence");
+}
+
+note("=== cover_stats backfills an empty maintained set before Lua ===");
+reset_state();
+{
+    @CoverTestData::hgetall_return = (cover_algo_version => 3);
+    $CoverTestData::backfill_archives = 1;
+    $CoverTestData::hash{'id1'}{'coverhash_v'} = '3';
+    $CoverTestData::hash{'id1'}{'coverhash'} = '0' x 16;
+    $CoverTestData::hash{'id2'}{'coverhash_err'} = '3: extraction failed';
+    my $fast_redis = CoverStatsScriptRedis->new;
+
+    my $s = LANraragi::Model::Dedup::CoverIndex::cover_stats($redis_cfg, $fast_redis);
+    is($CoverTestData::all_archive_ids_calls, 1,
+        "empty maintained set takes the existing lazy-backfill path once");
+    ok($CoverTestData::set{'LRR_ALL_ARCHIVES'}{'id1'},
+        "lazy backfill repopulates the maintained archive set before the script");
+    is($s->{archives_total}, 3, "backfilled fast path retains all archive IDs");
+    is($s->{archives_with_coverhashes}, 1, "backfilled fast path counts hashes");
+    is($s->{archives_cover_errored}, 1, "backfilled fast path counts errors");
+    is($s->{archives_cover_pending}, 1, "backfilled fast path counts pending archives");
+}
+
+note("=== cover_stats falls back when Lua returns a malformed result ===");
+reset_state();
+{
+    @CoverTestData::hgetall_return = (cover_algo_version => 3);
+    $CoverTestData::set{'LRR_ALL_ARCHIVES'}{$_} = 1 for qw(id1 id2 id3);
+    $CoverTestData::hash{'id1'}{'coverhash_v'} = '3';
+    $CoverTestData::hash{'id1'}{'coverhash'} = '0' x 16;
+    $CoverTestData::hash{'id2'}{'coverhash_err'} = '3: extraction failed';
+    my $malformed_redis = CoverStatsMalformedRedis->new;
+
+    my $s = LANraragi::Model::Dedup::CoverIndex::cover_stats($redis_cfg, $malformed_redis);
+    is($s->{archives_total}, 3, "malformed Lua data retains the complete archive total");
+    is($s->{archives_with_coverhashes}, 1, "malformed Lua data uses fallback hash counts");
+    is($s->{archives_cover_errored}, 1, "malformed Lua data uses fallback error counts");
+    is($s->{archives_cover_pending}, 1, "malformed Lua data uses fallback pending counts");
+    is(scalar @CoverTestData::hmget_seen, 3,
+        "malformed Lua data returns to the original per-archive pipeline");
+    is($CoverTestData::wait_all_responses_calls, 1,
+        "malformed Lua data waits for fallback pipeline responses");
 }
 
 note("=== cover_pairs returns cover-only pairs ===");
@@ -374,7 +570,7 @@ reset_state();
 note("=== delete_cover_pair adds to dismissed set ===");
 reset_state();
 {
-    LANraragi::Model::Dedup::CoverIndex::delete_cover_pair($redis_cfg, 'id1|id2');
+    LANraragi::Model::Dedup::CoverIndex::delete_cover_pair($redis_cfg, 'id1|id2', 'fixture-generation');
     is($CoverTestData::sadd_seen[0][0], 'LRR_COVER_DUPLICATE_DISMISSED', "key is cover dismissed set");
     is($CoverTestData::sadd_seen[0][1], 'id1|id2', "member is the pair");
     is($CoverTestData::zrem_seen[0][0], 'LRR_COVER_DUPLICATE_PAIRS', "removed from cover pair zset");

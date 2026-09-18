@@ -98,6 +98,7 @@ function bindEvents() {
     document.addEventListener("pointerdown", handlePointerDown, true);
     document.addEventListener("pointerup", handlePointerUp, true);
     document.addEventListener("contextmenu", handleContextMenuCapture, true);
+    document.addEventListener("keydown", handleKeyDown, true);
     ["pointercancel", "pointerleave", "dragstart"].forEach((type) => {
         document.addEventListener(type, clearLongClickTimer, true);
     });
@@ -118,6 +119,20 @@ function bindEvents() {
     });
 
     $(document).on("draw.dt.grid-selection", ".datatables", queueApplySelectionHighlights);
+}
+
+function handleKeyDown(event) {
+    if ((event.key !== "Delete" && event.which !== 46) || event.repeat) return;
+    if (selectedArchives.size === 0 || isEditableTarget(event.target)) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    confirmBulkDelete();
+}
+
+function isEditableTarget(target) {
+    const element = getElementTarget(target);
+    return Boolean(element?.closest("input, textarea, select, [contenteditable]"));
 }
 
 function handlePointerDown(event) {
@@ -238,7 +253,8 @@ function confirmBulkDelete() {
         text: `Delete ${count} selected archive${count === 1 ? "" : "s"}? This cannot be undone.`,
         icon: "warning",
         showCancelButton: true,
-        focusConfirm: false,
+        focusConfirm: true,
+        allowEnterKey: true,
         confirmButtonText: I18N.ConfirmYes,
         reverseButtons: true,
         confirmButtonColor: "#d33",

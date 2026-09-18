@@ -24,7 +24,7 @@ export function toggleBorderCropPreference(current, storage = localStorage) {
 export function applyBorderCropToggleState(enabled) {
     $("#toggle-border-crop input").removeClass("toggled");
     $(enabled ? "#border-crop-on" : "#border-crop-off").addClass("toggled");
-    $("[id='toggle-border-crop-button']")
+    $(".toggle-border-crop-button")
         .removeClass("fa-crop fa-crop-alt")
         .addClass(enabled ? "fa-crop" : "fa-crop-alt");
 }

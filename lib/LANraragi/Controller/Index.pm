@@ -6,37 +6,35 @@ use URI::Escape;
 use Redis;
 use Encode;
 use File::Basename;
+use List::Util qw(shuffle);
+
 use LANraragi::Utils::Generic qw(generate_themes_header);
+use LANraragi::Utils::Database qw(all_archive_ids);
 use LANraragi::Utils::Path    qw(get_archive_path);
 
 # This endpoint is technically superseded by /api/search/random, but it's still useful in the Reader.
 sub random_archive {
-    my $self          = shift;
-    my $archive       = "";
-    my $archiveexists = 0;
+    my $self    = shift;
+    my $archive = "";
 
     my $redis = $self->LRR_CONF->get_redis;
 
-    # We get a random archive ID.
-    # We check for the length to (sort-of) avoid not getting an archive ID.
-    # TODO: This will loop infinitely if there are zero archives in store.
-    until ($archiveexists) {
-        $archive = $redis->randomkey();
+    # Iterate over the bounded archive index in random order. This terminates
+    # immediately for an empty library and also tolerates stale/missing files.
+    foreach my $candidate ( shuffle all_archive_ids($redis) ) {
+        next unless length($candidate) == 40;
+        next unless $redis->type($candidate) eq "hash";
+        next unless $redis->hexists( $candidate, "file" );
 
-        $self->LRR_LOGGER->debug("Found key $archive");
-
-        #We got a key, but does the matching archive still exist on the server?
-        if (   length($archive) == 40
-            && $redis->type($archive) eq "hash"
-            && $redis->hexists( $archive, "file" ) ) {
-            my $arclocation = get_archive_path( $redis, $archive );
-            if ( -e $arclocation ) { $archiveexists = 1; }
-        }
+        my $arclocation = get_archive_path( $redis, $candidate );
+        next unless defined($arclocation) && -e $arclocation;
+        $archive = $candidate;
+        last;
     }
 
     $redis->quit();
 
-    #We redirect to the reader, with the key as parameter.
+    return $self->redirect_to('/') unless $archive;
     $self->redirect_to( '/reader?id=' . $archive );
 }
 

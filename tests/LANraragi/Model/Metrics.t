@@ -45,6 +45,27 @@ package FakeMetricsRedis {
         return %{ $self->{hashes}{$key} || {} };
     }
 
+    sub hset {
+        my ( $self, $key, $field, $value, $callback ) = @_;
+        $self->{hashes}{$key}{$field} = $value;
+        $callback->( $value, undef ) if $callback;
+        return 1;
+    }
+
+    sub hdel {
+        my ( $self, $key, @fields ) = @_;
+        my $deleted = 0;
+        foreach my $field (@fields) {
+            $deleted++ if delete $self->{hashes}{$key}{$field};
+        }
+        return $deleted;
+    }
+
+    sub hlen {
+        my ( $self, $key ) = @_;
+        return scalar keys %{ $self->{hashes}{$key} || {} };
+    }
+
     sub keys {
         my ( $self, $pattern ) = @_;
         my $regex = quotemeta($pattern);
@@ -78,7 +99,7 @@ ok( $record, "image serving metrics can be recorded" );
 ok( $export, "image serving metrics can be exported to Prometheus" );
 
 SKIP: {
-    skip "image metrics are not implemented yet", 16 unless $record && $export;
+    skip "image metrics are not implemented yet", 19 unless $record && $export;
 
     my $redis = FakeMetricsRedis->new;
 
@@ -98,6 +119,8 @@ SKIP: {
         bytes                 => 1024,
     );
 
+    is( $redis->{wait_all_responses_count}, 0, "recording an image does not wait for Redis" );
+    LANraragi::Model::Metrics::flush_phase_metrics();
     my $key = "metrics:image:page:resized:miss";
     is( $redis->{hashes}{$key}{count}, 1, "records request count" );
     is( $redis->{hashes}{$key}{duration_sum}, 0.25, "records total duration" );
@@ -152,6 +175,7 @@ note('startup cleanup includes search metrics');
 {
     my $redis = FakeMetricsRedis->new;
     $redis->{hashes}{'metrics:search:engine:hit'} = { count => 3 };
+    $redis->{hashes}{'metrics:active_workers'} = { 123 => 1 };
 
     no warnings 'redefine';
     local *LANraragi::Model::Config::get_redis_metrics = sub { return $redis };
@@ -160,11 +184,70 @@ note('startup cleanup includes search metrics');
     };
     LANraragi::Model::Metrics::cleanup_metrics();
     ok( !exists $redis->{hashes}{'metrics:search:engine:hit'}, 'search counters do not leak across restarts' );
+    ok( !exists $redis->{hashes}{'metrics:active_workers'}, 'active-worker lifecycle data does not leak across restarts' );
+}
+
+note('worker and Shinobu lifecycle metrics use the active-worker registry');
+{
+    my $redis = FakeMetricsRedis->new;
+    $redis->{hashes}{'metrics:http:123'} = {
+        virtual_memory_bytes => 1024,
+        resident_memory_bytes => 512,
+        request_counter => 3,
+    };
+    $redis->{hashes}{'metrics:shinobu:456'} = {
+        virtual_memory_bytes => 1024,
+        resident_memory_bytes => 512,
+        request_counter => 3,
+    };
+
+    no warnings 'redefine';
+    local *LANraragi::Model::Config::get_redis_metrics = sub { return $redis };
+    local *LANraragi::Model::Metrics::get_logger = sub {
+        return bless {}, 'FakeMetricsCleanupLogger';
+    };
+
+    LANraragi::Model::Metrics::register_worker(123);
+    LANraragi::Model::Metrics::register_worker(124);
+    is( $redis->hlen('metrics:active_workers'), 2, 'spawned workers are tracked independently of request keys' );
+
+    LANraragi::Model::Metrics::unregister_worker(123);
+    is( $redis->hlen('metrics:active_workers'), 1, 'reaped worker is removed from active-worker registry' );
+    ok( !exists $redis->{hashes}{'metrics:http:123'}{virtual_memory_bytes}, 'reaped worker gauge is removed' );
+    is( $redis->{hashes}{'metrics:http:123'}{request_counter}, 3, 'reaped worker request counter remains intact' );
+
+    LANraragi::Model::Metrics::unregister_shinobu();
+    ok( !exists $redis->{hashes}{'metrics:shinobu:456'}{virtual_memory_bytes}, 'Shinobu stale gauge is removed on restart' );
+    is( $redis->{hashes}{'metrics:shinobu:456'}{request_counter}, 3, 'Shinobu counter remains intact' );
+}
+
+note('unmatched requests do not enter the request-metrics cache');
+{
+    my $redis_lookups = 0;
+    no warnings 'redefine';
+    local *LANraragi::Model::Config::get_redis_metrics = sub {
+        $redis_lookups++;
+        die 'unmatched request must not query metrics Redis';
+    };
+
+    my $controller = bless {}, 'FakeUnmatchedMetricController';
+    ok( eval { LANraragi::Model::Metrics::collect_request_metrics($controller); 1 }, 'unmatched request returns without error' );
+    is( $redis_lookups, 0, 'unmatched request bypasses Redis collection' );
 }
 
 package FakeMetricsCleanupLogger {
     sub info { 1 }
     sub error { 1 }
+    sub debug { 1 }
+}
+
+package FakeUnmatchedMetricController {
+    sub stash { return 1 }
+    sub match { return bless {}, 'FakeUnmatchedMetricRouteMatch' }
+}
+
+package FakeUnmatchedMetricRouteMatch {
+    sub endpoint { return undef }
 }
 
 package main;

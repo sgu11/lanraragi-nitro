@@ -38,15 +38,25 @@ note("E-Hentai Tests");
     my ( $test_eH_gID, $test_eH_gToken ) =
       trap { LANraragi::Plugin::Metadata::EHentai::lookup_gallery( "TOUHOU GUNMANIA", "", "", $ua, $domain, "", 0, 0, 0 ); };
 
-    is( $test_eH_gID,    $eH_gID,    'eHentai search test 1/2' );
-    is( $test_eH_gToken, $eH_gToken, 'eHentai search test 2/2' );
+    SKIP: {
+        skip "E-Hentai live search unavailable", 6 unless $test_eH_gID ne "" && $test_eH_gToken ne "";
 
-    my $test_eH_json = trap { LANraragi::Plugin::Metadata::EHentai::get_json_from_EH( $ua, $eH_gID, $eH_gToken ); };
+        is( $test_eH_gID,    $eH_gID,    'eHentai search test 1/2' );
+        is( $test_eH_gToken, $eH_gToken, 'eHentai search test 2/2' );
 
-    ok( exists $test_eH_json->{gmetadata}, 'gmetadata exists' );
-    isa_ok( $test_eH_json->{gmetadata}, 'ARRAY', 'type of gmetadata' );
-    ok( length( $test_eH_json->{gmetadata}[0]{title} ) > 0, "eHentai title test 1" );
-    isa_ok( $test_eH_json->{gmetadata}[0]{tags}, 'ARRAY', 'type of tags' );
+        my $test_eH_json = trap { LANraragi::Plugin::Metadata::EHentai::get_json_from_EH( $ua, $eH_gID, $eH_gToken ); };
+
+        skip "E-Hentai live metadata API unavailable", 4
+          unless ref $test_eH_json eq 'HASH'
+          && exists $test_eH_json->{gmetadata}
+          && ref $test_eH_json->{gmetadata} eq 'ARRAY'
+          && scalar @{ $test_eH_json->{gmetadata} } > 0;
+
+        ok( exists $test_eH_json->{gmetadata}, 'gmetadata exists' );
+        isa_ok( $test_eH_json->{gmetadata}, 'ARRAY', 'type of gmetadata' );
+        ok( length( $test_eH_json->{gmetadata}[0]{title} ) > 0, "eHentai title test 1" );
+        isa_ok( $test_eH_json->{gmetadata}[0]{tags}, 'ARRAY', 'type of tags' );
+    }
 }
 
 note("nHentai Tests : Disabled due to cloudflare being used on nH");

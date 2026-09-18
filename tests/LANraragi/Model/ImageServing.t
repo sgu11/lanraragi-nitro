@@ -28,6 +28,17 @@ BEGIN {
 }
 
 use LANraragi::Model::Archive;
+# Image policy/HTTP contracts use an inline executor; cross-process scheduling
+# and same-variant sharing are exercised in ArchiveCropSingleFlight.t.
+{
+    no warnings 'redefine';
+    *LANraragi::Utils::ImagePipeline::run_p = sub {
+        my ($key, $lookup, $compute) = @_;
+        return Mojo::Promise->resolve($lookup->() // $compute->());
+    };
+    *LANraragi::Utils::ImageTransform::fetch = sub { LANraragi::Model::Archive::fetch(@_) };
+    *LANraragi::Utils::ImageTransform::put = sub { LANraragi::Model::Archive::put(@_) };
+}
 use LANraragi::Model::Tankoubon;
 use LANraragi::Utils::ImageBorderCrop qw(CROP_ALGORITHM_VERSION);
 
@@ -110,6 +121,13 @@ package FakeImageLockRedis {
     sub quit { return 1 }
 }
 
+package FakeImageArchiveRedis {
+    sub new { return bless { archives => $_[1] || {} }, $_[0] }
+    sub exists { return exists $_[0]->{archives}{ $_[1] } }
+    sub hget { return $_[0]->{archives}{ $_[1] }{ $_[2] } }
+    sub quit { return 1 }
+}
+
 package FakeImageController {
     sub new {
         my ( $class, %args ) = @_;
@@ -130,6 +148,7 @@ package main;
 
 my $thumbdir = tempdir( CLEANUP => 1 );
 my $lock_redis;
+my $archive_redis;
 
 sub install_config_mocks {
     no warnings 'redefine';
@@ -137,6 +156,7 @@ sub install_config_mocks {
     *LANraragi::Model::Config::enable_avif_thumbnails = sub { return 0 };
     *LANraragi::Model::Config::get_jxlthumbpages = sub { return 0 };
     *LANraragi::Model::Config::get_redis_config = sub { return $lock_redis };
+    *LANraragi::Model::Config::get_redis = sub { return $archive_redis };
     *LANraragi::Model::Config::enable_resize = sub { return 0 };
 }
 
@@ -224,6 +244,7 @@ note("archive thumbnail no_fallback reuses an active per-thumbnail job");
 {
     my $id = "abcdef0123456789abcdef0123456789abcdef01";
     $lock_redis = FakeImageLockRedis->new;
+    $archive_redis = FakeImageArchiveRedis->new( { $id => { pagecount => 30 } } );
     my $minion = FakeImageMinion->new;
 
     my $first = missing_thumbnail_controller( $minion, { no_fallback => "true", page => 21 } );
@@ -234,6 +255,23 @@ note("archive thumbnail no_fallback reuses an active per-thumbnail job");
 
     is( scalar @{ $minion->{enqueued} }, 1, "only one thumbnail_task is queued for duplicate misses" );
     is( $first->{last_render}{openapi}{job}, $second->{last_render}{openapi}{job}, "duplicate callers receive the same job id" );
+}
+
+note("public thumbnail generation is limited to real archive pages");
+{
+    my $id = "abcdef0123456789abcdef0123456789abcdef01";
+    $lock_redis = FakeImageLockRedis->new;
+    $archive_redis = FakeImageArchiveRedis->new( { $id => { pagecount => 30 } } );
+    my $minion = FakeImageMinion->new;
+
+    my $out_of_range = missing_thumbnail_controller( $minion, { no_fallback => "true", page => 31 } );
+    LANraragi::Model::Archive::serve_thumbnail( $out_of_range, $id );
+    is( $out_of_range->{last_render}{status}, 400, "out-of-range thumbnail request is rejected" );
+
+    my $missing = missing_thumbnail_controller( $minion, { no_fallback => "true", page => 1 } );
+    LANraragi::Model::Archive::serve_thumbnail( $missing, "0" x 40 );
+    is( $missing->{last_render}{status}, 404, "missing archive thumbnail request is rejected" );
+    is( scalar @{ $minion->{enqueued} }, 0, "invalid public misses cannot enqueue work" );
 }
 
 note("tankoubon thumbnail no_fallback reuses an active per-thumbnail job");
@@ -374,7 +412,7 @@ note("archive page crop=border serves and reuses a cropped page variant");
         $metrics->{cache_status} = "miss" if defined $metrics;
         return $source;
     };
-    local *LANraragi::Model::Archive::crop_blank_borders = sub {
+    local *LANraragi::Utils::ImageTransform::crop_blank_borders = sub {
         return $cropped;
     };
     local *LANraragi::Model::Archive::fetch = sub {
@@ -407,57 +445,6 @@ note("archive page crop=border serves and reuses a cropped page variant");
     is( $extracts, 1, "second cropped page request reuses the cropped variant cache" );
 }
 
-note("archive page crop=border waits briefly for an in-flight crop result");
-{
-    my $id = "1234567890abcdef1234567890abcdef12345679";
-    my $page_path = "page-inflight.png";
-    my $source = make_page_blob( 100, 100, "#f8f8f8", [ 12, 10, 76, 82 ], "#222222" );
-    my $cropped = make_page_blob( 80, 86, "#222222", [ 0, 0, 80, 86 ], "#222222" );
-    my $crop_key = "crop_page/v" . CROP_ALGORITHM_VERSION . "/$id/$page_path/png";
-    my $lock_key = "LRR_PAGECROPJOB:v" . CROP_ALGORITHM_VERSION . ":$id:$page_path:png";
-    my %cache;
-    my $extracts = 0;
-    my $crop_calls = 0;
-    my $sleeps = 0;
-
-    $lock_redis = FakeImageLockRedis->new;
-    $lock_redis->{values}{$lock_key} = "other-worker";
-
-    no warnings 'redefine';
-    local *LANraragi::Model::Archive::get_page_data = sub {
-        my ( $id, $path, $metrics ) = @_;
-        $extracts++;
-        $metrics->{cache_status} = "miss" if defined $metrics;
-        return $source;
-    };
-    local *LANraragi::Model::Archive::crop_blank_borders = sub {
-        $crop_calls++;
-        return $cropped;
-    };
-    local *LANraragi::Model::Archive::fetch = sub {
-        my ($key) = @_;
-        return $cache{$key};
-    };
-    local *LANraragi::Model::Archive::put = sub {
-        my ( $key, $value ) = @_;
-        $cache{$key} = $value;
-        return 1;
-    };
-    local *LANraragi::Model::Archive::usleep = sub {
-        $sleeps++;
-        $cache{$crop_key} = $cropped;
-    };
-    local *LANraragi::Model::Archive::get_logger = sub { return FakeImageLogger->new };
-    local *LANraragi::Model::Metrics::record_image_serving_metrics = sub { return 1 };
-
-    my $t = build_image_app();
-    $t->get_ok("/archives/$id/page?path=$page_path&crop=border")->status_is(200);
-    is( $t->tx->res->body, $cropped, "loser request serves the crop written by the in-flight winner" );
-    is( $crop_calls, 0, "loser request does not duplicate crop detection after the winner writes the crop" );
-    is( $extracts, 1, "loser request still extracts the original page needed for bounded fallback" );
-    cmp_ok( $sleeps, ">=", 1, "loser request waits before re-checking the crop cache" );
-}
-
 note("archive page crop=border rejects zero area savings even when encoded bytes grow");
 {
     my $id = "2234567890abcdef1234567890abcdef12345678";
@@ -474,7 +461,7 @@ note("archive page crop=border rejects zero area savings even when encoded bytes
         $metrics->{cache_status} = "miss" if defined $metrics;
         return $source;
     };
-    local *LANraragi::Model::Archive::crop_blank_borders = sub {
+    local *LANraragi::Utils::ImageTransform::crop_blank_borders = sub {
         $crop_calls++;
         return $source . ( "x" x 64 );
     };
@@ -522,7 +509,7 @@ note("archive page crop=border rejects tiny area savings even when encoded bytes
         $metrics->{cache_status} = "miss" if defined $metrics;
         return $source;
     };
-    local *LANraragi::Model::Archive::crop_blank_borders = sub {
+    local *LANraragi::Utils::ImageTransform::crop_blank_borders = sub {
         $crop_calls++;
         return $cropped;
     };
@@ -566,7 +553,7 @@ note("archive page crop=border keeps meaningful crops even when encoded bytes gr
         $metrics->{cache_status} = "miss" if defined $metrics;
         return $source;
     };
-    local *LANraragi::Model::Archive::crop_blank_borders = sub {
+    local *LANraragi::Utils::ImageTransform::crop_blank_borders = sub {
         $crop_calls++;
         return $cropped;
     };
@@ -601,13 +588,13 @@ note("image dimension probe tolerates a broken Image::Magick runtime");
 {
     # Force the Image::Magick fallback path by stubbing out the Vips probe.
     no warnings 'redefine';
-    local *LANraragi::Model::Archive::_image_dimensions_from_blob_vips = sub { return };
+    local *LANraragi::Utils::ImageTransform::_image_dimensions_from_blob_vips = sub { return };
 
     # Simulate a broken PerlMagick install (dylib load fails at ->new or
     # BlobToImage dies). The probe must return empty, never propagate the die.
     local *Image::Magick::new = sub { die "Image::Magick runtime broken\n" };
 
-    my @dims = LANraragi::Model::Archive::_image_dimensions_from_blob("\x89PNG\r\n\x1a\n");
+    my @dims = LANraragi::Utils::ImageTransform::_image_dimensions_from_blob("\x89PNG\r\n\x1a\n");
     ok( !@dims, "_image_dimensions_from_blob returns empty list when Image::Magick dies" );
     is( scalar(@dims), 0, "broken Image::Magick probe does not propagate a die" );
 
@@ -615,7 +602,7 @@ note("image dimension probe tolerates a broken Image::Magick runtime");
     # malformed content, the probe still returns empty rather than dying.
     local *Image::Magick::new = sub { bless {}, "Image::Magick" };
     local *Image::Magick::BlobToImage = sub { die "BlobToImage runtime broken\n" };
-    my @dims2 = LANraragi::Model::Archive::_image_dimensions_from_blob("not an image");
+    my @dims2 = LANraragi::Utils::ImageTransform::_image_dimensions_from_blob("not an image");
     ok( !@dims2, "_image_dimensions_from_blob returns empty list when BlobToImage dies" );
 }
 
@@ -636,7 +623,7 @@ SKIP: {
         $metrics->{cache_status} = "miss" if defined $metrics;
         return $source;
     };
-    local *LANraragi::Model::Archive::crop_blank_borders = sub {
+    local *LANraragi::Utils::ImageTransform::crop_blank_borders = sub {
         $crop_calls++;
         return $cropped;
     };

@@ -121,8 +121,7 @@ div.gt {
   transition: background-color 200ms, border-color 200ms, color 200ms;
 }
 
-.tagger>ul>li:not(.tagger-new)>a,
-.tagger li:not(.tagger-new)>span,
+.tagger>ul>li:not(.tagger-new)>:first-child,
 .tagger .tagger-new ul {
   background: #313244;
   border-radius: 3px;

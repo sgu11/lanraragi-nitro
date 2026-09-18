@@ -17,6 +17,8 @@ tags:
     description: Endpoints related to Categories.
   - name: tankoubons
     description: Endpoints related to Tankoubons.
+  - name: registries
+    description: Plugin registry management APIs.
   - name: plugins
     description: APIs to list and execute Plugins.
   - name: shinobu
@@ -444,9 +446,7 @@ paths:
           description: ID of the archive to use the Plugin on. This is only mandatory for metadata plugins.
           required: false
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         - name: plugin
           in: query
           description: Namespace of the plugin to use.
@@ -487,6 +487,7 @@ paths:
                       - 1
                   error:
                     type: [string, "null"]
+                    description: Generic failure text for unauthenticated callers; detailed errors require the authenticated detail endpoint.
                   data:
                     type: object
                     description: Arbitrary data returned by the Plugin.
@@ -514,9 +515,7 @@ paths:
           description: ID of the archive to use the Plugin on. This is only mandatory for metadata plugins.
           required: false
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         - name: priority
           in: query
           required: false
@@ -560,6 +559,737 @@ paths:
                   job: 86
                   operation: queue_plugin_exec
                   success: 1
+
+  /registries:
+    get:
+      security:
+        - api_key: []
+      operationId: listRegistries
+      x-mojo-to: api-registry#list_registries
+      summary: 🔑 List Registries
+      description: Get all configured registries.
+      tags:
+        - registries
+      responses:
+        '200':
+          description: List of registries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - list_registries
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  registries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RegistryMetadata'
+    post:
+      security:
+        - api_key: []
+      operationId: createRegistry
+      x-mojo-to: api-registry#create_registry
+      summary: 🔑 Create a Registry
+      description: Add a new registry.
+      tags:
+        - registries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - provider
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  description: User-friendly alias for this registry.
+                provider:
+                  type: string
+                  enum:
+                    - github
+                    - gitea
+                    - cdn
+                    - local
+                  description: Registry source provider.
+                url:
+                  type: string
+                  format: uri
+                  description: |
+                    Registry URL. For git providers (github, gitea), must be an HTTPS git
+                    repository URL. For 'cdn', must be an http:// or https:// base URL of a
+                    folder serving registry.json and artifacts.
+                ref:
+                  type: string
+                  minLength: 1
+                  description: Git ref (branch, tag, or commit). Required for git providers.
+                path:
+                  type: string
+                  minLength: 1
+                  pattern: '^(/|[A-Za-z]:[\\/]|\\\\)'
+                  description: |
+                    Local filesystem path. Required when provider is 'local'.
+                    Must be an absolute path.
+              allOf:
+                - if:
+                    required:
+                      - provider
+                    properties:
+                      provider:
+                        enum:
+                          - github
+                          - gitea
+                  then:
+                    required:
+                      - url
+                      - ref
+                    properties:
+                      url:
+                        pattern: "^https://"
+                      ref: {}
+                - if:
+                    required:
+                      - provider
+                    properties:
+                      provider:
+                        const: github
+                  then:
+                    properties:
+                      url:
+                        pattern: '^https://github\.com/[^/]+/[^/]+'
+                - if:
+                    required:
+                      - provider
+                    properties:
+                      provider:
+                        const: cdn
+                  then:
+                    required:
+                      - url
+                    properties:
+                      url:
+                        pattern: "^https?://"
+                - if:
+                    required:
+                      - provider
+                    properties:
+                      provider:
+                        const: local
+                  then:
+                    required:
+                      - path
+                    properties:
+                      path: {}
+      responses:
+        '200':
+          description: Registry created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - create_registry
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  error:
+                    type: [string, "null"]
+                  id:
+                    type: string
+                    description: Generated registry ID.
+                    minLength: 14
+                    maxLength: 14
+        '400':
+          description: Registry creation failed (invalid path or required field)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '423':
+          description: Locked resource response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+
+  /registries/default_registry:
+    get:
+      security:
+        - api_key: []
+      operationId: getDefaultRepository
+      x-mojo-to: api-registry#get_default_registry
+      summary: Get Default Repository
+      description: >-
+        Retrieves the id of the default plugin registry. (Difegue/Ougi on new installs)
+
+        Returns an empty string if no registry is designated.
+      tags:
+        - registries
+      responses:
+        '200':
+          description: Default repository id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - get_default_registry
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  id:
+                    description: Default repository registry ID, or empty string if unset.
+                    anyOf:
+                      - type: string
+                        minLength: 14
+                        maxLength: 14
+                      - type: string
+                        enum:
+                          - ''
+    delete:
+      security:
+        - api_key: []
+      operationId: removeDefaultRepository
+      x-mojo-to: api-registry#remove_default_registry
+      summary: 🔑 Clear Default Repository
+      description: >-
+        Clears the default repository designation.
+
+        Returns the id of the previously-designated registry, or an empty string if none was set.
+      tags:
+        - registries
+      responses:
+        '200':
+          description: Default repository cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - remove_default_registry
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  id:
+                    description: Id of the previously-designated registry.
+                    anyOf:
+                      - type: string
+                        minLength: 14
+                        maxLength: 14
+                      - type: string
+                        enum:
+                          - ''
+  /registries/default_registry/{id}:
+    put:
+      security:
+        - api_key: []
+      operationId: updateDefaultRepository
+      x-mojo-to: api-registry#update_default_registry
+      summary: 🔑 Set Default Repository
+      description: >-
+        Designates the registry with the given id as the default repository.
+
+        The frontend uses this designation to pre-select a registry in install/refresh dialogs.
+      tags:
+        - registries
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 14
+            maxLength: 14
+          description: Registry id to designate as the default repository.
+      responses:
+        '200':
+          description: Default repository set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - update_default_registry
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  id:
+                    type: string
+                    minLength: 14
+                    maxLength: 14
+        '400':
+          description: Invalid registry id format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '404':
+          description: Registry with the specified id does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+
+  /registries/{id}:
+    get:
+      security:
+        - api_key: []
+      operationId: getRegistry
+      x-mojo-to: api-registry#get_registry
+      summary: 🔑 Get a Registry
+      description: Get configuration data for a specific registry.
+      tags:
+        - registries
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 14
+            maxLength: 14
+          description: Registry ID.
+      responses:
+        '200':
+          description: Registry configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - get_registry
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  error:
+                    type: [string, "null"]
+                  registry:
+                    allOf:
+                      - $ref: '#/components/schemas/RegistryMetadata'
+                      - type: object
+                        properties:
+                          index:
+                            type: [object, "null"]
+                            description: >-
+                              Cached registry.json content from the last successful refresh
+                              (on creation, server boot, or manual refresh), or null if this
+                              registry has never been successfully refreshed. This is a
+                              read of the cache only -- it does not trigger a new fetch from
+                              the registry's source.
+        '404':
+          description: Registry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+    put:
+      security:
+        - api_key: []
+      operationId: updateRegistry
+      x-mojo-to: api-registry#update_registry
+      summary: 🔑 Update a Registry
+      description: Update registry configuration. Only provided fields are changed. Clears cached index.
+      tags:
+        - registries
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 14
+            maxLength: 14
+          description: Registry ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                provider:
+                  type: string
+                  enum:
+                    - github
+                    - gitea
+                    - cdn
+                    - local
+                url:
+                  type: string
+                  format: uri
+                  pattern: "^https?://"
+                ref:
+                  type: string
+                  minLength: 1
+                path:
+                  type: string
+                  minLength: 1
+                  pattern: '^(/|[A-Za-z]:[\\/]|\\\\)'
+              allOf:
+                - if:
+                    required:
+                      - provider
+                    properties:
+                      provider:
+                        enum:
+                          - github
+                          - gitea
+                  then:
+                    properties:
+                      url:
+                        pattern: "^https://"
+                - if:
+                    required:
+                      - provider
+                    properties:
+                      provider:
+                        const: github
+                  then:
+                    properties:
+                      url:
+                        pattern: '^https://github\.com/[^/]+/[^/]+'
+                - if:
+                    required:
+                      - provider
+                    properties:
+                      provider:
+                        const: cdn
+                  then:
+                    properties:
+                      url:
+                        pattern: "^https?://"
+      responses:
+        '200':
+          description: Registry updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - update_registry
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  error:
+                    type: [string, "null"]
+                  id:
+                    type: string
+                    minLength: 14
+                    maxLength: 14
+        '400':
+          description: Update failed (missing required fields, invalid path)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '404':
+          description: Registry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '423':
+          description: Locked resource response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '500':
+          description: Redis error during update
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+    delete:
+      security:
+        - api_key: []
+      operationId: deleteRegistry
+      x-mojo-to: api-registry#delete_registry
+      summary: 🔑 Delete a Registry
+      description: Remove a registry and its cached index. Does not remove installed plugins.
+      tags:
+        - registries
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 14
+            maxLength: 14
+          description: Registry ID.
+      responses:
+        '200':
+          description: Registry removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - delete_registry
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  error:
+                    type: [string, "null"]
+                  successMessage:
+                    type: string
+        '404':
+          description: Registry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '423':
+          description: Locked resource response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '500':
+          description: Redis error during delete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+
+  /registries/{id}/refresh:
+    post:
+      security:
+        - api_key: []
+      operationId: refreshRegistry
+      x-mojo-to: api-registry#refresh_registry
+      summary: 🔑 Refresh Registry Index
+      description: Fetch registry.json from the configured source and cache it.
+      tags:
+        - registries
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 14
+            maxLength: 14
+          description: Registry ID.
+      responses:
+        '200':
+          description: Registry index refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - refresh_registry
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  error:
+                    type: [string, "null"]
+                  index:
+                    type: [object, "null"]
+                    description: Parsed registry.json content
+        '400':
+          description: Refresh failed (invalid registry.json, missing file, validation failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '404':
+          description: Registry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '423':
+          description: Locked resource response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '500':
+          description: Redis error or read-failure during refresh
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '502':
+          description: Failed to fetch registry index from upstream
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+
+  /plugins/install:
+    post:
+      security:
+        - api_key: []
+      operationId: installPlugin
+      x-mojo-to: api-plugins#install_plugin
+      summary: 🔑 Install a Plugin
+      description: Install or upgrade a plugin from a registry by namespace.
+      tags:
+        - plugins
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - namespace
+                - registry
+              properties:
+                namespace:
+                  type: string
+                  pattern: "^[a-z0-9_-]+$"
+                  description: Namespace of the plugin to install. Registry namespaces are lowercase.
+                registry:
+                  type: string
+                  description: Registry ID to install from.
+                  minLength: 14
+                  maxLength: 14
+                version:
+                  type: string
+                  minLength: 1
+                  description: Explicit version key to install. If omitted, LRR installs the max version from the registry index.
+                force:
+                  type: boolean
+                  description: Force install even if the plugin is already installed from a different managed registry. Built-in plugins cannot be overwritten.
+      responses:
+        '200':
+          description: Install job enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - install_plugin
+                  namespace:
+                    type: string
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  job:
+                    type: integer
+                    description: ID of the enqueued Minion job.
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+
+  /plugins/installed/{plugin_namespace}:
+    delete:
+      security:
+        - api_key: []
+      operationId: uninstallPlugin
+      x-mojo-to: api-plugins#uninstall_plugin
+      summary: 🔑 Uninstall a Plugin
+      description: Remove an installed plugin from disk and clean up its configuration.
+      tags:
+        - plugins
+      parameters:
+        - name: plugin_namespace
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]+$"
+          description: Namespace of the plugin to uninstall.
+      responses:
+        '200':
+          description: Plugin uninstalled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    type: string
+                    enum:
+                      - uninstall_plugin
+                  success:
+                    type: integer
+                    enum:
+                      - 1
+                  error:
+                    type: [string, "null"]
+                  successMessage:
+                    type: string
+        '403':
+          description: Plugin cannot be uninstalled (built-in plugin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '404':
+          description: Plugin has no install path recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '423':
+          description: Locked resource response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '500':
+          description: Server error (file deletion failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
 
   /tempfolder:
     delete:
@@ -622,9 +1352,7 @@ paths:
           required: false
           description: Category ID to add the downloaded URL to.
           schema:
-            type: string
-            minLength: 14
-            maxLength: 14
+            $ref: '#/components/schemas/CategoryId'
       requestBody:
         required: false
         content:
@@ -639,10 +1367,8 @@ paths:
                   type: string
                   format: uri
                 catid:
-                  type: string
+                  $ref: '#/components/schemas/CategoryId'
                   description: Category ID to add the downloaded URL to.
-                  minLength: 14
-                  maxLength: 14
       responses:
         '200':
           description: Enqueued job
@@ -758,9 +1484,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: string
-                  minLength: 40
-                  maxLength: 40
+                  $ref: '#/components/schemas/ArchiveId'
               example:
                 - d1858d5dc36925aa66be072a97817650d39de166
                 - c3458d5dc36925da93be072a97817650d39de166
@@ -800,10 +1524,8 @@ paths:
                   description: SHA1 checksum of the archive for in-transit validation.
                   pattern: ^[a-fA-F0-9]{40}$
                 category_id:
-                  type: string
                   description: Category ID you'd want the archive to be added to.
-                  minLength: 14
-                  maxLength: 14
+                  $ref: '#/components/schemas/CategoryId'
                 tags:
                   type: string
                   description: >-
@@ -837,9 +1559,7 @@ paths:
                     enum:
                       - 1
                   id:
-                    type: string
-                    minLength: 40
-                    maxLength: 40
+                    $ref: '#/components/schemas/ArchiveId'
                     description: ID of the uploaded archive
         '400':
           description: Bad request
@@ -873,9 +1593,7 @@ paths:
                     type: string
                     description: Error message indicating the archive already exists
                   id:
-                    type: string
-                    minLength: 40
-                    maxLength: 40
+                    $ref: '#/components/schemas/ArchiveId'
                     description: ID of the existing archive
                 example:
                   operation: upload
@@ -928,9 +1646,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       responses:
         '200':
           description: Archive metadata
@@ -952,6 +1668,8 @@ paths:
       summary: 🔑 Delete archive
       description: |-
         Delete both the archive metadata and the file stored on the server.
+        Cover-review clients send cover_pair and cover_generation together to
+        reject deletion when the displayed candidate has changed.
         🙏 Please ask your user for confirmation before invoking this endpoint.
       tags:
         - archives
@@ -961,9 +1679,17 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
+            $ref: '#/components/schemas/ArchiveId'
+        - name: cover_pair
+          in: query
+          description: Optional canonical cover pair containing this archive; requires cover_generation.
+          schema:
             type: string
-            minLength: 40
-            maxLength: 40
+        - name: cover_generation
+          in: query
+          description: Displayed pair generation; stale values return 409 before deletion.
+          schema:
+            type: string
       responses:
         '200':
           description: Archive deleted response
@@ -978,9 +1704,7 @@ paths:
                     enum:
                       - delete_archive
                   id:
-                    type: string
-                    minLength: 40
-                    maxLength: 40
+                    $ref: '#/components/schemas/ArchiveId'
                     description: ID of the archive
                   filename:
                     type: string
@@ -1002,6 +1726,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationResponse'
+        '404':
+          description: Cover pair no longer exists
+        '409':
+          description: Cover candidate changed; reload the queue before deleting
         '423':
           description: Locked resource response
           content:
@@ -1023,9 +1751,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       responses:
         '200':
           description: Archive metadata
@@ -1057,9 +1783,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         - name: title
           in: query
           required: false
@@ -1120,8 +1844,11 @@ paths:
           required: true
           description: ID of the archive to process
           schema:
-            type: string
-            pattern: '^(?:[A-Za-z0-9_]{40}|tachiyomi)$'
+            oneOf:
+              - $ref: '#/components/schemas/ArchiveId'
+              - type: string
+                enum:
+                  - tachiyomi
         - name: no_fallback
           in: query
           required: false
@@ -1168,6 +1895,12 @@ paths:
                 operation: serve_thumbnail
                 error: No archive ID specified.
                 success: 0
+        '404':
+          description: Archive not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
     put:
       security:
         - api_key: []
@@ -1185,9 +1918,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         - name: page
           in: query
           required: false
@@ -1243,12 +1974,8 @@ paths:
           schema:
             type: string
             oneOf:
-              - minLength: 40
-                maxLength: 40
-                pattern: "^[0-9a-f]{40}$"
-              - minLength: 15
-                maxLength: 15
-                pattern: "^TANK_[0-9]{10}$"
+              - $ref: '#/components/schemas/ArchiveId'
+              - $ref: '#/components/schemas/TankoubonId'
       responses:
         '200':
           description: Archive categories
@@ -1312,9 +2039,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       responses:
         '200':
           description: Archive tankoubons
@@ -1327,9 +2052,7 @@ paths:
                     type: array
                     description: Array of tankoubon IDs
                     items:
-                      type: string
-                      minLength: 15
-                      maxLength: 15
+                      $ref: '#/components/schemas/TankoubonId'
                   operation:
                     type: string
                     description: Name of the operation
@@ -1371,9 +2094,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         - name: page
           in: query
           required: true
@@ -1425,9 +2146,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         - name: page
           in: query
           required: true
@@ -1472,9 +2191,7 @@ paths:
           required: true
           description: ID of the Archive to download.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       responses:
         '200':
           description: Archive file
@@ -1511,9 +2228,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         - name: force
           in: query
           required: false
@@ -1577,9 +2292,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         - name: force
           in: query
           required: false
@@ -1613,6 +2326,12 @@ paths:
                   message: No job queued, all thumbnails already exist.
                   operation: generate_page_thumbnails
                   success: 1
+        '401':
+          description: Authentication required for forced regeneration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
         '202':
           description: >-
             The thumbnails are queued for extraction. You can use
@@ -1643,9 +2362,7 @@ paths:
           required: true
           description: ID of the Archive to download.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         - name: path
           in: query
           required: true
@@ -1719,9 +2436,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         - name: page
           in: path
           required: true
@@ -1742,9 +2457,7 @@ paths:
                 type: object
                 properties:
                   id:
-                    type: string
-                    minLength: 40
-                    maxLength: 40
+                    $ref: '#/components/schemas/ArchiveId'
                     description: ID of the archive updated
                   operation:
                     type: string
@@ -1795,6 +2508,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationResponse'
+  /archives/{id}/adaptiveoffset:
+    get:
+      security: []
+      operationId: getArchiveAdaptiveOffset
+      x-mojo-to: api-archive#serve_adaptiveoffset
+      summary: Get revision-bound adaptive spread evidence
+      description: Returns ephemeral worker evidence or schedules bounded background inference for this archive. Manual spread feedback stays app-owned.
+      tags:
+        - archives
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ArchiveId'
+      responses:
+        '200':
+          description: Ready evidence or worker disabled
+          content:
+            application/json:
+              schema:
+                type: object
+        '202':
+          description: Detection pending; retry after the response interval
+          content:
+            application/json:
+              schema:
+                type: object
+        '503':
+          description: Evidence unavailable; not an UNKNOWN observation
+          content:
+            application/json:
+              schema:
+                type: object
+
   /archives/{id}/firstspreadstart:
     put:
       security:
@@ -1966,9 +2714,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       responses:
         '200':
           description: Successful response
@@ -2002,9 +2748,7 @@ paths:
           required: true
           description: ID of the Archive to process.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       responses:
         '200':
           description: Successful response
@@ -2018,9 +2762,7 @@ paths:
                   - success
                 properties:
                   id:
-                    type: string
-                    minLength: 40
-                    maxLength: 40
+                    $ref: '#/components/schemas/ArchiveId'
                     description: ID of the archive
                   operation:
                     type: string
@@ -2192,9 +2934,7 @@ paths:
           required: false
           description: ID of the category you want to restrict this search to.
           schema:
-            type: string
-            minLength: 14
-            maxLength: 14
+            $ref: '#/components/schemas/CategoryId'
         - name: filter
           in: query
           required: false
@@ -2363,9 +3103,7 @@ paths:
           required: false
           description: ID of the category you want to restrict this search to.
           schema:
-            type: string
-            minLength: 14
-            maxLength: 14
+            $ref: '#/components/schemas/CategoryId'
         - name: filter
           in: query
           required: false
@@ -2448,7 +3186,7 @@ paths:
                     type: array
                     description: Archive IDs for each search result
                     items:
-                      type: string
+                      $ref: '#/components/schemas/ArchiveId'
                   recordsFiltered:
                     type: integer
                     description: Amount of archives in the search result
@@ -2478,9 +3216,7 @@ paths:
           required: false
           description: ID of the category you want to restrict this search to.
           schema:
-            type: string
-            minLength: 14
-            maxLength: 14
+            $ref: '#/components/schemas/CategoryId'
         - name: filter
           in: query
           required: false
@@ -3173,6 +3909,7 @@ paths:
               - backfill_coverhashes
               - find_cover_duplicates
               - find_cover_duplicates_isolated
+              - verify_cover_duplicates
               - compute_cover_fingerprint
               - backfill_cover_fingerprints
               - compute_dedup_signals
@@ -3280,10 +4017,8 @@ paths:
                     enum:
                       - create_category
                   category_id:
-                    type: string
                     description: ID of the created Category
-                    minLength: 14
-                    maxLength: 14
+                    $ref: '#/components/schemas/CategoryId'
                   success:
                     type: integer
                     enum:
@@ -3326,9 +4061,7 @@ paths:
                       - 1
                   category_id:
                     anyOf:
-                      - type: string
-                        minLength: 14
-                        maxLength: 14
+                      - $ref: '#/components/schemas/CategoryId'
                       - type: string
                         enum:
                           - ''
@@ -3357,9 +4090,7 @@ paths:
                   category_id:
                     description: ID of the previously linked category.
                     anyOf:
-                      - type: string
-                        minLength: 14
-                        maxLength: 14
+                      - $ref: '#/components/schemas/CategoryId'
                       - type: string
                         enum:
                           - ''
@@ -3386,9 +4117,7 @@ paths:
           in: path
           required: true
           schema:
-            type: string
-            minLength: 14
-            maxLength: 14
+            $ref: '#/components/schemas/CategoryId'
       responses:
         '200':
           description: Success response
@@ -3400,10 +4129,8 @@ paths:
                   operation:
                     type: string
                   category_id:
-                    type: string
                     description: ID of the category that was linked
-                    minLength: 14
-                    maxLength: 14
+                    $ref: '#/components/schemas/CategoryId'
                   success:
                     type: integer
                     enum:
@@ -3427,9 +4154,7 @@ paths:
         in: path
         required: true
         schema:
-          type: string
-          minLength: 14
-          maxLength: 14
+          $ref: '#/components/schemas/CategoryId'
     get:
       security: []
       operationId: getCategory
@@ -3493,9 +4218,7 @@ paths:
                     enum:
                       - update_category
                   category_id:
-                    type: string
-                    minLength: 14
-                    maxLength: 14
+                    $ref: '#/components/schemas/CategoryId'
                   success:
                     type: integer
                     enum:
@@ -3550,16 +4273,12 @@ paths:
           description: Category ID to add to.
           required: true
           schema:
-            type: string
-            minLength: 14
-            maxLength: 14
+            $ref: '#/components/schemas/CategoryId'
         - name: archive
           in: path
           required: true
           schema:
-            type: string
-            minLength: 15
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       responses:
         '200':
           description: Result
@@ -3585,19 +4304,16 @@ paths:
       parameters:
         - name: id
           in: path
-          description: Archive ID to remove.
+          description: Category ID to remove from.
           required: true
           schema:
-            type: string
-            minLength: 14
-            maxLength: 14
+            $ref: '#/components/schemas/CategoryId'
         - name: archive
+          description: Archive ID to remove.
           in: path
           required: true
           schema:
-            type: string
-            minLength: 15
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       responses:
         '200':
           description: Result
@@ -3718,7 +4434,7 @@ paths:
         required: true
         description: ID of the Tankoubon desired
         schema:
-          type: string
+          $ref: '#/components/schemas/TankoubonId'
     get:
       security: []
       operationId: getTankoubon
@@ -3752,12 +4468,8 @@ paths:
                     items:
                       type: string
                       oneOf:
-                        - minLength: 40
-                          maxLength: 40
-                          pattern: "^[0-9a-f]{40}$"
-                        - minLength: 15
-                          maxLength: 15
-                          pattern: "^TANK_[0-9]{10}$"
+                        - $ref: '#/components/schemas/ArchiveId'
+                        - $ref: '#/components/schemas/TankoubonId'
                     uniqueItems: true
                   progress:
                     type: integer
@@ -3789,7 +4501,7 @@ paths:
           required: true
           description: ID of the Tankoubon to update.
           schema:
-            type: string
+            $ref: '#/components/schemas/TankoubonId'
       requestBody:
         required: true
         description: Json with 2 optional keys "archives" and "metadata"
@@ -3802,9 +4514,7 @@ paths:
                   description: Ordered array with the IDs of the archives.
                   type: array
                   items:
-                    type: string
-                    minLength: 40
-                    maxLength: 40
+                    $ref: '#/components/schemas/ArchiveId'
                 metadata:
                   description: Metadata parameters -- All are optional.
                   type: object
@@ -3875,7 +4585,7 @@ paths:
         required: true
         description: ID of the Tankoubon desired
         schema:
-          type: string
+          $ref: '#/components/schemas/TankoubonId'
     get:
       security: []
       operationId: getTankoubonFull
@@ -3929,12 +4639,8 @@ paths:
                         items:
                           type: string
                           oneOf:
-                            - minLength: 40
-                              maxLength: 40
-                              pattern: "^[0-9a-f]{40}$"
-                            - minLength: 15
-                              maxLength: 15
-                              pattern: "^TANK_[0-9]{10}$"
+                            - $ref: '#/components/schemas/ArchiveId'
+                            - $ref: '#/components/schemas/TankoubonId'
                         uniqueItems: true
                       full_data:
                         type: array
@@ -3960,7 +4666,7 @@ paths:
         required: true
         description: ID of the Tankoubon desired
         schema:
-          type: string
+          $ref: '#/components/schemas/TankoubonId'
     get:
       security: []
       operationId: getTankoubonThumbnail
@@ -4082,9 +4788,7 @@ paths:
           required: true
           description: ID of the Tankoubon to update.
           schema:
-            type: string
-            minLength: 15
-            maxLength: 15
+            $ref: '#/components/schemas/TankoubonId'
         - name: page
           in: path
           required: true
@@ -4103,9 +4807,7 @@ paths:
                 type: object
                 properties:
                   id:
-                    type: string
-                    minLength: 15
-                    maxLength: 15
+                    $ref: '#/components/schemas/TankoubonId'
                     description: ID of the tankoubon updated
                   operation:
                     type: string
@@ -4166,15 +4868,13 @@ paths:
           required: true
           description: ID of the Tankoubon to update.
           schema:
-            type: string
+            $ref: '#/components/schemas/TankoubonId'
         - name: archive
           in: path
           required: true
           description: ID of the Archive to append.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       responses:
         '200':
           description: Success response
@@ -4208,15 +4908,13 @@ paths:
           required: true
           description: ID of the Tankoubon to update.
           schema:
-            type: string
+            $ref: '#/components/schemas/TankoubonId'
         - name: archive
           in: path
           required: true
           description: ID of the Archive to remove.
           schema:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       responses:
         '200':
           description: Result
@@ -4376,13 +5074,14 @@ paths:
           description: Review status filter (default new).
       responses:
         '200':
-          description: List of cover duplicate pairs
+          description: List of cover duplicate pairs, each with a generation token required for review updates.
       x-mojo-to: 'api-coverduplicates#pairs'
     delete:
       security:
         - api_key: []
       operationId: deleteCoverDuplicatePair
       summary: Mark a cover pair as not-a-duplicate
+      description: Requires the generation returned when the pair was listed; reload the queue on 409.
       tags: [Misc]
       requestBody:
         required: true
@@ -4395,9 +5094,17 @@ paths:
                 pair:
                   type: string
                   example: "abc...|def..."
+                generation:
+                  type: string
+                  minLength: 1
+                  description: Required current pair generation; absent or stale values return 409.
       responses:
         '200':
           description: Pair dismissed
+        '404':
+          description: Pair no longer exists
+        '409':
+          description: Pair generation is absent or stale; reload the queue before reviewing
       x-mojo-to: 'api-coverduplicates#delete_pair'
   /duplicates/cover/review-events:
     get:
@@ -4446,16 +5153,57 @@ paths:
         requeues itself to run the cover candidate sweep and top up the
         cover-specific deck (LRR_COVER_DUPLICATE_PAIRS).
       tags: [Misc]
+      parameters:
+        - in: query
+          name: threshold
+          schema: { type: integer, minimum: 0, maximum: 64 }
+        - in: query
+          name: retry_failed
+          schema: { type: integer, enum: [0, 1], default: 0 }
+          description: Retry failed cover computations once before the sweep.
       responses:
         '200':
           description: Rebuild result with stored count and deck state
       x-mojo-to: 'api-coverduplicates#rebuild'
+  /duplicates/cover/verify:
+    post:
+      security:
+        - api_key: []
+      operationId: verifyCoverDuplicateContent
+      summary: Verify image bytes for a bounded batch of cover candidates
+      description: >-
+        Streams SHA-256 image manifests in a background job. Equal manifests
+        include repeated images but do not compare reading order or non-image
+        metadata. Never deletes archives or changes human review labels.
+      tags: [Misc]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pairs]
+              properties:
+                pairs:
+                  type: array
+                  minItems: 1
+                  maxItems: 24
+                  items:
+                    type: string
+                    pattern: '^[0-9a-fA-F]{40}\|[0-9a-fA-F]{40}$'
+      responses:
+        '200':
+          description: Verification job queued
+        '400':
+          description: Invalid pair batch
+      x-mojo-to: 'api-coverduplicates#verify'
   /duplicates/cover/status:
     post:
       security:
         - api_key: []
       operationId: updateCoverDuplicateStatus
       summary: Update review status for a cover pair
+      description: Requires the generation returned when the pair was listed; reload the queue on 409.
       tags: [Misc]
       requestBody:
         required: true
@@ -4468,6 +5216,10 @@ paths:
                 pair:
                   type: string
                   example: "abc...|def..."
+                generation:
+                  type: string
+                  minLength: 1
+                  description: Required current pair generation; absent or stale values return 409.
                 status:
                   type: string
                   enum: [new, same_cover, variant, not_duplicate, needs_review, resolved]
@@ -4497,6 +5249,10 @@ paths:
                   warning:
                     type: string
                     description: Present when the status committed but event logging failed.
+        '404':
+          description: Pair no longer exists
+        '409':
+          description: Pair generation is absent or stale; reload the queue before reviewing
         '400':
           description: Invalid pair identifier or review status
           content:
@@ -4682,6 +5438,9 @@ components:
         cache_last_cleared:
           type: integer
           description: Timestamp for last time the search cache was wiped
+        restart_required:
+          type: boolean
+          description: Whether LRR needs a restart
         excluded_namespaces:
           type: array
           items:
@@ -4698,6 +5457,7 @@ components:
         server_resizes_images: false
         server_tracks_progress: true
         authenticated_progress: false
+        restart_required: false
         total_archives: 104
         total_pages_read: 252
         version: 0.9.30
@@ -4749,6 +5509,19 @@ components:
         login_from:
           type: [string, "null"]
           description: Namespace of the login plugin this plugin depends on
+        registry:
+          type: [string, "null"]
+          description: Registry ID the plugin was installed from, or null if not registry-managed
+        sha256:
+          type: [string, "null"]
+          description: SHA-256 recorded for the installed artifact, or null if not registry-managed
+        origin:
+          type: string
+          description: Where the installed plugin came from.
+          enum:
+            - builtin
+            - sideloaded
+            - managed
       example:
         author: Difegue
         description: Searches chaika.moe for tags matching your archive.
@@ -4757,6 +5530,7 @@ components:
         namespace: trabant
         oneshot_arg: Chaika Gallery or Archive URL (Will attach matching tags to your archive)
         type: metadata
+        origin: builtin
         version: '2.1'
         parameters:
           - desc: ipb_pass_hash cookie
@@ -4902,12 +5676,8 @@ components:
           type: string
           description: Unique identifier for the archive (40-char SHA1) or tankoubon (15-char TANK_* ID)
           oneOf:
-            - minLength: 40
-              maxLength: 40
-              pattern: "^[0-9a-f]{40}$"
-            - minLength: 15
-              maxLength: 15
-              pattern: "^TANK_[0-9]{10}$"
+            - $ref: '#/components/schemas/ArchiveId'
+            - $ref: '#/components/schemas/TankoubonId'
         title:
           type: string
           description: Title of the archive
@@ -4950,6 +5720,11 @@ components:
           enum:
             - "auto"
             - "pair2"
+        adaptiveoffset_enabled:
+          type: integer
+          enum: [0, 1]
+          description: Shared worker enabled; use adaptiveoffset instead of legacy inferred metadata.
+
         firstspreadstart:
           type: [string, "null"]
           description: Detected or reader-confirmed first spread anchor for adaptive double-page spread starts
@@ -5004,17 +5779,11 @@ components:
           items:
             type: string
             oneOf:
-              - minLength: 40
-                maxLength: 40
-                pattern: "^[0-9a-f]{40}$"
-              - minLength: 15
-                maxLength: 15
-                pattern: "^TANK_[0-9]{10}$"
+              - $ref: '#/components/schemas/ArchiveId'
+              - $ref: '#/components/schemas/TankoubonId'
         id:
-          type: string
           description: ID of the category
-          minLength: 14
-          maxLength: 14
+          $ref: '#/components/schemas/CategoryId'
         name:
           type: string
           description: Name of the category
@@ -5042,7 +5811,7 @@ components:
         - id
       properties:
         id:
-          type: string
+          $ref: '#/components/schemas/TankoubonId'
           description: ID of the tankoubon
         name:
           type: string
@@ -5057,9 +5826,7 @@ components:
           type: array
           description: Array of archive IDs
           items:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         progress:
           type: integer
           description: Reading progress (page number) for this Tankoubon
@@ -5070,7 +5837,7 @@ components:
         tags: ""
         archives:
           - e69e43e1355267f7d32a4f9b7f2fe108d2401ebf
-          - e69e43e1355267f7d32a4f9b7f2fe108d2401ebg
+          - e69e43e1355267f7d32a4f9b7f2fe108d2401eba
         progress: 0
     TankoubonBackupJson:
       type: object
@@ -5079,7 +5846,7 @@ components:
         - tankid
       properties:
         tankid:
-          type: string
+          $ref: '#/components/schemas/TankoubonId'
           description: ID of the tankoubon
         name:
           type: string
@@ -5094,15 +5861,13 @@ components:
           type: array
           description: Array of archive IDs
           items:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
       example:
         tankid: TANK_1749925516
         name: sailor moon
         archives:
           - e69e43e1355267f7d32a4f9b7f2fe108d2401ebf
-          - e69e43e1355267f7d32a4f9b7f2fe108d2401ebg
+          - e69e43e1355267f7d32a4f9b7f2fe108d2401eba
     BackupArchiveMetadataJson:
       type: object
       description: JSON object for archive metadata in as returned in a backup
@@ -5114,9 +5879,7 @@ components:
         - filename
       properties:
         arcid:
-          type: string
-          minLength: 40
-          maxLength: 40
+          $ref: '#/components/schemas/ArchiveId'
           description: Unique identifier for the archive
         title:
           type: string
@@ -5157,14 +5920,10 @@ components:
           type: array
           description: Array of archive IDs
           items:
-            type: string
-            minLength: 40
-            maxLength: 40
+            $ref: '#/components/schemas/ArchiveId'
         catid:
-          type: string
           description: ID of the category
-          minLength: 14
-          maxLength: 14
+          $ref: '#/components/schemas/CategoryId'
         name:
           type: string
           description: Name of the category
@@ -5197,5 +5956,98 @@ components:
           type: array
           items:
             type: string
+    ArchiveId:
+      type: string
+      minLength: 40
+      maxLength: 40
+      pattern: "^[0-9a-f]{40}$"
+      description: Unique identifier for an archive (40-char SHA1)
+      example: "d07ff399dddb25a0408385bc75b9ba52709fe2c1"
+    TankoubonId:
+      type: string
+      minLength: 15
+      maxLength: 15
+      pattern: "^TANK_[0-9]{10}$"
+      description: Unique identifier for a tankoubon (15-char TANK_* ID)
+      example: "TANK_1749925516"
+    CategoryId:
+      type: string
+      minLength: 14
+      maxLength: 14
+      pattern: "^SET_[0-9]{10}$"
+      description: Unique identifier for a category (14-char SET_* ID)
+      example: "SET_1613080290"
+    RegistryMetadata:
+      type: object
+      description: Registry configuration with ID.
+      required:
+        - id
+        - name
+        - provider
+        - created
+        - updated
+      properties:
+        id:
+          type: string
+          description: Registry ID.
+          minLength: 14
+          maxLength: 14
+        name:
+          type: string
+          minLength: 1
+          description: User-friendly alias for this registry.
+        provider:
+          type: string
+          enum:
+            - github
+            - gitea
+            - cdn
+            - local
+          description: Registry source provider.
+        created:
+          type: integer
+          description: Unix timestamp of registry creation.
+        updated:
+          type: integer
+          description: Unix timestamp of last update.
+        url:
+          type: string
+          format: uri
+          pattern: "^https?://"
+          description: |
+            Registry URL. HTTPS git repository URL for git providers (github, gitea),
+            or http://-or-https:// CDN base URL for 'cdn'.
+        ref:
+          type: string
+          minLength: 1
+          description: Git ref (branch, tag, or commit). Present for git providers.
+        path:
+          type: string
+          minLength: 1
+          pattern: '^(/|[A-Za-z]:[\\/]|\\\\)'
+          description: Local filesystem path to the registry. Present when provider is 'local'. Always absolute.
+      allOf:
+        - if:
+            required:
+              - provider
+            properties:
+              provider:
+                enum:
+                  - github
+                  - gitea
+          then:
+            properties:
+              url:
+                pattern: "^https://"
+        - if:
+            required:
+              - provider
+            properties:
+              provider:
+                const: github
+          then:
+            properties:
+              url:
+                pattern: '^https://github\.com/[^/]+/[^/]+'
 servers:
   - url: https://lrr.tvc-16.science/api

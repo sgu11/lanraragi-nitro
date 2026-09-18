@@ -35,6 +35,8 @@ sub pairs {
     my $status = $req->param('status');
     $status = (defined $status && length $status) ? $status : 'new';
     $limit = 200 if $limit > 200;
+    $limit = 1 if $limit < 1;
+    $offset = 0 if $offset < 0;
     $min_confidence = defined $min_confidence && length $min_confidence ? $min_confidence + 0 : undef;
 
     # Explicit max_score overrides preset (REST convention).
@@ -77,6 +79,7 @@ sub pairs {
             my ($member, $reply) = @$r;
             my $json = ($reply && ref $reply eq 'ARRAY' && $reply->[0]) ? $reply->[0] : '{}';
             $meta_cache{$member} = eval { decode_json($json) } // {};
+            $meta_cache{$member} = {} unless ref $meta_cache{$member} eq 'HASH';
         }
     }
 
@@ -90,7 +93,7 @@ sub pairs {
         push @filtered_tuples, $t;
     }
     my $filtered_total = scalar @filtered_tuples;
-    my @pair_tuples = splice @filtered_tuples, $offset, $limit;
+    my @pair_tuples = $offset < @filtered_tuples ? splice(@filtered_tuples, $offset, $limit) : ();
 
     my %seen_ids;
     for my $t (@pair_tuples) {
@@ -131,9 +134,11 @@ sub pairs {
             pass             => $meta->{pass} // 'pcount',
             relation         => $meta->{relation},
             confidence       => $meta->{confidence},
-            suggested_action => $meta->{suggested_action},
-            suggested_delete => $meta->{suggested_delete},
-            suggested_keep   => $meta->{suggested_keep},
+            # Also neutralize unsafe recommendations persisted by older
+            # classifier versions; no rescan/migration is needed for safety.
+            suggested_action => 'review',
+            suggested_delete => undef,
+            suggested_keep   => ($meta->{relation} // '') eq 'translation_variant' ? $meta->{suggested_keep} : undef,
             risk_flags       => $meta->{risk_flags} // [],
             lead_hamming     => $meta->{lead_hamming},
             title_score      => $meta->{title_score},

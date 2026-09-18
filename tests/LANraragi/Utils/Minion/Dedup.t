@@ -51,7 +51,7 @@ package CoverRebuildRedis {
     }
     sub hgetall {
         my ($self, $key) = @_;
-        return (cover_algo_version => 1) if $key eq 'LRR_DEDUP_CONFIG';
+        return (cover_algo_version => 1) if $key eq 'LRR_COVER_DEDUP_CONFIG';
         return ();
     }
     sub quit { 1 }
@@ -97,6 +97,22 @@ sub reset_cover_rebuild_state {
     $CoverRebuildTestData::cover_state_hmget_calls = 0;
     $CoverRebuildTestData::wait_all_responses_calls = 0;
 }
+
+# These task-orchestration tests mock only the atomic lease primitive. The Lua
+# itself runs against a disposable Redis in DedupLease.t.
+my $lease_mod = Test::MockModule->new('LANraragi::Utils::Minion::Dedup');
+$lease_mod->redefine('_claim_coverhash_inflight', sub {
+    my ($redis, $id) = @_;
+    return if LANraragi::Utils::Minion::Dedup::_coverhash_inflight_fresh($redis, $id);
+    my $token = time() . ':test';
+    $redis->hset('LRR_COVER_HASH_INFLIGHT', $id, $token);
+    return $token;
+});
+$lease_mod->redefine('_clear_coverhash_inflight', sub {
+    my ($redis, $id, $token) = @_;
+    return unless defined $token && $redis->hget('LRR_COVER_HASH_INFLIGHT', $id) eq $token;
+    $redis->hdel('LRR_COVER_HASH_INFLIGHT', $id);
+});
 
 my $config_mod = Test::MockModule->new('LANraragi::Model::Config');
 $config_mod->redefine('get_minion', sub { CoverRebuildMinion->new });
@@ -170,6 +186,8 @@ reset_cover_rebuild_state();
 {
     $CoverRebuildTestData::hash{id1}{coverhash_v} = '1';
     $CoverRebuildTestData::hash{id2}{coverhash_v} = '1';
+    $CoverRebuildTestData::hash{id1}{coverhash} = '0' x 16;
+    $CoverRebuildTestData::hash{id2}{coverhash} = 'f' x 16;
     my $job = CoverRebuildJob->new;
     LANraragi::Utils::Minion::Dedup::_run_find_cover_duplicates_isolated(
         $job,
@@ -182,6 +200,26 @@ reset_cover_rebuild_state();
     is(scalar @CoverRebuildTestData::enqueued, 0, "no unnecessary jobs enqueued");
     is($job->{finished}{sweep_deferred}, 0, "job reports completed sweep");
     is($job->{finished}{stored}, 1, "sweep result returned");
+}
+
+note("explicit refresh retries failed hashes once without an infinite retry chain");
+reset_cover_rebuild_state();
+{
+    $CoverRebuildTestData::hash{id1}{coverhash_err} = '1:list_failed';
+    $CoverRebuildTestData::hash{id2}{coverhash_v} = '1';
+    $CoverRebuildTestData::hash{id2}{coverhash} = 'f' x 16;
+    my $job = CoverRebuildJob->new;
+    LANraragi::Utils::Minion::Dedup::_run_find_cover_duplicates_isolated(
+        $job, CoverRebuildRedis->new, CoverRebuildRedis->new, 0, 1);
+    is($job->{finished}{enqueued}, 1, 'explicit retry queues only the failed archive');
+    ok(!defined $CoverRebuildTestData::hash{id1}{coverhash_err}, 'retry clears the failure sentinel before follow-up readiness checks');
+    is_deeply($CoverRebuildTestData::enqueued[-1][1], [0], 'follow-up retains zero threshold but does not repeat the retry flag');
+    ok($job->{finished}{next_job}, 'follow-up job ID is observable');
+    $CoverRebuildTestData::hash{id1}{coverhash_err} = '1:list_failed';
+    $job = CoverRebuildJob->new;
+    LANraragi::Utils::Minion::Dedup::_run_find_cover_duplicates_isolated(
+        $job, CoverRebuildRedis->new, CoverRebuildRedis->new, 0);
+    ok(!$job->{finished}{sweep_deferred}, 'repeat failure terminates the retry cycle');
 }
 
 note("compute_coverhash clears the in-flight marker when the job finishes");

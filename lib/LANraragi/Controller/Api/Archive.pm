@@ -7,6 +7,7 @@ use Config;
 use Encode;
 use Storable;
 use Scalar::Util qw(looks_like_number);
+use Mojo::JSON qw(decode_json);
 
 use File::Temp qw(tempdir tmpnam);
 use File::Basename;
@@ -15,6 +16,7 @@ use LANraragi::Utils::Generic  qw(render_api_response is_archive get_bytelength 
 use LANraragi::Utils::Database qw(get_archive_json set_isnew);
 use LANraragi::Utils::Logging  qw(get_logger);
 use LANraragi::Utils::PageSide qw(store_user_first_spread_start);
+use LANraragi::Utils::AdaptiveOffsetState;
 use LANraragi::Utils::Redis    qw(redis_encode);
 use LANraragi::Utils::Path     qw(compat_path get_archive_path move_path);
 
@@ -27,6 +29,8 @@ use LANraragi::Utils::Tachiyomi qw(
 use LANraragi::Model::Archive;
 use LANraragi::Model::Category;
 use LANraragi::Model::Config;
+use LANraragi::Model::Dedup::CoverIndex;
+use LANraragi::Model::Dedup::ReviewLog;
 use LANraragi::Model::Reader;
 
 use constant IS_UNIX => ( $Config{osname} ne 'MSWin32' );
@@ -67,6 +71,7 @@ sub serve_metadata {
     $redis->quit;
 
     if ($arcdata) {
+        $arcdata->{adaptiveoffset_enabled} = LANraragi::Utils::AdaptiveOffsetState::enabled() ? 1 : 0;
         if ($tachiyomi) {
             set_tachiyomi_metadata_cache( $id, $arcdata );
             enqueue_tachiyomi_filelist_warm( $self, $id );
@@ -80,6 +85,18 @@ sub serve_metadata {
     } else {
         render_api_response( $self, "metadata", "This ID doesn't exist on the server." );
     }
+}
+
+sub serve_adaptiveoffset {
+    my $self = shift->openapi->valid_input or return;
+    my $redis = $self->LRR_CONF->get_redis;
+    my $result = eval { LANraragi::Utils::AdaptiveOffsetState::read_state($redis, $self->stash('id'), 1) };
+    $redis->quit;
+    $result //= {status => 'error'};
+    my $code = $result->{status} eq 'error' ? 503 : $result->{status} eq 'pending' ? 202 : 200;
+    $self->res->headers->cache_control('no-store');
+    $self->res->headers->header('Retry-After' => 2) if $code != 200;
+    $self->render(status => $code, openapi => $result);
 }
 
 # Find which categories this ID is saved in.
@@ -359,6 +376,15 @@ sub clear_new {
 sub delete_archive {
     my $self = shift->openapi->valid_input or return;
     my $id   = $self->stash('id');
+    my $pair = $self->req->param('cover_pair');
+    my $generation = $self->req->param('cover_generation');
+    my $conditional = defined $pair || defined $generation;
+    if ($conditional) {
+        $pair = LANraragi::Model::Dedup::ReviewLog::canonical_pair($pair);
+        return $self->render(status => 400, json => { error => 'Provide cover_pair containing this archive and cover_generation together' })
+            unless defined $pair && grep({ $_ eq $id } split /\|/, $pair)
+                && defined $generation && length($generation) && length($generation) <= 128;
+    }
 
     return unless exec_with_lock(
         $self,
@@ -366,6 +392,18 @@ sub delete_archive {
         "delete_archive",
         $id,
         sub {
+            # Upload replacement uses the same archive-write lock. Recheck the
+            # displayed pair after acquiring it, before any file/metadata delete.
+            if ($conditional) {
+                my $redis_cfg = LANraragi::Model::Config->get_redis_config;
+                my $exists = defined $redis_cfg->zscore(LANraragi::Model::Dedup::CoverIndex::PAIR_KEY(), $pair);
+                my $raw = $redis_cfg->hget(LANraragi::Model::Dedup::CoverIndex::PAIR_META_KEY(), $pair);
+                $redis_cfg->quit;
+                return $self->render(status => 404, json => { error => 'Pair is no longer available' }) unless $exists;
+                my $meta = eval { decode_json($raw // '{}') };
+                return $self->render(status => 409, json => { error => 'Pair changed; reload the review queue' })
+                    unless ref $meta eq 'HASH' && ($meta->{generation} // '') eq $generation;
+            }
             my $delStatus = LANraragi::Model::Archive::delete_archive($id);
 
             $self->render(

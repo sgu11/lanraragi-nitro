@@ -36,3 +36,16 @@ test("theme inventory replaces the experimental theme with Catppuccin OLED", asy
     assert.match(generic, /"catppuccin-mocha\.css"\s*\).*"Catppuccin Mocha",\s*"#1E1E2E"/);
     assert.match(generic, /"catppuccin-oled\.css"\s*\).*"Catppuccin OLED",\s*"#000000"/);
 });
+
+test("index display options has a distinct accessible name from global settings", async () => {
+    const indexTemplate = await source("templates/index.html.tt2");
+    const english = await source("locales/template/en.po");
+    const korean = await source("locales/template/ko.po");
+
+    assert.match(
+        indexTemplate,
+        /id="settings-menu"[^>]*aria-label="\[% c\.lh\('Index display options'\) %\]"[^>]*title="\[% c\.lh\('Index Settings'\) %\]"/,
+    );
+    assert.match(english, /msgid "Index display options"\nmsgstr "Index display options"/);
+    assert.match(korean, /msgid "Index display options"\nmsgstr "인덱스 표시 옵션"/);
+});

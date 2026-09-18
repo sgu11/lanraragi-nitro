@@ -18,80 +18,10 @@ test("thumbnail cards mark archive images as lazy", async () => {
     assert.match(js, /loading="lazy" src="\$\{thumbSrc\}"/);
 });
 
-test("reader Blob URL preloading dedupes in-flight fetches and revokes evicted URLs", async () => {
-    const js = await source("public/js/mod/reader_common.js");
-    const pruneStart = js.indexOf("function prunePreloadedImages()");
-    const pruneEnd = js.indexOf("function revokePreloadedImages()", pruneStart);
-    const prunePreloadedImages = js.slice(pruneStart, pruneEnd);
+// Scheduling, direction, pixel budgets and decode reuse are covered by the
+// behavioral reader-preload-window/queue and reader-image-loader tests.
 
-    assert.match(js, /const MIN_PRELOADED_IMAGES = 8;/);
-    assert.match(prunePreloadedImages, /const forwardWindow = configuredPreloadCount \* pageFactor;/);
-    assert.match(prunePreloadedImages, /const backwardWindow = configuredPreloadCount === 0 \? 0 : pageFactor;/);
-    assert.match(prunePreloadedImages, /forwardWindow \+ backwardWindow \+ displayedWindow/);
-    assert.match(js, /preloadedPromises/);
-    assert.match(js, /URL\.revokeObjectURL/);
-    assert.match(prunePreloadedImages, /const displayedSources = new Set/);
-    assert.match(prunePreloadedImages, /!displayedSources\.has\(loadedSrc\)/);
-    assert.match(prunePreloadedImages, /if \(evictIndex === -1\) \{ break; \}/);
-    assert.doesNotMatch(prunePreloadedImages, /evictIndex === -1 \? 0 : evictIndex/);
-});
-
-test("reader byte-only Blob preloading fetches bytes without constructing or decoding an Image", async () => {
-    const js = await source("public/js/mod/reader_common.js");
-    const helperStart = js.indexOf("async function preloadBlobBytes(index, src)");
-    const helperEnd = js.indexOf("async function preloadBlobBytesWithFallback", helperStart);
-    const byteOnlyHelper = js.slice(helperStart, helperEnd);
-
-    assert.notEqual(helperStart, -1);
-    assert.notEqual(helperEnd, -1);
-    assert.match(byteOnlyHelper, /preloadedPromises\[src\] = fetch\(src\)/);
-    assert.match(byteOnlyHelper, /preloadedSizes\[index\] = parseInt/);
-    assert.match(byteOnlyHelper, /const blob = await res\.blob\(\)/);
-    assert.match(byteOnlyHelper, /touchPreloadedImage\(src\)/);
-    assert.match(byteOnlyHelper, /return \{ src: preloadedImg\[src\] \};/);
-    assert.doesNotMatch(byteOnlyHelper, /new Image\(\)|decodeImage\(|new Promise|naturalWidth|naturalHeight|probe/);
-});
-
-test("reader Blob preloading finishes immediate predecode before materializing distant pages", async () => {
-    const js = await source("public/js/mod/reader_common.js");
-    const preloadStart = js.indexOf("function preloadImages()");
-    const preloadEnd = js.indexOf("function touchPreloadedImage", preloadStart);
-    const preloadImages = js.slice(preloadStart, preloadEnd);
-
-    assert.notEqual(preloadStart, -1);
-    assert.notEqual(preloadEnd, -1);
-    assert.match(preloadImages, /const preloadStrategy = getReaderPreloadStrategy\(\);/);
-    assert.match(preloadImages, /const predecodeTasks = \[\];/);
-    assert.match(preloadImages, /const deferredBlobIndexes = \[\];/);
-    assert.match(preloadImages, /if \(predecodeIndexes\.has\(index\)\) \{[\s\S]*loadImage\(index\)[\s\S]*decodeImage\(loadedImage\)/);
-    assert.match(preloadImages, /predecodeTasks\.push\(predecodeTask\)/);
-    assert.match(preloadImages, /else if \(preloadStrategy === "blob"\) \{\s*deferredBlobIndexes\.push\(index\)/);
-    assert.match(preloadImages, /if \(preloadStrategy === "blob"\) \{\s*deferredBlobIndexes\.push\(index\)/);
-    assert.match(preloadImages, /Promise\.allSettled\(predecodeTasks\)\.then\(preloadDeferredBlobs\)/);
-    assert.match(preloadImages, /preloadBlobBytesWithFallback\(index\)\.catch/);
-    assert.match(preloadImages, /else \{\s*loadImage\(index\)\.catch\(\(\) => \{\}\);\s*\}/);
-});
-
-test("reader predecodes two forward spreads on high-memory clients without repeating completed decodes", async () => {
-    const js = await source("public/js/mod/reader_common.js");
-    const preloadStart = js.indexOf("function preloadImages()");
-    const preloadEnd = js.indexOf("function touchPreloadedImage", preloadStart);
-    const decodeStart = js.indexOf("async function decodeImage(loadedImage)");
-    const decodeEnd = js.indexOf("function getReaderPreloadStrategy", decodeStart);
-    const preloadImages = js.slice(preloadStart, preloadEnd);
-    const decodeImage = js.slice(decodeStart, decodeEnd);
-
-    assert.match(js, /const MAX_PREDECODED_IMAGES = Number\(navigator\.deviceMemory\) >= 8 \? 4 : 2;/);
-    assert.match(preloadImages, /const forwardStart = nextDisplayWindow\?\.start \?\? currentPage \+ 1;/);
-    assert.match(preloadImages, /const configuredPredecodeCount = localStorage\.getItem\("readerPredecodeCount"\);/);
-    assert.match(preloadImages, /Math\.max\(0, Math\.min\(MAX_PREDECODED_IMAGES, requestedPredecodeCount\)\)/);
-    assert.match(preloadImages, /for \(let offset = 0; offset < preloadNext; offset\+\+\)/);
-    assert.match(preloadImages, /if \(predecodeIndexes\.size >= predecodeCount\) \{ break; \}/);
-    assert.match(decodeImage, /delete predecodedPromises\[src\];[\s\S]*throw error;/);
-    assert.doesNotMatch(decodeImage, /\.finally\(\(\) => \{\s*delete predecodedPromises\[src\];/);
-});
-
-test("reader moves decoded image objects into the display instead of assigning their URLs again", async () => {
+test("reader delegates decoded image placement to the shared slot owner", async () => {
     const js = await source("public/js/mod/reader_common.js");
     const displayStart = js.indexOf("function displayDecodedImage");
     const displayEnd = js.indexOf("export async function goToPage", displayStart);
@@ -100,65 +30,34 @@ test("reader moves decoded image objects into the display instead of assigning t
     const displayDecodedImage = js.slice(displayStart, displayEnd);
     const goToPage = js.slice(goStart, goEnd);
 
-    assert.match(displayDecodedImage, /displayedImage\.replaceWith\(decodedImage\)/);
-    assert.match(displayDecodedImage, /decodedImage\.dataset\.filename = filename/);
+    assert.match(js, /import \{ replaceReaderImages \} from "lrr-reader-display"/);
+    assert.match(displayDecodedImage, /replaceReaderImages\(updates,/);
+    assert.match(displayDecodedImage, /selector: "#img_doublepage", image: emptyImage/);
     assert.match(goToPage, /const \[decodedImg1, decodedImg2\] = await Promise\.all/);
-    assert.match(goToPage, /displayDecodedImage\("#img", decodedImg2, img2Filename\)/);
-    assert.match(goToPage, /clearDisplayedImage\("#img_doublepage"\)/);
+    assert.match(goToPage, /displayDecodedImages\(\[\s*\{ selector: "#img", image: mangaMode \? decodedImg2 : decodedImg1,[\s\S]*selector: "#img_doublepage", image: mangaMode \? decodedImg1 : decodedImg2/);
+    assert.match(goToPage, /displaySingleImage\(decodedImg, imgFilename\)/);
     assert.doesNotMatch(goToPage, /\$\("#img"\)\.attr\("src", img/);
 });
 
-test("reader passes its loaded probe directly to display decoding", async () => {
+test("reader passes its loaded probe to the image loader and display", async () => {
     const js = await source("public/js/mod/reader_common.js");
-    const decodeStart = js.indexOf("async function decodeImage(loadedImage)");
-    const decodeEnd = js.indexOf("function getReaderPreloadStrategy", decodeStart);
-    const blobStart = js.indexOf("async function preloadImageWithBlobUrl(index, src)");
-    const blobEnd = js.indexOf("async function preloadImageWithBrowserCache", blobStart);
-    const byteStart = js.indexOf("async function preloadBlobBytes(index, src)");
-    const byteEnd = js.indexOf("async function preloadBlobBytesWithFallback", byteStart);
-    const browserStart = blobEnd;
-    const browserEnd = js.indexOf("function toggleFitMode", browserStart);
-    const decodeImage = js.slice(decodeStart, decodeEnd);
-    const blobPreload = js.slice(blobStart, blobEnd);
-    const bytePreload = js.slice(byteStart, byteEnd);
-    const browserPreload = js.slice(browserStart, browserEnd);
-
     assert.match(js, /const probeResults = await Promise\.all/);
     assert.match(js, /const probedImages = new Map/);
     assert.match(js, /probedImages\.get\(displayStart\) \|\| await loadImage\(displayStart\)/);
-    assert.match(decodeImage, /const src = typeof loadedImage === "string" \? loadedImage : loadedImage\?\.src;/);
-    assert.match(decodeImage, /const loadedCandidate = typeof loadedImage === "object" \? loadedImage\.image : null;/);
-    assert.match(decodeImage, /const img = loadedCandidate \|\| new Image\(\);/);
-    assert.match(decodeImage, /if \(loadedCandidate\) predecodedPromises\[src\] = Promise\.resolve\(img\);/);
-    assert.match(blobPreload, /loadedImage = probe;/);
-    assert.match(blobPreload, /const loaded = await preloadBlobBytes\(index, src\);/);
-    assert.match(blobPreload, /return \{ src: loaded\.src, image: loadedImage \};/);
-    assert.match(bytePreload, /return \{ src: preloadedImg\[src\] \};/);
-    assert.match(browserPreload, /resolve\(\{ src, image: img \}\);/);
+    assert.match(js, /return imageLoader\.decode\(loadedImage\);/);
     assert.match(js, /return \{ src, image: displayedImage \};/);
-    assert.doesNotMatch(js, /loadedImageCandidates|rememberLoadedImageCandidate|takeLoadedImageCandidate/);
 });
 
-test("reader crop preload falls back to the original page when the crop response fails", async () => {
+test("reader crop fallback preserves cancellation and Blob ownership", async () => {
     const js = await source("public/js/mod/reader_common.js");
-    const loadStart = js.indexOf("async function loadImage(index)");
-    const loadEnd = js.indexOf("async function preloadImageWithBlobUrl", loadStart);
-    const loadImage = js.slice(loadStart, loadEnd);
-    const preloadStart = js.indexOf("async function preloadBlobBytes(index, src)");
-    const preloadEnd = js.indexOf("async function preloadBlobBytesWithFallback", preloadStart);
-    const preloadBlobBytes = js.slice(preloadStart, preloadEnd);
-
-    assert.notEqual(loadStart, -1);
-    assert.notEqual(loadEnd, -1);
-    assert.notEqual(preloadStart, -1);
-    assert.notEqual(preloadEnd, -1);
-    assert.match(loadImage, /const rawSrc = pages\[index\];/);
-    assert.match(loadImage, /const src = getReaderImageSource\(index\);/);
-    assert.match(loadImage, /displayedImage\.complete && displayedImage\.naturalWidth > 0/);
-    assert.match(loadImage, /try \{[\s\S]*preloadImageWithBlobUrl\(index, src\);[\s\S]*\} catch \(e\) \{/);
-    assert.match(loadImage, /if \(src !== rawSrc\) \{[\s\S]*const fallback = await preloadImageWithBlobUrl\(index, rawSrc\);[\s\S]*preloadedImg\[src\] = fallback\.src;[\s\S]*touchPreloadedImage\(src\);[\s\S]*return fallback;/);
-    assert.match(loadImage, /throw e;/);
-    assert.match(preloadBlobBytes, /if \(!res\.ok\) \{[\s\S]*throw new Error\(`HTTP \$\{res\.status\}`\);[\s\S]*\}[\s\S]*const blob = await res\.blob\(\);/);
+    const start = js.indexOf("async function loadImage(index,");
+    const end = js.indexOf("function toggleFitMode", start);
+    const loader = js.slice(start, end);
+    assert.match(loader, /if \(e.name === "AbortError"\) throw e;/);
+    assert.match(loader, /if \(error.name === "AbortError"\) throw error;/);
+    assert.match(loader, /return imageLoader\.alias\(src, fallback\);/);
+    assert.match(loader, /const fallback = await preloadImageWithBlobUrl\(index, rawSrc, priority\);/);
+    assert.match(loader, /displayedImage\.complete && displayedImage\.naturalWidth > 0/);
 });
 
 test("reader disabled progress tracking suppresses persistence while preserving stamps", async () => {
@@ -172,7 +71,9 @@ test("reader disabled progress tracking suppresses persistence while preserving 
     assert.match(js, /function updateSyncedReadingProgress\(page\)[\s\S]*if \(!ignoreProgress\) \{\s*scheduleProgressPersistence\(page\);\s*\} else \{\s*clearPendingProgressPersistence\(\);\s*\}/);
     assert.match(js, /function persistProgress\(page[\s\S]*Server\.updateServerSideProgress\(id, page[\s\S]*localStorage\.setItem\(`\$\{id\}-reader`, page\);[\s\S]*Server\.updateServerSideProgress\(id, page/);
     assert.match(updateProgress, /const displayWindow = getCurrentDisplayWindow\(\);\s*const syncedProgressPage = getSyncedReadingProgressPageForDisplayWindow\(displayWindow, pages\.length, page\);\s*commitReaderSessionPage\(page\);\s*updateSyncedReadingProgress\(syncedProgressPage\);/);
-    assert.match(updateProgress, /\/\/ Load stamps[\s\S]*loadStamps\(page\);/);
+    assert.match(updateProgress, /\/\/ Load stamps[\s\S]*loadStamps\(\);/);
+    assert.match(js, /const stampLayer = createReaderStamps\(\{\s*getState: \(\) => \(\{ displayWindow: pages\?\.length \? getCurrentDisplayWindow\(\) : null, mangaMode,/);
+    assert.match(js, /function loadStamps\(\) \{\s*return stampLayer\.refresh\(\);/);
     assert.ok(updateProgress.indexOf("updateSyncedReadingProgress(syncedProgressPage);") < updateProgress.indexOf("// Load stamps"));
 });
 
@@ -344,7 +245,7 @@ test("reader progress resume restores shifted double-page spread windows", async
     assert.match(loadImages, /requestedDisplayWindow = initialPage\.displayWindow \|\| null;[\s\S]*goToPage\(currentPage\)/);
 });
 
-test("reader Delete key confirms archive deletion before returning to library", async () => {
+test("reader Delete key confirms archive deletion before moving to the next archive", async () => {
     const js = await source("public/js/mod/reader_common.js");
     const shortcutStart = js.indexOf("function handleShortcuts(e)");
     const shortcutEnd = js.indexOf("function spaceScrollProcessInput(e)");
@@ -367,7 +268,11 @@ test("reader Delete key confirms archive deletion before returning to library", 
     assert.match(helper, /confirmButtonText: I18N\.ConfirmYes,/);
     assert.match(helper, /if \(result\.isConfirmed\) \{\s*deleteCurrentArchive\(\);\s*\}/);
     assert.match(js, /function returnToLibrary\(\) \{\s*document\.location\.href = "\.\/";\s*\}/);
-    assert.match(js, /Server\.deleteArchive\(id, returnToLibrary\);/);
+    assert.match(js, /function goToNextArchiveAfterDelete\(\)/);
+    assert.match(js, /Server\.deleteArchive\(id, goToNextArchiveAfterDelete,/);
+    assert.match(js, /Server\.deleteTankoubon\(id, goToNextArchiveAfterDelete,/);
+    assert.match(js, /callbackDelayMs: 0/);
+    assert.match(js, /window\.location\.replace\(new LRR\.ApiURL\(`\/reader\?id=\$\{nextArchiveId\}`\)/);
 });
 
 test("reader blank-border crop setting maps readahead URLs and exposes k shortcut", async () => {

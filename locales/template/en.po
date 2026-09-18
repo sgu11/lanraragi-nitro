@@ -790,6 +790,9 @@ msgstr "Columns:"
 msgid "Index Settings"
 msgstr "Index Settings"
 
+msgid "Index display options"
+msgstr "Index display options"
+
 msgid "Display Mode"
 msgstr "Display Mode"
 
@@ -1470,6 +1473,9 @@ msgstr "Saved!"
 
 msgid "Error saving data"
 msgstr "Error saving data"
+
+msgid "Select at least one archive."
+msgstr "Select at least one archive."
 
 msgid "Started Batch Operation..."
 msgstr "Started Batch Operation..."
@@ -2286,3 +2292,41 @@ msgstr "Archive missing"
 msgid "Refresh the duplicate deck to remove this stale pair."
 msgstr "Refresh the duplicate deck to remove this stale pair."
 # ------End of P1 performance and UX additions (fork)------
+
+# Cover content verification (fork)
+
+msgid "Verify queue image bytes"
+msgstr "Verify queue image bytes"
+
+msgid "Cover similarity does not prove duplicate content. Verification compares every image byte, including repeated images; page order and non-image metadata are not checked. Nothing is deleted automatically."
+msgstr "Cover similarity does not prove duplicate content. Verification compares every image byte, including repeated images; page order and non-image metadata are not checked. Nothing is deleted automatically."
+
+msgid "Same image bytes; order not checked"
+msgstr "Same image bytes; order not checked"
+
+msgid "Image bytes differ; visual variants may still match"
+msgstr "Image bytes differ; visual variants may still match"
+
+msgid "Content verification unavailable; review manually"
+msgstr "Content verification unavailable; review manually"
+
+msgid "Cover evidence only; content not verified"
+msgstr "Cover evidence only; content not verified"
+
+msgid "Page counts differ"
+msgstr "Page counts differ"
+
+msgid "Languages differ"
+msgstr "Languages differ"
+
+msgid "Review saved with a warning"
+msgstr "Review saved with a warning"
+
+msgid "Sliding page transitions"
+msgstr "Sliding page transitions"
+
+msgid "Slide duration"
+msgstr "Slide duration"
+
+msgid "Click duration; touch uses this value as spring response time, not a fixed completion time. Single and double pages only."
+msgstr "Click duration; touch uses this value as spring response time, not a fixed completion time. Single and double pages only."

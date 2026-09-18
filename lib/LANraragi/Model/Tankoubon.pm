@@ -142,8 +142,6 @@ sub create_tankoubon ( $name, $tank_id ) {
             }
         }
 
-        # Track in the LRR_TANKS maintained set (B.3).
-        $redis->sadd( "LRR_TANKS", $tank_id );
     } else {
 
         # Get name
@@ -154,6 +152,10 @@ sub create_tankoubon ( $name, $tank_id ) {
             $redis->zrem( $tank_id, $n );
         }
     }
+
+    # Restore IDs must remain visible even when the maintained set already contains other tankoubons.
+    $redis->sadd( "LRR_TANKS", $tank_id );
+
     # Encode name
     $name = redis_encode( $name );
 
@@ -490,7 +492,13 @@ sub add_to_tankoubon ( $tank_id, $arc_id ) {
             return ( 1, $err );
         }
 
-        my $score = $redis->zcard($tank_id);
+        # Append after the last member, independently of metadata count and
+        # legacy score offsets. Bulk updates number members from one.
+        my $count = $redis->zcount( $tank_id, 1, "+inf" );
+        my @last = $count
+          ? $redis->zrangebyscore( $tank_id, 1, "+inf", "WITHSCORES", "LIMIT", $count - 1, 1 )
+          : ();
+        my $score = @last ? $last[1] + 1 : 1;
 
         $redis->zadd( $tank_id, $score, $arc_id );
         $redis->quit;
@@ -542,6 +550,8 @@ sub remove_from_tankoubon ( $tank_id, $arcid ) {
             return ( 0, $err );
         }
 
+        my $position = $redis->zcount( $tank_id, 1, $score );
+
         # Get archive's tags before removal for index cleanup
         my $arc_tags_str = redis_decode( $redis->hget( $arcid, "tags" ) ) // "";
         my @arc_tags = split_tags_to_array($arc_tags_str);
@@ -565,10 +575,12 @@ sub remove_from_tankoubon ( $tank_id, $arcid ) {
             $redis->zadd( $tank_id, @update );
         }
 
-        if ( $redis->zcard($tank_id) == 1 ) {
+        if ( $redis->zcount( $tank_id, 1, "+inf" ) == 0 ) {
 
             # No elements in tank, remove it from search
-            $redis->srem( "LRR_TANKGROUPED", $tank_id );
+            my $redis_search = LANraragi::Model::Config->get_redis_search;
+            $redis_search->srem( "LRR_TANKGROUPED", $tank_id );
+            $redis_search->quit;
         }
 
         $redis->quit;
@@ -587,9 +599,7 @@ sub remove_from_tankoubon ( $tank_id, $arcid ) {
         # update_metadata_field( $tank_id, "progress", 0 );
 
         invalidate_cache();
-        # Subtract 3 from the score to exclude the metadata fields
-        # A bit brittle if we add more fields later...
-        return ( $score - 3, $err );
+        return ( $position, $err );
     }
 
     $err = "$tank_id doesn't exist in the database!";
@@ -721,11 +731,15 @@ sub set_tank_tags ( $tank_id, $newtags, $append = 0 ) {
     # Deduplicate tags
     $newtags = join_tags_to_string( uniq( split_tags_to_array($newtags) ) );
 
+    my $previous = get_tank_unified_tags($tank_id);
+    my @previous_tags = ( @{ $previous->{own_tags} }, @{ $previous->{imputed_tags} } );
+
     # Update search indexes
     update_indexes( $tank_id, $oldtags, $newtags );
 
     # Update the ZSET
     update_metadata_field( $tank_id, "tags", $newtags );
+    update_tank_imputed_indexes( $tank_id, \@previous_tags );
 
     invalidate_cache();
     return ( 1, "" );
@@ -739,6 +753,7 @@ sub set_tank_tags ( $tank_id, $newtags, $append = 0 ) {
 #   Returns: Hashref with:
 #     own_tags     => arrayref of tank's own tags (trimmed)
 #     imputed_tags => arrayref of archive tags, deduplicated, excluding own_tags
+#     excluded_tags => archive date tags suppressed by coalescing or own tags
 sub get_tank_unified_tags ( $tank_id, $archive_tags_list = undef ) {
     my $redis = LANraragi::Model::Config->get_redis;
 
@@ -782,6 +797,7 @@ sub get_tank_unified_tags ( $tank_id, $archive_tags_list = undef ) {
     # Parse archive tags, deduplicate, exclude own_tags
     my %seen;
     my @imputed_tags;
+    my @date_tags;
     foreach my $tags_str (@$archive_tags_list) {
         next unless defined $tags_str && $tags_str ne "";
         foreach my $t ( split( /,/, $tags_str ) ) {
@@ -792,6 +808,7 @@ sub get_tank_unified_tags ( $tank_id, $archive_tags_list = undef ) {
             # Handle date-type tags specially - track max value per namespace
             if ( $t =~ /^(date_added|timestamp):(\d+)$/i ) {
                 my ( $ns, $val ) = ( lc($1), $2 );
+                push @date_tags, $t;
                 if ( !exists $max_imputed_dates{$ns} || $val > $max_imputed_dates{$ns}{value} ) {
                     $max_imputed_dates{$ns} = { value => $val, tag => $t };
                 }
@@ -811,7 +828,9 @@ sub get_tank_unified_tags ( $tank_id, $archive_tags_list = undef ) {
         }
     }
 
-    return { own_tags => \@own_tags, imputed_tags => \@imputed_tags };
+    my %included = map { lc($_) => 1 } ( @own_tags, @imputed_tags );
+    my @excluded = grep { !$included{lc($_)} } uniq(@date_tags);
+    return { own_tags => \@own_tags, imputed_tags => \@imputed_tags, excluded_tags => \@excluded };
 }
 
 # update_tank_imputed_indexes(tank_id, removed_tags)
@@ -835,13 +854,15 @@ sub update_tank_imputed_indexes ( $tank_id, $removed_tags = undef ) {
     foreach my $tag (@all_tags) {
         my $encoded_tag = redis_encode( lc($tag) );
         $redis->sadd( "INDEX_" . $encoded_tag, $tank_id );
+        $redis->zadd( "LRR_TAG_INDEX_NAMES", 0, "INDEX_" . $encoded_tag );
     }
 
     # If removed_tags provided, srem tank from indexes for tags no longer in unified tagset
-    if ( $removed_tags && @$removed_tags ) {
+    my @removals = ( @{ $removed_tags // [] }, @{ $unified->{excluded_tags} } );
+    if (@removals) {
         my %current = map { lc($_) => 1 } @all_tags;
 
-        foreach my $tag (@$removed_tags) {
+        foreach my $tag (@removals) {
             next unless defined $tag && $tag ne "";
             my $tag_lc = lc($tag);
             unless ( $current{$tag_lc} ) {

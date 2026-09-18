@@ -91,8 +91,7 @@ div.gt {
     text-overflow: ellipsis;
 }
 
-.tagger>ul>li:not(.tagger-new)>a,
-.tagger li:not(.tagger-new)>span,
+.tagger>ul>li:not(.tagger-new)>:first-child,
 .tagger .tagger-new ul {
     background: none repeat scroll 0 0 #4F535B;
     border: 1px solid #989898;

@@ -121,7 +121,8 @@ sub setup_redis_mock {
             "file": "package.json",
             "summary": "",
             "lastreadtime": 0,
-            "stamps": "[\\\"STAMPS_0_1777224824660\\\", \\\"STAMPS_0_1777224824661\\\", \\\"STAMPS_1_1777224824662\\\", \\\"STAMPS_2_1777224824663\\\", \\\"STAMPS_3_1777224824664\\\"]"
+            "stamps": "[\\\"STAMPS_0_1777224824660\\\", \\\"STAMPS_0_1777224824661\\\", \\\"STAMPS_1_1777224824662\\\", \\\"STAMPS_2_1777224824663\\\", \\\"STAMPS_3_1777224824664\\\"]",
+            "toc": "{\\\"5\\\":\\\"Chapter 1\\\",\\\"20\\\":\\\"Chapter 2\\\"}"
         },
         "TANK_1589141306": {
             "name_Hello": 0,
@@ -265,6 +266,7 @@ sub setup_redis_mock {
     # EX/TTL args are ignored; the generation prefix is what tests exercise.
     my %stringstore;
     $redis->mock( 'get',  sub { return $stringstore{ $_[1] }; } );
+    $redis->mock( 'getrange', sub { my ($self, $key, $start, $end) = @_; return substr($stringstore{$key} // '', $start, $end - $start + 1); } );
     $redis->mock( 'set',  sub { $stringstore{ $_[1] } = $_[2]; return 1; } );
     $redis->mock( 'incr', sub { return ++$stringstore{ $_[1] }; } );
     $redis->mock( 'srem', sub { 1 } );

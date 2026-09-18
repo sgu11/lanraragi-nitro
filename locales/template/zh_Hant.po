@@ -1826,3 +1826,6 @@ msgstr ""
 
 msgid "Language"
 msgstr ""
+
+msgid "Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review"
+msgstr "Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review"

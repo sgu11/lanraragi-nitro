@@ -45,12 +45,15 @@
             <button id="run-find-cover" class="stdbtn" type="button" title="Cover-only pass: ignores page-count gap, surfaces chapter↔volume style matches.">
                 <i class="fas fa-image"></i> [% c.lh("Find cover matches") %]
             </button>
-            <span id="dupes-stats" class="dupes-stats">Loading…</span>
+            <button id="run-verify" class="stdbtn" type="button">[% c.lh("Verify queue image bytes") %]</button>
+            <span id="dupes-stats" class="dupes-stats" role="status">Loading…</span>
             <label class="dupes-threshold-label">
                 [% c.lh("Cover Hamming threshold:") %]
-                <input id="threshold-slider" type="range" min="12" max="25" step="1" value="22" />
+                <input id="threshold-slider" type="range" min="0" max="25" step="1" value="22" />
                 <span id="threshold-value">22</span>
                 <select id="preset-select">
+                    <option value="custom" disabled hidden></option>
+                    <option value="0">0</option>
                     <option value="12">12 ([% c.lh("strict") %])</option>
                     <option value="20">20</option>
                     <option value="22" selected>22</option>
@@ -71,6 +74,7 @@
             </label>
         </div>
 
+        <p class="dupes-evidence-note">[% c.lh("Cover similarity does not prove duplicate content. Verification compares every image byte, including repeated images; page order and non-image metadata are not checked. Nothing is deleted automatically.") %]</p>
         <div id="dupes-review-shell">
             <main id="dupes-active-stage">
                 <div id="dupes-list">[% c.lh("Loading pairs...") %]</div>

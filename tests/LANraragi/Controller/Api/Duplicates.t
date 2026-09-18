@@ -71,7 +71,8 @@ cmp_ok($body->{pairs}[0]{score}, "==", 4.5, "score passed through");
 is($body->{total}, 3, "total reported");
 is($body->{filtered_total}, 3, "filtered_total reported");
 is($body->{pairs}[0]{relation}, "subset", "relation metadata passed through");
-is($body->{pairs}[0]{suggested_delete}, "id_a", "suggested delete passed through");
+ok(!defined $body->{pairs}[0]{suggested_delete}, "unsafe historical delete recommendation is suppressed");
+is($body->{pairs}[0]{suggested_action}, 'review', "historical relation results require review");
 is_deeply($body->{pairs}[0]{risk_flags}, ["deleting_preferred_language_subset"], "risk flags passed through");
 
 note("GET /api/duplicates/pairs supports relation filtering");

@@ -194,7 +194,7 @@
 					<select class="favtag-btn" id="page-select">
 					</select>
 					<a class="fa fa-cog fa-2x table-option" id="settings-menu" href="#"
-						title="[% c.lh('Index Settings') %]"></a>
+						aria-label="[% c.lh('Index display options') %]" title="[% c.lh('Index Settings') %]"></a>
 				</div>
 			</div>
 

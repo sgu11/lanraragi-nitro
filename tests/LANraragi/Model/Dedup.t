@@ -122,6 +122,13 @@ note("compute_pagehashes_for_archive: writes pagehashes/_v/_n and clears _err");
     $redis_mock->mock('quit', sub { 1 });
 
     my $dedup_mod = Test::MockModule->new('LANraragi::Model::Dedup');
+    $dedup_mod->redefine('_dedup_source_snapshot', sub { ['test-source', $0] });
+    $dedup_mod->redefine('_publish_dedup_fields', sub {
+        my ($redis, $id, $source, $fields, $remove) = @_;
+        $redis->hmset($id, %$fields);
+        $redis->hdel($id, @{$remove // []});
+        return 1;
+    });
     $dedup_mod->redefine('_get_archive_path', sub { $0 });
     $dedup_mod->redefine('_get_filelist',     sub { ('p1.jpg','p2.jpg','p3.jpg','p4.jpg','p5.jpg','p6.jpg','p7.jpg','p8.jpg','p9.jpg','pA.jpg') });
     $dedup_mod->redefine('_extract_page',     sub { '/tmp/page_x.jpg' });
@@ -167,18 +174,18 @@ note("dedup title normalization and source extraction");
 
     is(
         LANraragi::Model::Dedup::dedup_source_key_from_tags(
-            "artist:a, source:https://gallery.example/items/3196863/token/, language:korean"
+            "artist:a, source:https://e-hentai.org/g/3196863/25acc1dc92/, language:korean"
         ),
-        "gallery.example/items/3196863/token",
-        "normalizes an HTTPS source"
+        "ehentai:3196863",
+        "extracts EH source id"
     );
 
     is(
         LANraragi::Model::Dedup::dedup_source_key_from_tags(
-            "source:catalog.example/items/52249/?view=compact, language:english"
+            "source:nhentai.net/g/52249, language:english"
         ),
-        "catalog.example/items/52249",
-        "normalizes source query and trailing slash"
+        "nhentai:52249",
+        "extracts nHentai source id"
     );
 
     is(
@@ -218,6 +225,13 @@ note("lead hashes: compute first N pages and compare by minimum hamming");
     $redis_mock->mock('quit', sub { 1 });
 
     my $dedup_mod = Test::MockModule->new('LANraragi::Model::Dedup');
+    $dedup_mod->redefine('_dedup_source_snapshot', sub { ['test-source', $0] });
+    $dedup_mod->redefine('_publish_dedup_fields', sub {
+        my ($redis, $id, $source, $fields, $remove) = @_;
+        $redis->hmset($id, %$fields);
+        $redis->hdel($id, @{$remove // []});
+        return 1;
+    });
     $dedup_mod->redefine('_get_archive_path', sub { $0 });
     $dedup_mod->redefine('_get_filelist',     sub { ('cover.jpg','splash.jpg','page3.jpg','page4.jpg') });
     $dedup_mod->redefine('_extract_page',     sub { '/tmp/page_x.jpg' });
@@ -318,7 +332,11 @@ note("relation classifier: duplicate, translation, subset, risk flags");
         {}
     );
     is($subset->{relation}, "subset", "low page ratio classifies as subset");
-    is($subset->{suggested_delete}, "small", "subset suggests deleting smaller archive");
+    ok(!defined $subset->{suggested_delete}, "page-count gap does not authorize deleting an unverified subset");
+    is($subset->{suggested_action}, 'review', 'partial visual evidence requires review');
+    ok(!defined $translation->{suggested_delete}, 'language preference is not a deletion recommendation');
+    my $unknown_pages = LANraragi::Model::Dedup::classify_dedup_pair({%$base_a, pagecount => 0}, $base_b, {});
+    isnt($unknown_pages->{relation}, 'subset', 'unknown page count is not an empty subset');
     ok(grep { $_ eq "deleting_preferred_language_subset" } @{ $subset->{risk_flags} }, "flags Korean subset deletion");
     ok(grep { $_ eq "deleting_higher_quality_subset" } @{ $subset->{risk_flags} }, "flags higher-quality subset deletion");
 

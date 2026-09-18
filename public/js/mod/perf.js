@@ -21,7 +21,6 @@ export function initializeLongTaskObserver() {
     try {
         longTaskObserver = new PerformanceObserver((list) => {
             list.getEntries().forEach((entry) => {
-                // eslint-disable-next-line no-console
                 console.debug("[LRR perf] longtask", {
                     name: entry.name,
                     startTime: Math.round(entry.startTime * 100) / 100,
@@ -49,7 +48,6 @@ export function measure(name, fn) {
         const entries = performance.getEntriesByName(name);
         const latest = entries[entries.length - 1];
         if (latest) {
-            // eslint-disable-next-line no-console
             console.debug("[LRR perf]", name, `${Math.round(latest.duration * 100) / 100}ms`);
         }
         performance.clearMarks(start);

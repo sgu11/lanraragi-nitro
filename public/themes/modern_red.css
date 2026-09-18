@@ -107,8 +107,7 @@ div.gt>a {
   color: #EFEAEA !important;
 }
 
-.tagger>ul>li:not(.tagger-new)>a,
-.tagger li:not(.tagger-new)>span,
+.tagger>ul>li:not(.tagger-new)>:first-child,
 .tagger .tagger-new ul {
   background: none repeat scroll 0 0 #4F535B;
   border-radius: 3px;
@@ -295,7 +294,7 @@ tr.gtr1 {
 .tagger {
   background: none repeat scroll 0 0 #FCFCFC;
   border: medium none;
-  color: #ED2553;
+  color: #B51D40;
   font-family: "Geist", arial, sans-serif;
   max-width: 768px;
   margin: 4px 4px 0;
@@ -347,12 +346,12 @@ td.itdc {
 
 .paginate_button:hover {
   background-color: #BE234B;
-  border-radius: 100%;
+  border-radius: 15px;
 }
 
 .paginate_button.current {
   background-color: #E9A53A;
-  border-radius: 100%;
+  border-radius: 15px;
   font-weight: bold;
 }
 

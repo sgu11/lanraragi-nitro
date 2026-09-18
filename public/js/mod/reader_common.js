@@ -6,6 +6,12 @@ import * as Server from "lrr-server";
 import * as LRR from "lrr-common";
 import * as Perf from "lrr-perf";
 import * as ReaderCrop from "lrr-reader-crop";
+import { createReaderOverlay } from "lrr-reader-overlay";
+import { applyReaderSettingsUI } from "lrr-reader-options";
+import { createReaderImageLoader, createReaderPreloadQueue } from "lrr-reader-image-loader";
+import { replaceReaderImages } from "lrr-reader-display";
+import { createReaderStamps } from "lrr-reader-stamps";
+import { buildReaderNeighborSearch } from "lrr-reader-navigation";
 import I18N from "i18n";
 import fscreen from "fscreen";
 import {
@@ -29,10 +35,11 @@ import {
     getSinglePageSpreadWindow,
     getSpreadWindowWithPageShift,
     getSyncedReadingProgressPageForDisplayWindow,
-    inferFirstSpreadStartFromDisplayWindow,
+    createSpreadFeedback,
     isCurrentReaderNavigation,
     isReaderNavigationPending,
     isWidePage,
+    loadAdaptiveOffset,
     normalizeSpreadStartMode,
     queueReaderNavigationStep,
     resolveReaderNavigationInput,
@@ -41,32 +48,53 @@ import {
     spreadStartFlags,
 } from "lrr-reader-spread";
 
+let pageSlide = null;
+let slideModule;
+let slideGeneration = 0;
+let slideLayout = "";
+let slideEnabled = false;
+let slideDuration = 200;
+const reducedSlideMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let id = "";
 let force = false;
-let previousPage = -1;
+let _previousPage = -1;
 let currentPage = -1;
 let readerCursor = createReaderCursor(0);
 let currentChapter = null;
 let showingSinglePage = true;
-let pageThumbnails = [];
+let pageThumbnails = new Set();
 const MIN_PRELOADED_IMAGES = 8;
 const MAX_PRELOAD_COUNT = 8;
-const MAX_PREDECODED_IMAGES = Number(navigator.deviceMemory) >= 8 ? 4 : 2;
+const MAX_PREDECODED_IMAGES = Number(navigator.deviceMemory) >= 8 ? 8 : 4;
+const MAX_PREDECODED_BYTES = (Number(navigator.deviceMemory) >= 8 ? 512 : 128) * 1024 * 1024;
+const preloadQueue = createReaderPreloadQueue({
+    concurrency: Number(navigator.deviceMemory) >= 8 ? 4 : 2,
+    pixelLimit: MAX_PREDECODED_BYTES / 4,
+});
+let preloadDirection = 1;
+let retainedDecodedSources = new Set();
 const INFINITE_SCROLL_WINDOW_RADIUS = 4;
-const OVERLAY_PAGE_WINDOW_SIZE = 60;
 const PROGRESS_PERSISTENCE_DELAY_MS = 200;
 const READER_CURSOR_IDLE_DELAY_MS = 1000;
-const READER_CURSOR_WAKE_DISTANCE_PX = 50;
+const READER_CURSOR_WAKE_DISTANCE_PX = 200;
 const READER_CURSOR_WAKE_DISTANCE_SQUARED = READER_CURSOR_WAKE_DISTANCE_PX * READER_CURSOR_WAKE_DISTANCE_PX;
-let preloadedImg = {};
-let preloadedPromises = {};
-let preloadedOrder = [];
-let preloadedSizes = {};
-let preloadedDimensions = {};   // fork: page index -> { width, height }, for spread rendering decisions
-let predecodedImg = {};
-let predecodedPromises = {};
-let predecodedOrder = [];
 let predecodeSources = new Set();
+const imageLoader = createReaderImageLoader({
+    // Readahead must not displace the current and previous two-page spreads.
+    maxDecoded: MAX_PREDECODED_IMAGES + 4,
+    maxDecodedBytes: MAX_PREDECODED_BYTES * 2,
+    getRetainedSources: () => retainedDecodedSources,
+    getLimit: () => {
+        const factor = doublePageMode ? 2 : 1;
+        const count = Math.max(0, Number(preloadCount) || 0);
+        return Math.max(MIN_PRELOADED_IMAGES, (count + (count ? 1 : 0) + 1) * factor);
+    },
+    getProtectedSources: () => predecodeSources,
+    getDisplayedSources: () => new Set(["#img", "#img_doublepage"]
+        .map((selector) => $(selector).get(0)?.currentSrc).filter(Boolean).concat(pageSlide?.sources() || [])),
+});
+const preloadedSizes = imageLoader.sizes;
+const preloadedDimensions = imageLoader.dimensions;
 let metadataRenderGeneration = 0;
 let archiveIndex = -1;
 let archiveIds = [];
@@ -76,15 +104,28 @@ let cropBorders = false;
 let mobileFullscreen = true;    // fork: auto-enter fullscreen on first reading click
 let spreadStart = "auto";       // fork: adaptive offset mode ("auto" on, "pair2" off)
 let detectedFirstSpreadStart = undefined; // fork: server-detected first interior spread anchor ("2"|"4"|"UNKNOWN"|undefined)
+let adaptiveOffsetState = null;
+let sharedAdaptiveEnabled = false;
+let cancelAdaptiveOffset = () => {};
 let firstSpreadStart = 2;       // fork: first spread anchor (2 => pages 2-3, 4 => pages 3-4)
 let activeDisplayWindow = null; // fork: current rendered spread, including one-page vertical slides
 let activeDisplayWindowWasRequested = false;
 let activeDisplayWindowStride = 2;
 let requestedDisplayWindow = null;
 let requestedDisplayWindowStride = null;
-let requestedDisplayWindowRecordsHumanFeedback = false;
-let pendingFirstSpreadStartFeedback = null;
-let firstSpreadStartFeedbackInFlight = false;
+const spreadFeedback = createSpreadFeedback({
+    persist: async (archiveId, value) => {
+        const response = await fetch(new LRR.ApiURL(`/api/archives/${archiveId}/firstspreadstart?value=${value}`), { method: "PUT" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    },
+    commit: (archiveId, value) => {
+        if (id !== archiveId || spreadStart !== "auto") return;
+        cancelAdaptiveOffset();
+        detectedFirstSpreadStart = String(value);
+        setSpreadStart("auto");
+    },
+    onError: (error) => console.warn("Failed to persist reader-confirmed spread start", error),
+});
 let hasExplicitPageParameter = false;
 let initialPageScrollPending = false;
 let userInteractedBeforeInitialPageScroll = false;
@@ -120,8 +161,11 @@ let preloadCount;
 let AutoNextPageInterval;
 let markerMode = false;
 let markersVisible = false;
-let markers = [];
-let overlayFiltered = false;
+const { updateArchiveOverlay, checkStampedPages, filterStampedOverlay } = createReaderOverlay({
+    getState: () => ({ currentPage, currentChapter, content, pages }),
+    setCurrentChapter: (chapter) => { currentChapter = chapter; },
+    getCurrentChapter, getArchiveForPage, goToPage, pageThumbnails,
+});
 let pageNaviState = true;
 let wakeLock = null;
 let readerCursorIdleTimer = null;
@@ -148,6 +192,9 @@ function commitCurrentNavigation(navigationId, page) {
         return false;
     }
 
+    if (currentPage !== readerCursor.displayPage) {
+        preloadDirection = Math.sign(readerCursor.displayPage - currentPage);
+    }
     currentPage = readerCursor.displayPage;
     return true;
 }
@@ -429,9 +476,73 @@ function returnToLibrary() {
     document.location.href = "./";
 }
 
+function parseStoredArchiveIdList(key) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) { return null; }
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+function pruneDeletedArchiveFromNavigation(deletedId) {
+    ["currArchiveIds", "previousArchiveIds", "nextArchiveIds"].forEach((key) => {
+        const ids = parseStoredArchiveIdList(key);
+        if (ids) {
+            const pruned = ids.filter((entry) => entry !== deletedId);
+            if (pruned.length !== ids.length) {
+                localStorage.setItem(key, JSON.stringify(pruned));
+            }
+        }
+    });
+    const inMemoryIndex = archiveIds.indexOf(deletedId);
+    if (inMemoryIndex !== -1) {
+        archiveIds.splice(inMemoryIndex, 1);
+        if (archiveIndex > inMemoryIndex) {
+            archiveIndex -= 1;
+        } else if (archiveIndex === inMemoryIndex && archiveIndex >= archiveIds.length) {
+            archiveIndex = archiveIds.length - 1;
+        }
+    }
+}
+
+function goToNextArchiveAfterDelete() {
+    const deletedId = id;
+    let nextArchiveId = null;
+
+    if (archiveIds.length > 0) {
+        if (archiveIndex === archiveIds.length - 1) {
+            const nextIds = parseStoredArchiveIdList("nextArchiveIds");
+            const currIds = parseStoredArchiveIdList("currArchiveIds");
+            if (nextIds && nextIds.length > 0 && currIds) {
+                nextArchiveId = nextIds[0];
+                localStorage.removeItem("nextArchiveIds");
+                localStorage.setItem("currArchiveIds", JSON.stringify(nextIds));
+                localStorage.setItem("previousArchiveIds",
+                    JSON.stringify(currIds.filter((entry) => entry !== deletedId)));
+                const currentDTPage = parseInt(localStorage.getItem("currDatatablesPage") || "1", 10);
+                localStorage.setItem("currDatatablesPage", currentDTPage + 1);
+            }
+        } else if (archiveIndex >= 0) {
+            nextArchiveId = archiveIds[archiveIndex + 1];
+        }
+    }
+
+    pruneDeletedArchiveFromNavigation(deletedId);
+
+    if (nextArchiveId) {
+        window.location.replace(new LRR.ApiURL(`/reader?id=${nextArchiveId}`).toString());
+    } else {
+        returnToLibrary();
+    }
+}
+
 function deleteCurrentArchive() {
-    if (id.startsWith("TANK_")) Server.deleteTankoubon(id, returnToLibrary);
-    else Server.deleteArchive(id, returnToLibrary);
+    const options = { callbackDelayMs: 0 };
+    if (id.startsWith("TANK_")) Server.deleteTankoubon(id, goToNextArchiveAfterDelete, options);
+    else Server.deleteArchive(id, goToNextArchiveAfterDelete, options);
 }
 
 function confirmDeleteArchive() {
@@ -476,6 +587,20 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
     });
     $(document).on("wheel", handleWheel);
 
+    $("#slide-pages").on("change", (event) => {
+        slideEnabled = event.target.checked;
+        localStorage.slidePages = slideEnabled;
+        syncSlideSettings();
+        resetPageSlide();
+        void configurePageSlide();
+    });
+    $("#slide-duration").on("input", (event) => {
+        slideDuration = Number(event.target.value);
+        localStorage.slideDuration = slideDuration;
+        syncSlideSettings();
+        resetPageSlide();
+        void configurePageSlide();
+    });
     $(document).on("click.toggle-fit-mode", "#fit-mode input", toggleFitMode);
     $(document).on("click.toggle-double-mode", "#toggle-double-mode input", toggleDoublePageMode);
     $(document).on("click.toggle-manga-mode", "#toggle-manga-mode input, .reading-direction", toggleMangaMode);
@@ -590,36 +715,9 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
         $(".reader-image").css("cursor", "");
         $(".reader-image").css("z-index", 19);
 
-        // Compute marker position
-        // This basically estimates the percentage of the width and legth of the image
-        // where the user clicked, so later from this percentage can be reversed
-        // without being affected by if the image got scaled up or down
-        const img = e.currentTarget;
+        const snapshot = stampLayer.capture(e.currentTarget, e);
+        if (!snapshot) return;
 
-        const rect = img.getBoundingClientRect();
-
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
-
-        const xPercent = (clickX / rect.width) * 100;
-        const yPercent = (clickY / rect.height) * 100;
-
-        const markerData = {
-            x: xPercent,
-            y: yPercent,
-            name: `Marker`,
-            left: true,
-        };
-
-        const displayWindow = getCurrentDisplayWindow();
-        let page = displayWindow.start + 1;
-
-        if (displayWindow.end > displayWindow.start) {
-            if (img.id == "img_doublepage") {
-                page = displayWindow.end + 1;
-                markerData.left = false;
-            }
-        }
         LRR.showPopUp({
             title: I18N.StampName,
             input: "text",
@@ -633,18 +731,7 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
             $("#overlay-page").hide();
             markerMode = false;
             if (result.isConfirmed && result.value.trim() !== "") {
-                const { arcId, localPage } = getArchiveForPage(page);
-                Server.callAPI(`/api/archives/${arcId}/stamps/${localPage}?position=${markerData.x},${markerData.y}&content=${result.value}`,
-                    "PUT", "Stamp added!", I18N.StampError,
-                    (data) => {
-                        markerData.id = data["stamp_id"];
-                        markerData.name = result.value;
-
-                        markers.push(markerData);
-                        renderMarkers();
-                        checkStampedPages();
-                    }
-                );
+                stampLayer.add(snapshot, result.value);
             } else {
                 renderMarkers();
             }
@@ -734,7 +821,7 @@ export async function initializeAll(trackProgressLocally, authenticateProgress) 
                 cancelHint: I18N.ReaderClearRating,
                 cancelPlace: `right`,
                 score: rating,
-                click: function(score, element, evt) {
+                click: function(score, _element, _evt) {
 
                     let tags = LRR.splitTagsByNamespace(content.tags);
                     let selectedRating = score;
@@ -834,8 +921,13 @@ export function loadContentData() {
             content.tags = data.tags;
             content.summary = data.summary;
 
-            detectedFirstSpreadStart = data.firstspreadstart; // fork: server-side adaptive spread-start signal
+            cancelAdaptiveOffset();
+            adaptiveOffsetState = null;
+            sharedAdaptiveEnabled = Boolean(data.adaptiveoffset_enabled);
+            detectedFirstSpreadStart = !data.adaptiveoffset_enabled || data.firstspreadstart_reason === "user_slide"
+                ? data.firstspreadstart : undefined;
             setSpreadStart(data.spreadstart || "auto"); // fork: per-archive adaptive offset mode
+
 
             updateProgress(data, id);
 
@@ -896,7 +988,8 @@ export function addTocSection(page, currentTitle = null) {
     }).then((result) => {
         if (result.isConfirmed && result.value.trim() !== "") {
             const { arcId, localPage } = getArchiveForPage(page);
-            Server.callAPI(`/api/archives/${arcId}/toc?page=${localPage}&title=${result.value}`, "PUT", "Chapter added!", I18N.ReaderTocError,
+            const params = new URLSearchParams({ page: localPage, title: result.value });
+            Server.callAPI(`/api/archives/${arcId}/toc?${params}`, "PUT", "Chapter added!", I18N.ReaderTocError,
                 () => loadContentData().then(() => {
                     updateArchiveOverlay(true);
                     toggleArchiveOverlay();
@@ -1044,82 +1137,97 @@ export function loadImages() {
 }
 
 export function initializeSettings() {
-    // Initialize settings and button toggles
-    if (localStorage.hideHeader === "true" || false) {
-        $("#hide-header").addClass("toggled");
-    } else {
-        $("#show-header").addClass("toggled");
-    }
-
-    mangaMode = localStorage.mangaMode === "true" || false;
-    if (mangaMode) {
-        $("#manga-mode").addClass("toggled");
-        $(".reading-direction").toggleClass("fa-arrow-left fa-arrow-right");
-    } else {
-        $("#normal-mode").addClass("toggled");
-    }
-
-    doublePageMode = localStorage.doublePageMode === "true" || false;
-    doublePageMode ? $("#double-page").addClass("toggled") : $("#single-page").addClass("toggled");
-
-    ignoreProgress = localStorage.ignoreProgress === "true" || false;
-    ignoreProgress ? $("#untrack-progress").addClass("toggled") : $("#track-progress").addClass("toggled");
-
-    infiniteScroll = localStorage.infiniteScroll === "true" || false;
-    $(infiniteScroll ? "#infinite-scroll-on" : "#infinite-scroll-off").addClass("toggled");
-    applyReaderChromeLayout();
-
-    showOverlayByDefault = localStorage.showOverlayByDefault === "true" || false;
-    $(showOverlayByDefault ? "#show-overlay" : "#hide-overlay").addClass("toggled");
-
-    if (localStorage.fitMode === "fit-width") {
-        fitMode = "fit-width";
-        $("#fit-width").addClass("toggled");
-        $("#container-width").hide();
-    } else if (localStorage.fitMode === "fit-height") {
-        fitMode = "fit-height";
-        $("#fit-height").addClass("toggled");
-        $("#container-width").hide();
-    } else {
-        fitMode = "fit-container";
-        $("#fit-container").addClass("toggled");
-    }
-
-    state.containerWidth = localStorage.containerWidth;
-    if (state.containerWidth) { $("#container-width-input").val(state.containerWidth); }
-
-    markersVisible = localStorage.markersVisible === "true" || false;
-    $("#toggle-stamps").prop("checked", markersVisible);
-
-    // fork: image quality / interpolation
+    mangaMode = localStorage.mangaMode === "true";
+    doublePageMode = localStorage.doublePageMode === "true";
+    ignoreProgress = localStorage.ignoreProgress === "true";
+    infiniteScroll = localStorage.infiniteScroll === "true";
+    showOverlayByDefault = localStorage.showOverlayByDefault === "true";
+    markersVisible = localStorage.markersVisible === "true";
     imageQuality = localStorage.imageQuality || "auto";
-    $("#image-quality input").removeClass("toggled");
-    const qualityMap = { "auto": "#quality-auto", "high-quality": "#quality-high", "smooth-sharp": "#quality-sharp", "pixelated": "#quality-pixelated" };
-    $(qualityMap[imageQuality] || "#quality-auto").addClass("toggled");
-    applyImageQuality();
-
+    mobileFullscreen = localStorage.mobileFullscreen !== "false";
+    fitMode = ["fit-width", "fit-height"].includes(localStorage.fitMode) ? localStorage.fitMode : "fit-container";
+    state.containerWidth = localStorage.containerWidth;
     cropBorders = ReaderCrop.readBorderCropPreference();
+    applyReaderSettingsUI({ mangaMode, doublePageMode, ignoreProgress, infiniteScroll,
+        showOverlayByDefault, markersVisible, imageQuality, mobileFullscreen,
+        containerWidth: state.containerWidth });
+    slideEnabled = localStorage.slidePages === "true";
+    const savedDuration = Number(localStorage.slideDuration);
+    slideDuration = Number.isFinite(savedDuration) && savedDuration > 0
+        ? Math.max(50, Math.min(1000, Math.round(savedDuration / 25) * 25)) : 200;
+    syncSlideSettings();
+    applyReaderChromeLayout();
+    applyImageQuality();
     updateBorderCropToggle();
-
-    // fork: auto-fullscreen-on-first-click
-    mobileFullscreen = localStorage.mobileFullscreen !== "false"; // default true
-    $(mobileFullscreen ? "#mobile-fullscreen-on" : "#mobile-fullscreen-off").addClass("toggled");
-    initializeToggleAccessibility();
 }
 
-function initializeToggleAccessibility() {
-    const settings = document.getElementById("settingsOverlay");
-    if (!settings || settings.dataset.toggleA11yInitialized === "true") return;
-    settings.dataset.toggleA11yInitialized = "true";
-
-    const sync = (button) => button.setAttribute("aria-pressed", button.classList.contains("toggled") ? "true" : "false");
-    settings.querySelectorAll(".config-btn").forEach(sync);
-    new MutationObserver((records) => {
-        records.forEach((record) => {
-            if (record.target.matches(".config-btn")) sync(record.target);
-        });
-    }).observe(settings, { subtree: true, attributes: true, attributeFilter: ["class"] });
+function syncSlideSettings() {
+    $("#slide-pages").prop("checked", slideEnabled);
+    $("#slide-duration").val(slideDuration).prop("disabled", !slideEnabled);
+    $("#slide-duration-value").text(`${slideDuration} ms`);
 }
+
+function resetPageSlide() {
+    slideGeneration += 1;
+    pageSlide?.dispose();
+    pageSlide = null;
+    slideLayout = "";
+}
+
+async function configurePageSlide() {
+    if (!slideEnabled || infiniteScroll || reducedSlideMotion.matches || !pages?.length) {
+        resetPageSlide();
+        return;
+    }
+    // Page index is not a setting. Only archive identity and real layout values reset motion.
+    const layout = [id, getArchiveForPage(currentPage + 1)?.arcId, mangaMode, doublePageMode,
+        cropBorders, imageQuality, fitMode, fscreen.inFullscreen(), localStorage.hideHeader,
+        state.containerWidth, slideDuration].join("|");
+    if (pageSlide && slideLayout === layout) return;
+    resetPageSlide();
+    const token = slideGeneration;
+    slideModule ||= await import("lrr-reader-slide");
+    if (token !== slideGeneration) return;
+    slideLayout = layout;
+    pageSlide = slideModule.createReaderSlide({
+        element: document.getElementById("display"), duration: slideDuration,
+        read: () => [document.getElementById("img"), document.getElementById("img_doublepage")].filter(Boolean),
+        navigate: direction => changePage(direction, true),
+        loadNeighbors: async () => {
+            const navigationId = readerCursor.token;
+            const isCurrent = () => token === slideGeneration && isCurrentNavigation(navigationId);
+            const prepareImage = (index, decode = false) => preloadQueue.schedule(async () => {
+                const loaded = await loadImage(index, "low");
+                if (!isCurrent()) return;
+                return decode ? decodeImage(loaded) : loaded;
+            }, { pixels: estimatePredecodePixels(index), isCurrent });
+            const snapshot = getSpreadState();
+            const requested = doublePageMode && activeDisplayWindowWasRequested
+                && activeDisplayWindow?.end > activeDisplayWindow?.start ? activeDisplayWindow : null;
+            const stride = activeDisplayWindowStride || 2;
+            return Promise.all([-1, 1].map(async step => {
+                const shifted = requested ? getSpreadWindowWithPageShift(step * stride,
+                    { ...snapshot, displayWindow: requested }) : null;
+                const destination = shifted?.start ?? getPageNavigationDestination(step, snapshot);
+                const direction = step * (mangaMode ? -1 : 1);
+                if (destination < 0 || destination > maxPage) return { direction, images: [] };
+                if (doublePageMode) {
+                    await Promise.all(getDoublePageInitialProbePages(destination, maxPage)
+                        .filter(index => !preloadedDimensions[index]).map(index => prepareImage(index)));
+                }
+                if (!isCurrent()) return { direction, images: [] };
+                const window = shifted && !displayWindowHasWidePage(shifted) ? shifted
+                    : getDisplayWindow(destination, { ...snapshot, widePages: getWidePages(), currentPage: destination });
+                const indexes = Array.from({ length: window.end - window.start + 1 }, (_, i) => window.start + i);
+                const images = await Promise.all(indexes.map(index => prepareImage(index, true)));
+                if (images.some(image => !image)) return { direction, images: [] };
+                return { direction, images: mangaMode ? images.reverse() : images };
+            }));
+        },
+    });
+}
+
+reducedSlideMotion.addEventListener("change", () => { resetPageSlide(); void configurePageSlide(); });
 
 function applyReaderChromeLayout() {
     $("body").toggleClass("infinite-scroll", infiniteScroll);
@@ -1139,6 +1247,7 @@ function setImageQuality() {
     $("#image-quality input").removeClass("toggled");
     $(`#${this.id}`).addClass("toggled");
     applyImageQuality();
+    void configurePageSlide();
 }
 
 function updateBorderCropToggle() {
@@ -1159,8 +1268,6 @@ function toggleBorderCrop() {
     cropBorders = ReaderCrop.toggleBorderCropPreference(cropBorders);
     updateBorderCropToggle();
     revokePreloadedImages();
-    preloadedDimensions = {};
-    preloadedSizes = {};
 
     if (!pages) { return false; }
     if (infiniteScroll) {
@@ -1177,13 +1284,36 @@ function toggleMobileFullscreen() {
     $("#toggle-mobile-fullscreen input").toggleClass("toggled");
 }
 
+function requestSharedAdaptiveOffset() {
+    cancelAdaptiveOffset();
+    if (!sharedAdaptiveEnabled || adaptiveOffsetState || spreadStart !== "auto" || !doublePageMode || infiniteScroll
+        || !/^[a-f0-9]{40}$/.test(id)) return;
+    const archiveId = id;
+    cancelAdaptiveOffset = loadAdaptiveOffset({
+        archiveId,
+        request: async (signal) => {
+            const response = await fetch(new LRR.ApiURL(`/api/archives/${archiveId}/adaptiveoffset`), { signal });
+            if (![200, 202].includes(response.status)) throw new Error("Adaptive evidence unavailable");
+            return response.json();
+        },
+        commit: (result) => {
+            if (id !== archiveId || spreadStart !== "auto") return;
+            adaptiveOffsetState = result;
+            detectedFirstSpreadStart = result.first_spread_start;
+            setSpreadStart("auto");
+            if (currentPage >= 0 && doublePageMode && !infiniteScroll) goToPage(currentPage, { resetScroll: false });
+        },
+    });
+}
+
 // fork: adaptive offset control, persisted per-archive.
 function setSpreadStart(value) {
     spreadStart = normalizeSpreadStartMode(value);
-    if (spreadStart !== "auto") { pendingFirstSpreadStartFeedback = null; }
+    if (spreadStart !== "auto") { spreadFeedback.cancel(); cancelAdaptiveOffset(); }
     ({ firstSpreadStart } = spreadStartFlags(spreadStart, detectedFirstSpreadStart));
     $("#toggle-spread-start input").removeClass("toggled");
     $(`#spread-${spreadStart}`).addClass("toggled");
+    requestSharedAdaptiveOffset();
 }
 
 function getWidePages() {
@@ -1198,6 +1328,9 @@ function getWidePages() {
 
 function getSpreadState(overrides = {}) {
     return {
+        archiveId: id,
+        contentRevision: adaptiveOffsetState?.contentRevision,
+        segments: spreadStart === "auto" ? adaptiveOffsetState?.segments : [],
         maxPage,
         doublePageMode,
         firstSpreadStart,
@@ -1212,46 +1345,6 @@ function getCurrentDisplayWindow() {
         return activeDisplayWindow;
     }
     return getDisplayWindow(currentPage, getSpreadState());
-}
-
-function displayWindowsEqual(left, right) {
-    return Boolean(left && right && left.start === right.start && left.end === right.end);
-}
-
-function queueFirstSpreadStartFeedback(displayWindow, requestedWindow) {
-    if (spreadStart !== "auto" || id.startsWith("TANK_") || !displayWindowsEqual(displayWindow, requestedWindow)) {
-        pendingFirstSpreadStartFeedback = null;
-        return;
-    }
-
-    const inferred = inferFirstSpreadStartFromDisplayWindow(displayWindow, getSpreadState());
-    pendingFirstSpreadStartFeedback = inferred && String(inferred) !== String(detectedFirstSpreadStart)
-        ? inferred
-        : null;
-}
-
-function flushPendingFirstSpreadStartFeedback() {
-    if (firstSpreadStartFeedbackInFlight || pendingFirstSpreadStartFeedback === null) { return; }
-
-    const value = pendingFirstSpreadStartFeedback;
-    pendingFirstSpreadStartFeedback = null;
-    firstSpreadStartFeedbackInFlight = true;
-
-    fetch(new LRR.ApiURL(`/api/archives/${id}/firstspreadstart?value=${value}`), { method: "PUT" })
-        .then((response) => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            detectedFirstSpreadStart = String(value);
-            if (spreadStart === "auto") { setSpreadStart("auto"); }
-        })
-        .catch((error) => {
-            if (pendingFirstSpreadStartFeedback === null) {
-                pendingFirstSpreadStartFeedback = value;
-            }
-            console.warn("Failed to persist reader-confirmed spread start", error);
-        })
-        .finally(() => {
-            firstSpreadStartFeedbackInFlight = false;
-        });
 }
 
 function shouldSlideSpreadWithVerticalKeys() {
@@ -1270,8 +1363,7 @@ function slideSpreadBySinglePage(step) {
     requestedDisplayWindow = getSinglePageSpreadWindow(step, getSpreadState({
         displayWindow: getCurrentDisplayWindow(),
     }));
-    requestedDisplayWindowRecordsHumanFeedback = true;
-    goToPage(requestedDisplayWindow.start);
+    goToPage(requestedDisplayWindow.start, { feedbackKind: "slide", feedbackDirection: Math.sign(step) });
     return true;
 }
 
@@ -1291,7 +1383,7 @@ function shiftRequestedSpreadByPageCount(step) {
         displayWindow: activeDisplayWindow,
     }));
     requestedDisplayWindowStride = stride;
-    goToPage(requestedDisplayWindow.start);
+    goToPage(requestedDisplayWindow.start, { feedbackKind: "normal", feedbackDirection: Math.sign(numericStep) });
     return true;
 }
 
@@ -1774,241 +1866,59 @@ function toggleHelp() {
     // all toggable panes need to return false to avoid scrolling to top
 }
 
-function createMarkerElement(markerData, index) {
-    if (infiniteScroll) return;
-    const img = markerData.left
-        ? document.getElementById("img")
-        : document.getElementById("img_doublepage");
-
-
-    const display = document.getElementById("display");
-    const container = document.getElementById("i1");
-
-    const marker = document.createElement("div");
-    marker.className = "marker marker-context-menu";
-
-    // Compute the px coordinates from the percentage based coordinates
-    const rect = img.getBoundingClientRect();
-    const xPx = (markerData.x / 100) * rect.width;
-    const yPx = (markerData.y / 100) * rect.height;
-
-    const containerRect = container.getBoundingClientRect();
-
-    let leftFix = rect.left - containerRect.left;
-    let topFix = rect.top - containerRect.top;
-
-    if (!markerData.left) {
-        // Add the width of the left page plus the left and right margin
-        const img = document.getElementById("img");
-        leftFix += img.width+2;
-    }
-
-    marker.style.left = `${leftFix + xPx}px`;
-    marker.style.top = `${topFix + yPx}px`;
-
-    marker.title = markerData.name;
-    marker.dataset.index = index;
-
-    // Edit
-    let isDragging = false;
-
-    marker.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
-        isDragging = true;
-
-        // So no text gets selected during the D&D
-        document.body.style.userSelect = "none";
-        pageNaviState = false;
-    });
-
-    document.addEventListener("mousemove", (e) => {
-        if (!isDragging) return;
-
-        const imgRect = img.getBoundingClientRect();
-        const dispRect = display.getBoundingClientRect();
-
-        // Ensure that the stamp remains inside the image
-        let x = e.clientX - imgRect.left + leftFix;
-        let y = e.clientY - imgRect.top + topFix;
-
-        x = Math.max(leftFix, Math.min(x, imgRect.width + leftFix));
-        y = Math.max(topFix, Math.min(y, imgRect.height + topFix));
-
-        marker.style.left = `${imgRect.left + x - dispRect.left}px`;
-        marker.style.top = `${imgRect.top + y - dispRect.top}px`;
-    });
-
-    document.addEventListener("mouseup", (e) => {
-        e.stopPropagation();
-        // Each marker individually run this event when on mouseup
-        // this line ensures that only one of them execute the action
-        // also a good improvement would be to change this to an attachable event only for the dragged marker
-        if (!isDragging) return;
-
-        isDragging = false;
-        document.body.style.userSelect = "auto";
-
-        const imgRect = img.getBoundingClientRect();
-
-        let x = e.clientX - imgRect.left;
-        let y = e.clientY - imgRect.top;
-
-        x = Math.max(0, Math.min(x, imgRect.width));
-        y = Math.max(0, Math.min(y, imgRect.height));
-
-        const xPercent = (x / imgRect.width) * 100;
-        const yPercent = (y / imgRect.height) * 100;
-
-        const i = marker.dataset.index;
-        let inputValue = markerData.name;
-
-        Server.callAPI(`/api/stamps/${markerData.id}?position=${xPercent},${yPercent}`, "PUT", "Stamp updated!", I18N.StampError,
-            () => {
-                markers[i].x = xPercent;
-                markers[i].y = yPercent;
-
-                pageNaviState = true;
-                renderMarkers();
-            }
-        );
-    });
-
-    display.appendChild(marker);
-}
+const stampLayer = createReaderStamps({
+    getState: () => ({ displayWindow: pages?.length ? getCurrentDisplayWindow() : null, mangaMode,
+        visible: markersVisible, infiniteScroll, fullscreen: fscreen.inFullscreen() }),
+    getArchiveForPage,
+    request: (endpoint, method) => Server.callAPISilent(endpoint, method),
+    onError: (error) => LRR.showErrorToast(I18N.StampError, error),
+    onChange: checkStampedPages,
+    setNavigationEnabled: (enabled) => { pageNaviState = enabled; },
+});
 
 function renderMarkers() {
-    if (infiniteScroll || fscreen.inFullscreen()) return;
-    // Clean markers
-    const existing = document.querySelectorAll(".marker");
-    existing.forEach(el => el.remove());
-
-    if (!markersVisible) return;
-
-    // Draw markers
-    markers.forEach((markerData, index) => {
-        createMarkerElement(markerData, index);
-    });
+    stampLayer.render();
 }
 
 function clearMarkers() {
-    const existing = document.querySelectorAll(".marker");
-    existing.forEach(el => el.remove());
+    stampLayer.hide();
 }
 
 function toggleStamps() {
-    // Show or hide the markers
     markersVisible = localStorage.markersVisible = !markersVisible;
     if (markersVisible) {
-        loadStamps(currentPage + 1);
+        loadStamps();
     } else {
-        markers = [];
-        renderMarkers();
+        stampLayer.clear();
     }
 }
 
-function loadStamps(currentPage) {
-    if (infiniteScroll) return;
-    markers = [];
-    const { arcId: id1, localPage: p1 } = getArchiveForPage(currentPage);
-    // Call for the first page
-    Server.callAPI(`/api/archives/${id1}/stamps/${p1}`, "GET", null, I18N.ServerInfoError,
-        (data) => {
-            for (var i = data.result.length - 1; i >= 0; i--) {
-                let markerData = {};
-                let x = data.result[i].position.split(",")[0];
-                let y = data.result[i].position.split(",")[1];
-                markerData.x = x;
-                markerData.y = y;
-                markerData.name = data.result[i].content;
-                markerData.id = data.result[i].id;
-                markerData.left = true;
-                markers.push(markerData);
-            }
-
-            const displayWindow = getCurrentDisplayWindow();
-            if (displayWindow.end > displayWindow.start) {
-
-                const { arcId: id2, localPage: p2 } = getArchiveForPage(displayWindow.end + 1);
-                // Call for the second page (may be in a different archive for tanks)
-                Server.callAPI(`/api/archives/${id2}/stamps/${p2}`, "GET", null, I18N.ServerInfoError,
-                    (data) => {
-                        for (var i = data.result.length - 1; i >= 0; i--) {
-                            let markerData = {};
-                            let x = data.result[i].position.split(",")[0];
-                            let y = data.result[i].position.split(",")[1];
-                            markerData.x = x;
-                            markerData.y = y;
-                            markerData.name = data.result[i].content;
-                            markerData.id = data.result[i].id;
-                            markerData.left = false;
-                            markers.push(markerData);
-                        }
-
-                        // Render markers
-                        renderMarkers();
-                    }
-                );
-            } else {
-                // Render markers
-                renderMarkers();
-            }
-        }
-    );
+function loadStamps() {
+    return stampLayer.refresh();
 }
 
-function handleMarkerContextMenu(option, index) {
+function handleMarkerContextMenu(option, stampId) {
     if (infiniteScroll) return;
-    let i = parseInt(index);
-
-    switch (option) {
-        case "editmarker": {
-            let emarker = markers[i];
-            let inputValue = emarker.name;
-
-            LRR.showPopUp({
-                title: I18N.StampName,
-                input: "text",
-                inputPlaceholder: I18N.StampPlaceholder,
-                inputAttributes: {
-                    autocapitalize: "off",
-                },
-                inputValue,
-                showCancelButton: true,
-                reverseButtons: true,
-            }).then((result) => {
-                if (result.isConfirmed && result.value.trim() !== "") {
-                    Server.callAPI(`/api/stamps/${emarker.id}?content=${result.value}`, "PUT", "Stamp updated!", I18N.StampError,
-                        () => {
-                            markers[i].name = result.value;
-
-                            pageNaviState = true;
-                            renderMarkers();
-                        }
-                    );
-                } else {
-                    pageNaviState = true;
-                }
-            });
-            break;
-        }
-        case "deletemarker": {
-            let dmarker = markers[i];
-            Server.callAPI(`/api/stamps/${dmarker.id}`, "DELETE", "Stamp deleted!", I18N.StampError,
-                () => {
-                    markers.splice(i, 1);
-                    renderMarkers();
-                    if (markers.length == 0) {
-                        checkStampedPages();
-                    }
-                }
-            );
-            break;
-        }
-        default:
-            break;
+    const marker = stampLayer.get(stampId);
+    if (!marker) return;
+    if (option === "deletemarker") {
+        stampLayer.remove(marker);
+    } else if (option === "editmarker") {
+        LRR.showPopUp({
+            title: I18N.StampName,
+            input: "text",
+            inputPlaceholder: I18N.StampPlaceholder,
+            inputAttributes: { autocapitalize: "off" },
+            inputValue: marker.name,
+            showCancelButton: true,
+            reverseButtons: true,
+        }).then((result) => {
+            if (result.isConfirmed && result.value.trim() !== "") {
+                stampLayer.edit(marker, result.value);
+            }
+        });
     }
-};
+}
 
 function toggleBookmark(e) {
     e.preventDefault();
@@ -2151,39 +2061,43 @@ function updateMetadata() {
     $("#i3").removeClass("loading").attr("aria-busy", "false");
 }
 
-function displayDecodedImage(selector, decodedImage, filename = "") {
-    const displayedImage = $(selector).get(0);
-    if (!displayedImage || !decodedImage) { return; }
-
-    decodedImage.id = displayedImage.id;
-    decodedImage.className = displayedImage.className;
-    decodedImage.alt = displayedImage.alt;
-    decodedImage.fetchPriority = displayedImage.fetchPriority || "high";
-    decodedImage.dataset.filename = filename;
-    $(decodedImage).off("load.reader-metadata").on("load.reader-metadata", updateMetadata);
-    if (decodedImage !== displayedImage) displayedImage.replaceWith(decodedImage);
-    prunePreloadedImages();
+function displayDecodedImages(updates) {
+    // Retain the actual last displayed spread, including non-adjacent jumps.
+    retainedDecodedSources = new Set(["#img", "#img_doublepage"]
+        .map(selector => document.querySelector(selector)?.currentSrc).filter(Boolean));
+    pageSlide?.before();
+    replaceReaderImages(updates, { onImage: (image) => {
+        $(image).off("load.reader-metadata").on("load.reader-metadata", updateMetadata);
+    } });
 }
 
-function clearDisplayedImage(selector) {
-    displayDecodedImage(selector, new Image());
+function displaySingleImage(image, filename) {
+    const emptyImage = new Image();
+    displayDecodedImages([
+        { selector: "#img", image, filename },
+        { selector: "#img_doublepage", image: emptyImage },
+    ]);
 }
 
-export async function goToPage(page, { resetScroll = true, preserveDisplayWindow = false } = {}) {
+export async function goToPage(page, { resetScroll = true, preserveDisplayWindow = false, feedbackKind = "jump", feedbackDirection } = {}) {
+    if (feedbackKind === "slide") cancelAdaptiveOffset();
+    const confirmFeedback = spreadFeedback.begin({
+        archiveId: id, kind: feedbackKind, direction: feedbackDirection,
+        source: getCurrentDisplayWindow(), requested: requestedDisplayWindow,
+        enabled: spreadStart === "auto" && !id.startsWith("TANK_") && doublePageMode && !infiniteScroll,
+    });
     return Perf.measure("reader.goToPage", async () => {
         const navigation = beginReaderNavigation(readerCursor, page, maxPage);
         const navigationId = navigation.token;
+        preloadQueue.clear();
         const displayWindowOverride = requestedDisplayWindow || (preserveDisplayWindow && activeDisplayWindowWasRequested ? activeDisplayWindow : null);
         const displayWindowStrideOverride = requestedDisplayWindow
             ? requestedDisplayWindowStride
             : (preserveDisplayWindow && activeDisplayWindowWasRequested ? activeDisplayWindowStride : null);
-        const humanFeedbackDisplayWindow = requestedDisplayWindowRecordsHumanFeedback
-            ? requestedDisplayWindow
-            : null;
         requestedDisplayWindow = null;
         requestedDisplayWindowStride = null;
-        requestedDisplayWindowRecordsHumanFeedback = false;
-        previousPage = currentPage;
+        const slideFrom = currentPage;
+        _previousPage = currentPage;
         const targetPage = navigation.page;
         showingSinglePage = false;
         let navigationFailed = false;
@@ -2232,11 +2146,12 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                     const displayStart = displayWindow.start;
 
                     if (displayWindow.end > displayWindow.start) {
-                        const img1 = probedImages.get(displayStart) || await loadImage(displayStart);
+                        const [img1, img2] = await Promise.all([
+                            probedImages.get(displayStart) || loadImage(displayStart),
+                            probedImages.get(displayWindow.end) || loadImage(displayWindow.end),
+                        ]);
                         if (!isCurrentNavigation(navigationId)) { return; }
                         const img1Filename = getFilename(displayStart);
-                        const img2 = probedImages.get(displayWindow.end) || await loadImage(displayWindow.end);
-                        if (!isCurrentNavigation(navigationId)) { return; }
                         const img2Filename = getFilename(displayWindow.end);
                         const [decodedImg1, decodedImg2] = await Promise.all([decodeImage(img1), decodeImage(img2)]);
                         if (!isCurrentNavigation(navigationId)) { return; }
@@ -2244,16 +2159,15 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                         activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
                         activeDisplayWindowStride = displayWindowStrideOverride || 2;
                         if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
-                        queueFirstSpreadStartFeedback(displayWindow, humanFeedbackDisplayWindow);
-                        if (mangaMode) {
-                            displayDecodedImage("#img", decodedImg2, img2Filename);
-                            displayDecodedImage("#img_doublepage", decodedImg1, img1Filename);
-                        } else {
-                            displayDecodedImage("#img", decodedImg1, img1Filename);
-                            displayDecodedImage("#img_doublepage", decodedImg2, img2Filename);
-                        }
+                        displayDecodedImages([
+                            { selector: "#img", image: mangaMode ? decodedImg2 : decodedImg1,
+                                filename: mangaMode ? img2Filename : img1Filename },
+                            { selector: "#img_doublepage", image: mangaMode ? decodedImg1 : decodedImg2,
+                                filename: mangaMode ? img1Filename : img2Filename },
+                        ]);
                         $("#display").addClass("double-mode");
                         updateMetadata();
+                        void confirmFeedback(displayWindow, getSpreadState());
                     } else {
                         const img = probedImages.get(displayStart) || await loadImage(displayStart);
                         if (!isCurrentNavigation(navigationId)) { return; }
@@ -2264,8 +2178,7 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                         activeDisplayWindowWasRequested = Boolean(displayWindowOverride);
                         activeDisplayWindowStride = displayWindowStrideOverride || 2;
                         if (!commitCurrentNavigation(navigationId, displayStart)) { return; }
-                        displayDecodedImage("#img", decodedImg, imgFilename);
-                        clearDisplayedImage("#img_doublepage");
+                        displaySingleImage(decodedImg, imgFilename);
                         $("#display").removeClass("double-mode");
                         showingSinglePage = true;
                         updateMetadata();
@@ -2277,14 +2190,18 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
                     const decodedImg = await decodeImage(img);
                     if (!isCurrentNavigation(navigationId)) { return; }
                     if (!commitCurrentNavigation(navigationId, targetPage)) { return; }
-                    displayDecodedImage("#img", decodedImg, imgFilename);
-                    clearDisplayedImage("#img_doublepage");
+                    displaySingleImage(decodedImg, imgFilename);
                     $("#display").removeClass("double-mode");
                     showingSinglePage = true;
                     updateMetadata();
                 }
 
                 applyContainerWidth();
+                if (pageSlide) {
+                    pageSlide.after(Math.sign(currentPage - slideFrom) * (mangaMode ? -1 : 1));
+                }
+                void configurePageSlide();
+                prunePreloadedImages();
 
                 // update full image link
                 $("#imgLink").attr("href", pages[currentPage]);
@@ -2325,9 +2242,7 @@ export async function goToPage(page, { resetScroll = true, preserveDisplayWindow
 }
 
 function updateProgress() {
-    // Clear markers
-    markers = [];
-    renderMarkers();
+    stampLayer.clear();
 
     const page = currentPage + 1; // progress is 1-indexed
     const displayWindow = getCurrentDisplayWindow();
@@ -2337,190 +2252,117 @@ function updateProgress() {
 
     // Load stamps
     if (!infiniteScroll && markersVisible) {
-        loadStamps(page);
+        loadStamps();
     }
+}
+
+function estimatePredecodePixels(index) {
+    const dimensions = preloadedDimensions[index] || preloadedDimensions[currentPage];
+    return dimensions ? dimensions.width * dimensions.height : 2048 * 3072;
 }
 
 function preloadImages() {
-    let preloadNext = preloadCount;
-    let preloadPrev = preloadCount == 0 ? 0 : 1;
-    const preloadStrategy = getReaderPreloadStrategy();
-
-    if (doublePageMode) { preloadNext *= 2; preloadPrev *= 2; }
+    const generation = imageLoader.generation();
+    const navigationId = readerCursor.token;
+    const factor = doublePageMode ? 2 : 1;
+    const displayWindow = getCurrentDisplayWindow();
     const preloadState = getSpreadState();
     const nextDisplayPage = getPageNavigationDestination(1, preloadState);
     const nextDisplayWindow = nextDisplayPage <= maxPage
-        ? getDisplayWindow(nextDisplayPage, { ...preloadState, currentPage: nextDisplayPage })
-        : null;
-    const forwardStart = nextDisplayWindow?.start ?? currentPage + 1;
-    const forwardIndexes = [];
-    for (let offset = 0; offset < preloadNext; offset++) {
-        const index = forwardStart + offset;
-        if (index > maxPage) { break; }
-        forwardIndexes.push(index);
-    }
+        ? getDisplayWindow(nextDisplayPage, { ...preloadState, currentPage: nextDisplayPage }) : null;
+    const forwardStart = nextDisplayWindow?.start ?? displayWindow.end + 1;
+    const ahead = [];
+    const behind = [];
+    const primaryCount = preloadCount * factor;
+    const reverseCount = preloadCount > 0 ? factor : 0;
+    const forwardCount = preloadDirection > 0 ? primaryCount : reverseCount;
+    const backwardCount = preloadDirection < 0 ? primaryCount : reverseCount;
+    for (let i = 0; i < forwardCount && forwardStart + i <= maxPage; i++) ahead.push(forwardStart + i);
+    for (let i = 1; i <= backwardCount && displayWindow.start - i >= 0; i++) behind.push(displayWindow.start - i);
+    const indexes = preloadDirection < 0 ? [...behind, ...ahead] : [...ahead, ...behind];
+    const primary = preloadDirection < 0 ? behind : ahead;
+    const preloadStrategy = getReaderPreloadStrategy();
+    const configured = localStorage.getItem("readerPredecodeCount");
+    const requested = configured === null ? MAX_PREDECODED_IMAGES : Number(configured);
+    const limit = Number.isInteger(requested) ? Math.max(0, Math.min(MAX_PREDECODED_IMAGES, requested)) : MAX_PREDECODED_IMAGES;
     const predecodeIndexes = new Set();
-    const predecodeTasks = [];
-    const deferredBlobIndexes = [];
-    const configuredPredecodeCount = localStorage.getItem("readerPredecodeCount");
-    const requestedPredecodeCount = configuredPredecodeCount === null
-        ? MAX_PREDECODED_IMAGES
-        : Number(configuredPredecodeCount);
-    const predecodeCount = Number.isInteger(requestedPredecodeCount)
-        ? Math.max(0, Math.min(MAX_PREDECODED_IMAGES, requestedPredecodeCount))
-        : MAX_PREDECODED_IMAGES;
-    for (const index of forwardIndexes) {
-        if (predecodeIndexes.size >= predecodeCount) { break; }
+    let plannedBytes = 0;
+    for (const index of primary) {
+        const bytes = estimatePredecodePixels(index) * 4;
+        if (predecodeIndexes.size >= limit || plannedBytes + bytes > MAX_PREDECODED_BYTES) break;
         predecodeIndexes.add(index);
+        plannedBytes += bytes;
     }
+    const windowSources = new Set(indexes.map(getReaderImageSource));
+    for (let index = displayWindow.start; index <= displayWindow.end; index++) windowSources.add(getReaderImageSource(index));
+    predecodeSources = windowSources;
+    const isCurrentPreload = () => generation === imageLoader.generation()
+        && predecodeSources === windowSources && isCurrentNavigation(navigationId);
+    let admittedBytes = 0;
 
-    for (const index of forwardIndexes) {
-        if (predecodeIndexes.has(index)) {
-            const source = getReaderImageSource(index);
-            predecodeSources.add(source);
-            const predecodeTask = loadImage(index)
-                .then((loadedImage) => decodeImage(loadedImage))
-                .catch(() => {})
-                .finally(() => {
-                    predecodeSources.delete(source);
-                    prunePreloadedImages();
-                });
-            predecodeTasks.push(predecodeTask);
-        } else if (preloadStrategy === "blob") {
-            deferredBlobIndexes.push(index);
-        } else {
-            loadImage(index).catch(() => {});
-        }
+    // Nearest decoded pages have queue priority. Distant byte-only work uses
+    // remaining slots, rather than flooding connections needed by navigation.
+    for (const index of predecodeIndexes) {
+        preloadQueue.schedule(async () => {
+            const loaded = await loadImage(index, "low");
+            if (!isCurrentPreload()) return;
+            const pixels = estimatePredecodePixels(index);
+            if (admittedBytes + pixels * 4 > MAX_PREDECODED_BYTES) return;
+            admittedBytes += pixels * 4;
+            return decodeImage(loaded);
+        }, { pixels: estimatePredecodePixels(index), isCurrent: isCurrentPreload })
+            .catch(() => {}).finally(prunePreloadedImages);
     }
-    for (let i = 1; i <= preloadPrev; i++) {
-        if (currentPage - i < 0) { break; }
-        const index = currentPage - i;
-        if (preloadStrategy === "blob") {
-            deferredBlobIndexes.push(index);
-        } else {
-            loadImage(index).catch(() => {});
-        }
+    for (const index of indexes.filter(index => !predecodeIndexes.has(index))) {
+        preloadQueue.schedule(() => preloadStrategy === "blob"
+            ? preloadBlobBytesWithFallback(index) : loadImage(index, "low"), {
+            pixels: preloadStrategy === "blob" ? 0 : estimatePredecodePixels(index),
+            isCurrent: isCurrentPreload,
+        }).catch(() => {});
     }
-    const preloadDeferredBlobs = () => {
-        for (const index of deferredBlobIndexes) {
-            preloadBlobBytesWithFallback(index).catch(() => {});
-        }
-    };
-    if (predecodeTasks.length > 0) {
-        Promise.allSettled(predecodeTasks).then(preloadDeferredBlobs);
-    } else {
-        preloadDeferredBlobs();
-    }
-}
-
-function touchPreloadedImage(src) {
-    preloadedOrder = preloadedOrder.filter((existingSrc) => existingSrc !== src);
-    preloadedOrder.push(src);
-    prunePreloadedImages();
 }
 
 function prunePreloadedImages() {
-    const displayedSources = new Set(
-        ["#img", "#img_doublepage"]
-            .map((selector) => $(selector).get(0)?.currentSrc)
-            .filter(Boolean),
-    );
-
-    const pageFactor = doublePageMode ? 2 : 1;
-    const configuredPreloadCount = Math.max(0, Number(preloadCount) || 0);
-    const forwardWindow = configuredPreloadCount * pageFactor;
-    const backwardWindow = configuredPreloadCount === 0 ? 0 : pageFactor;
-    const displayedWindow = pageFactor;
-    const maximumPreloadedImages = Math.max(
-        MIN_PRELOADED_IMAGES,
-        forwardWindow + backwardWindow + displayedWindow,
-    );
-    while (preloadedOrder.length > maximumPreloadedImages) {
-        const evictIndex = preloadedOrder.findIndex((candidate) => {
-            const loadedSrc = preloadedImg[candidate];
-            return !predecodeSources.has(candidate)
-                && !predecodedImg[loadedSrc]
-                && !displayedSources.has(loadedSrc);
-        });
-        if (evictIndex === -1) { break; }
-        const [src] = preloadedOrder.splice(evictIndex, 1);
-        const blobUrl = preloadedImg[src];
-        if (blobUrl) {
-            if (blobUrl.startsWith("blob:")) URL.revokeObjectURL(blobUrl);
-            delete preloadedImg[src];
-        }
-    }
+    imageLoader.prune();
 }
 
 function revokePreloadedImages() {
-    Object.values(preloadedImg).forEach((blobUrl) => {
-        if (blobUrl?.startsWith?.("blob:")) URL.revokeObjectURL(blobUrl);
-    });
-    preloadedImg = {};
-    preloadedPromises = {};
-    preloadedOrder = [];
-    predecodedImg = {};
-    predecodedPromises = {};
-    predecodedOrder = [];
+    preloadQueue.clear();
+    retainedDecodedSources = new Set();
+    preloadDirection = 1;
+    resetPageSlide();
+    imageLoader.invalidate();
     predecodeSources = new Set();
 }
 
 window.addEventListener("pagehide", () => {
     flushProgressPersistence({ keepalive: true });
-    revokePreloadedImages();
+    cancelAdaptiveOffset();
+    resetPageSlide();
+    preloadQueue.clear();
+    retainedDecodedSources = new Set();
+    imageLoader.dispose();
+    stampLayer.dispose();
 });
 
-async function decodeImage(loadedImage) {
-    const src = typeof loadedImage === "string" ? loadedImage : loadedImage?.src;
-    if (!src) return;
-    if (!predecodedImg[src]) {
-        const loadedCandidate = typeof loadedImage === "object" ? loadedImage.image : null;
-        const img = loadedCandidate || new Image();
-        if (!loadedCandidate) {
-            img.decoding = "async";
-            img.src = src;
-        }
-        predecodedImg[src] = img;
-        if (loadedCandidate) predecodedPromises[src] = Promise.resolve(img);
-    }
-
-    predecodedOrder = predecodedOrder.filter((existingSrc) => existingSrc !== src);
-    predecodedOrder.push(src);
-    while (predecodedOrder.length > MAX_PREDECODED_IMAGES) {
-        const staleSrc = predecodedOrder.shift();
-        delete predecodedImg[staleSrc];
-        delete predecodedPromises[staleSrc];
-    }
-
-    if (!predecodedPromises[src]) {
-        const img = predecodedImg[src];
-        predecodedPromises[src] = (typeof img.decode === "function"
-            ? img.decode()
-            : new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = () => reject(new Error("Image decode failed"));
-            }))
-            .then(() => img)
-            .catch((error) => {
-                delete predecodedImg[src];
-                delete predecodedPromises[src];
-                throw error;
-            });
-    }
-    return predecodedPromises[src];
+function decodeImage(loadedImage) {
+    // A live effect/neighbor is already decoded even if the bounded decode LRU moved on.
+    const retained = pageSlide?.decoded(typeof loadedImage === "string" ? loadedImage : loadedImage?.src);
+    if (retained) return Promise.resolve(retained);
+    return imageLoader.decode(loadedImage);
 }
 
 function getReaderPreloadStrategy() {
     return localStorage.readerPreloadStrategy === "browser" ? "browser" : "blob";
 }
 
-async function loadImage(index) {
+async function loadImage(index, priority = "high") {
     const rawSrc = pages[index];
     if (!rawSrc) { return rawSrc; }
     const src = getReaderImageSource(index);
 
     const displayedImage = index === currentPage ? $("#img").get(0) : null;
-    if (!preloadedImg[src] && displayedImage?.getAttribute("src") === src
+    if (!imageLoader.has(src) && displayedImage?.getAttribute("src") === src
         && displayedImage.complete && displayedImage.naturalWidth > 0) {
         preloadedDimensions[index] = {
             width: displayedImage.naturalWidth,
@@ -2531,115 +2373,40 @@ async function loadImage(index) {
 
     try {
         if (getReaderPreloadStrategy() === "browser") {
-            return await preloadImageWithBrowserCache(index, src);
+            return await preloadImageWithBrowserCache(index, src, priority);
         }
-        return await preloadImageWithBlobUrl(index, src);
+        return await preloadImageWithBlobUrl(index, src, priority);
     } catch (e) {
+        if (e.name === "AbortError") throw e;
         if (src !== rawSrc) {
-            const fallback = await preloadImageWithBlobUrl(index, rawSrc);
-            preloadedImg[src] = fallback.src;
-            touchPreloadedImage(src);
-            return fallback;
+            const fallback = await preloadImageWithBlobUrl(index, rawSrc, priority);
+            return imageLoader.alias(src, fallback);
         }
         throw e;
     }
-}
-
-async function preloadBlobBytes(index, src) {
-    if (!preloadedImg[src]) {
-        if (!preloadedPromises[src]) {
-            preloadedPromises[src] = fetch(src)
-                .then(async (res) => {
-                    if (!res.ok) {
-                        throw new Error(`HTTP ${res.status}`);
-                    }
-                    preloadedSizes[index] = parseInt(res.headers.get("Content-Length") / 1024, 10);
-                    const blob = await res.blob();
-                    return URL.createObjectURL(blob);
-                })
-                .finally(() => {
-                    delete preloadedPromises[src];
-                });
-        }
-        preloadedImg[src] = await preloadedPromises[src];
-    }
-    touchPreloadedImage(src);
-    return { src: preloadedImg[src] };
 }
 
 async function preloadBlobBytesWithFallback(index, requestedSrc = getReaderImageSource(index)) {
     const rawSrc = pages[index];
     const src = requestedSrc;
     try {
-        return await preloadBlobBytes(index, src);
+        return await imageLoader.bytes(index, src);
     } catch (error) {
+        if (error.name === "AbortError") throw error;
         if (src !== rawSrc) {
-            const fallback = await preloadBlobBytes(index, rawSrc);
-            preloadedImg[src] = fallback.src;
-            touchPreloadedImage(src);
-            return fallback;
+            const fallback = await imageLoader.bytes(index, rawSrc);
+            return imageLoader.alias(src, fallback);
         }
         throw error;
     }
 }
 
-async function preloadImageWithBlobUrl(index, src) {
-    let loadedImage = null;
-    const loaded = await preloadBlobBytes(index, src);
-
-    // Cache natural dimensions for spread/wide-page decisions, separate from
-    // the byte sizes in preloadedSizes. Decoded off the already-fetched blob.
-    if (!preloadedDimensions[index]) {
-        const blobUrl = loaded.src;
-        preloadedDimensions[index] = await new Promise((resolve) => {
-            const probe = new Image();
-            probe.onload = () => {
-                const dimensions = { width: probe.naturalWidth, height: probe.naturalHeight };
-                probe.onload = null;
-                probe.onerror = null;
-                loadedImage = probe;
-                resolve(dimensions);
-            };
-            // Don't hang navigation if the blob can't be decoded.
-            probe.onerror = () => {
-                probe.onload = null;
-                probe.onerror = null;
-                resolve({ width: 0, height: 0 });
-            };
-            probe.src = blobUrl;
-        });
-    }
-
-    return { src: loaded.src, image: loadedImage };
+function preloadImageWithBlobUrl(index, src, priority) {
+    return imageLoader.load(index, src, "blob", priority);
 }
 
-async function preloadImageWithBrowserCache(index, src) {
-    let loadedImage = null;
-    if (!preloadedImg[src]) {
-        if (!preloadedPromises[src]) {
-            preloadedPromises[src] = new Promise((resolve, reject) => {
-                const img = new Image();
-                img.fetchPriority = index === currentPage ? "high" : "low";
-                img.decoding = "async";
-                img.onload = () => {
-                    preloadedDimensions[index] = {
-                        width: img.naturalWidth,
-                        height: img.naturalHeight,
-                    };
-                    resolve({ src, image: img });
-                };
-                img.onerror = () => reject(new Error(`Could not load ${src}`));
-                img.src = src;
-            }).finally(() => {
-                delete preloadedPromises[src];
-            });
-        }
-        const loaded = await preloadedPromises[src];
-        preloadedImg[src] = loaded.src;
-        loadedImage = loaded.image;
-    }
-    touchPreloadedImage(src);
-    return { src: preloadedImg[src], image: loadedImage };
+function preloadImageWithBrowserCache(index, src, priority) {
+    return imageLoader.load(index, src, "browser", priority);
 }
 
 function toggleFitMode(e) {
@@ -2737,6 +2504,10 @@ function applyContainerWidth() {
     }
 
     renderMarkers();
+    if (infiniteScroll && currentPage >= 0) {
+        document.getElementById(`page-${currentPage}`)?.scrollIntoView({ block: "nearest", behavior: "instant" });
+    }
+    void configurePageSlide();
 }
 
 function registerPreload() {
@@ -2753,16 +2524,19 @@ function registerPreload() {
 function toggleDoublePageMode() {
     if (infiniteScroll) { return; }
     doublePageMode = localStorage.doublePageMode = !doublePageMode;
+    requestSharedAdaptiveOffset();
     $("#toggle-double-mode input").toggleClass("toggled");
     goToPage(currentPage);
 }
 
 function toggleMangaMode() {
     if (infiniteScroll) { return false; }
+    resetPageSlide();
     mangaMode = localStorage.mangaMode = !mangaMode;
     $("#toggle-manga-mode input").toggleClass("toggled");
     $(".reading-direction").toggleClass("fa-arrow-left fa-arrow-right");
     if (!showingSinglePage) { goToPage(currentPage); }
+    else void configurePageSlide();
 
     return false;
 }
@@ -2937,177 +2711,6 @@ function findChapterForPage(page, chapters) {
     return null;
 }
 
-function updateArchiveOverlay(forceUpdate = false, requestedStartPage = null) {
-    $("#extract-spinner").hide();
-
-    const overlay = $("#archivePagesOverlay");
-    const nextChapter = getCurrentChapter();
-    const sameChapter = (currentChapter === null && nextChapter === null)
-        || (currentChapter !== null && nextChapter !== null
-            && currentChapter.startPage === nextChapter.startPage
-            && currentChapter.endPage === nextChapter.endPage);
-    const visibleFirst = Number(overlay.attr("data-first-page"));
-    const visibleLast = Number(overlay.attr("data-last-page"));
-    if (overlay.attr("loaded") === "true" && !forceUpdate && sameChapter
-        && currentPage + 1 >= visibleFirst && currentPage + 1 <= visibleLast) {
-        return;
-    }
-
-    // Reset stamp filter state when the overlay is rebuilt for a new chapter
-    if (overlayFiltered) {
-        overlayFiltered = false;
-        $("#filter-stamped").removeClass("toggled");
-    }
-
-    // Otherwise, update chapter and overlay -- If there are no chapters defined, just show all pages
-    currentChapter = nextChapter;
-    const firstPage = currentChapter ? currentChapter.startPage : 1;
-    const lastPage = currentChapter ? currentChapter.endPage : pages.length;
-    const latestWindowStart = Math.max(firstPage, lastPage - OVERLAY_PAGE_WINDOW_SIZE + 1);
-    const centeredWindowStart = Math.max(
-        firstPage,
-        Math.min(latestWindowStart, currentPage + 1 - Math.floor(OVERLAY_PAGE_WINDOW_SIZE / 2)),
-    );
-    const windowStart = Number.isInteger(requestedStartPage)
-        ? Math.max(firstPage, Math.min(latestWindowStart, requestedStartPage))
-        : centeredWindowStart;
-    const windowEnd = Math.min(lastPage, windowStart + OVERLAY_PAGE_WINDOW_SIZE - 1);
-
-    $("#overlay-section").text(currentChapter ? currentChapter.name : I18N.ReaderPages);
-
-    if (currentChapter !== null) {
-        // Create <select> options for jumping to other chapters
-        let chapterOptions = `<select class="favtag-btn" id="chapter-select">`;
-        if (content.chapters) {
-            content.chapters.forEach((chapter) => {
-                const selected = (currentChapter && chapter.startPage === currentChapter.startPage) ? "selected" : "";
-                chapterOptions += `<option value="${chapter.startPage}" ${selected}>${LRR.encodeHTML(chapter.name)}</option>`;
-
-                if (chapter.chapters && chapter.chapters.length > 0) {
-                    chapter.chapters.forEach((subChapter) => {
-                        const subSelected = (currentChapter && subChapter.startPage === currentChapter.startPage) ? "selected" : "";
-                        chapterOptions += `<option value="${subChapter.startPage}" ${subSelected}>&nbsp;&nbsp;&nbsp;${LRR.encodeHTML(subChapter.name)}</option>`;
-                    });
-                }
-            });
-        }
-        chapterOptions += `</select>`;
-
-        if (LRR.isUserLogged() && currentChapter.chapters === null ) // Only show edit/delete options for leaf chapters
-            chapterOptions += `<a class="fas fa-pencil-alt edit-toc" href="#" style="padding:8px; font-size:14px" title="${I18N.ReaderEditToc}"/>
-                            <a class="fas fa-trash-alt remove-toc" href="#" style="padding:8px; font-size:14px" title="${I18N.ReaderDeleteToc}"/>`;
-
-        $(".chapter-selector").html(chapterOptions);
-
-        $("#chapter-select").off("change").on("change", function () {
-            goToPage($(this).val() - 1);
-        });
-    } else {
-        $(".chapter-selector").html("");
-    }
-
-    // Render a bounded window instead of creating six DOM nodes per page for
-    // the entire archive. Previous/next controls keep every page reachable.
-    let htmlBlob = `<div class="overlay-window-controls">`;
-    if (windowStart > firstPage) {
-        htmlBlob += `<button type="button" class="stdbtn overlay-window-button" data-start-page="${Math.max(firstPage, windowStart - OVERLAY_PAGE_WINDOW_SIZE)}">${I18N.ReaderPreviousPages || "Previous pages"}</button>`;
-    }
-    htmlBlob += `<span>${windowStart}–${windowEnd} / ${lastPage}</span>`;
-    if (windowEnd < lastPage) {
-        htmlBlob += `<button type="button" class="stdbtn overlay-window-button" data-start-page="${windowEnd + 1}">${I18N.ReaderNextPages || "Next pages"}</button>`;
-    }
-    htmlBlob += `</div><div class="overlay-window-pages">`;
-
-    for (let page = windowStart; page <= windowEnd; ++page) {
-        const index = page - 1;
-
-        const thumbCss = (localStorage.cropthumbs === "true") ? "id3" : "id3 nocrop";
-        const { arcId, localPage } = getArchiveForPage(page);
-        const thumbnailUrl = new LRR.ApiURL(`/api/archives/${arcId}/thumbnail?page=${localPage}`);
-
-        let thumbnail = `
-            <div class='${thumbCss} quick-thumbnail' page='${index}' style='display: inline-block; cursor: pointer'>
-                <span class='page-number'>${I18N.ReaderPage(page)}</span>
-                <img src="${thumbnailUrl}" id="${index}_thumb" loading="lazy" alt="${I18N.ReaderPage(page)}" />`;
-
-        if (LRR.isUserLogged())
-            thumbnail += `<a href="#" style="padding:12px; top:2%; left:72%;"
-                             title="${I18N.ReaderSetPageAsThumbnail}"
-                             class="fas fa-file-image page-number set-thumbnail"></a>
-                          <a href="#" style="padding:12px; top:80%; left:72%;"
-                             title="${I18N.ReaderAddToc}"
-                             class="fas fa-book-medical page-number add-toc"></a>`;
-
-        if (pageThumbnails.includes(index)) thumbnail +=
-            `</div>`;
-        else thumbnail +=
-                `<i id="${index}_spinner" class="fa fa-4x fa-circle-notch fa-spin ttspinner" style="display:flex;justify-content: center; align-items: center;"></i>
-            </div>`;
-
-        htmlBlob += thumbnail;
-    }
-    htmlBlob += `</div>`;
-
-    // NOTE: This can be slow on huge archives and on slower devices, due to the huge DOM change.
-    Perf.measure("reader.overlay", () => {
-        $("#pages-section").html(htmlBlob);
-    });
-    overlay
-        .attr("loaded", "true")
-        .attr("data-first-page", windowStart)
-        .attr("data-last-page", windowEnd);
-    checkStampedPages();
-}
-
-function checkStampedPages() {
-    const { arcId, localPage } = getArchiveForPage(currentPage + 1);
-    Server.callAPI(`/api/archives/${arcId}/stamps/`, "GET", null, I18N.ServerInfoError,
-        (data) => {
-            $("#extract-spinner").hide();
-            cleanStampedPages();
-            let pages = data.result.sort();
-            let elements = $("div.id3.quick-thumbnail");
-
-            for (let element of elements) {
-                let page = parseInt(element.getAttribute("page"));
-                const { _, localPage } = getArchiveForPage(page+1);
-
-                if (pages.includes((localPage).toString())) {
-                    element.dataset.stamped = true;
-                }
-            }
-        }
-    );
-}
-
-function cleanStampedPages() {
-    let elements = $("div.id3.quick-thumbnail[data-stamped=true]");
-
-    for (let element of elements) {
-        delete element.dataset.stamped;
-    }
-}
-
-function filterStampedOverlay() {
-    let elements = $("div.id3.quick-thumbnail");
-
-    if (overlayFiltered) {
-        overlayFiltered = false;
-        $("#filter-stamped").removeClass("toggled");
-        for (let element of elements) {
-            element.style.display = `inline-block`;
-        }
-    } else {
-        overlayFiltered = true;
-        $("#filter-stamped").addClass("toggled");
-        for (let element of elements) {
-            if (!element.dataset.stamped) {
-                element.style.display = `none`;
-            }
-        }
-    }
-}
-
 function generateThumbnails() {
 
     // Function to evaluate Minion job progress and update thumbnails as they are generated
@@ -3123,7 +2726,7 @@ function generateThumbnails() {
                     1;
 
                 const index = startPage + i - 2; // 0-based global
-                pageThumbnails.push(index);
+                pageThumbnails.add(index);
 
                 // Live-update the page thumbnail in the overlay if it's visible
                 if ($(`#${index}_spinner`).attr("loaded") !== "true") {
@@ -3145,7 +2748,7 @@ function generateThumbnails() {
                 if (response.status === 200) {
                     // Thumbnails are already generated, there's nothing to do. Very nice!
                     for (let idx = arc.startPage - 1; idx < arc.endPage; idx++) {
-                        pageThumbnails.push(idx);
+                        pageThumbnails.add(idx);
                     }
                     $(".ttspinner").hide();
                     return;
@@ -3198,9 +2801,6 @@ function changePage(targetPage, resetAuto = false, { respectReadingDirection = t
         queueReaderNavigationStep(readerCursor, navigation.step, { resetAuto });
         return;
     }
-    if ("step" in navigation && Math.abs(navigation.step) === 1) {
-        flushPendingFirstSpreadStartFeedback();
-    }
 
     // Sync position if in infinite scroll mode
     if (infiniteScroll) {
@@ -3232,7 +2832,10 @@ function changePage(targetPage, resetAuto = false, { respectReadingDirection = t
             return readNextArchive();
         }
     }
-    return goToPage(destination);
+    return goToPage(destination, {
+        feedbackKind: Math.abs(navigation.step) === 1 ? "normal" : "jump",
+        feedbackDirection: Math.sign(navigation.step),
+    });
 }
 
 function handlePaginator() {
@@ -3329,6 +2932,7 @@ async function loadNextDatatablesArchives() {
 }
 
 function readPreviousArchive() {
+    spreadFeedback.cancel();
     if (fscreen.inFullscreen()) {
         console.warn("[previous] Archive navigation not supported in fullscreen mode.");
         return;
@@ -3364,6 +2968,7 @@ function readPreviousArchive() {
 }
 
 function readNextArchive() {
+    spreadFeedback.cancel();
     if (fscreen.inFullscreen()) {
         console.warn("[next] Archive navigation not supported in fullscreen mode.");
         return;
@@ -3408,33 +3013,7 @@ function readNextArchive() {
  * @returns {Promise<Array<string>|null>} - The list of archive IDs, or null on error
  */
 async function loadDatatablesArchives(datatablesPage) {
-    const indexSearchQuery = localStorage.getItem("currentSearch") || "";
-    const indexSelectedCategory = localStorage.getItem("selectedCategory") || "";
-    const datatablesPageSize = parseInt(localStorage.getItem("datatablesPageSize") || "100", 10);
-    const indexSort = localStorage.getItem("indexSort") || "title";
-    const indexOrder = localStorage.getItem("indexOrder") || "asc";
-    let searchUrlStr = `/api/search/ids?start=${(datatablesPage - 1) * datatablesPageSize}`;
-    if (indexSearchQuery) searchUrlStr += `&filter=${encodeURIComponent(indexSearchQuery)}`;
-
-    // See Index.updateCarousel
-    if (indexSelectedCategory === "NEW_ONLY") {
-        searchUrlStr += `&newonly=true`;
-    } else if (indexSelectedCategory === "UNTAGGED_ONLY") {
-        searchUrlStr += `&untaggedonly=true`;
-    } else if (indexSelectedCategory) {
-        searchUrlStr += `&category=${encodeURIComponent(indexSelectedCategory)}`;
-    }
-    if (indexSort && indexSort !== "title") {
-        searchUrlStr += `&sortby=${encodeURIComponent(indexSort)}`;
-        searchUrlStr += `&order=${indexOrder}`;
-    }
-
-    // Carry over the index tank-grouping and hide-completed settings so the prefetched
-    // neighbor page matches the lineup the user is viewing.
-    if (localStorage.getItem("grouptanks") === "false") searchUrlStr += `&groupby_tanks=false`;
-    if (localStorage.getItem("hidecompleted") === "true") searchUrlStr += `&hidecompleted=true`;
-
-    const searchUrl = new LRR.ApiURL(searchUrlStr);
+    const searchUrl = new LRR.ApiURL(buildReaderNeighborSearch(datatablesPage, localStorage));
 
     try {
         const response = await fetch(searchUrl.toString(), {
@@ -3516,8 +3095,8 @@ jQuery(() => {
             e.preventDefault();
             e.stopPropagation();
             return {
-                callback: function (key, options) {
-                    handleMarkerContextMenu(key, $(this).attr("data-index"));
+                callback: function (key, _options) {
+                    handleMarkerContextMenu(key, $trigger.attr("data-stamp-id"));
                 },
                 items: {
                     "editmarker": {"name": "Edit Marker", "icon":"fas fa-pen-to-square"},

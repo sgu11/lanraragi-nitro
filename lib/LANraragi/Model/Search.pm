@@ -11,12 +11,15 @@ use List::Util qw(min);
 use Redis;
 use Storable qw/ nfreeze thaw /;
 use Sort::Naturally;
-use Cpanel::JSON::XS qw(decode_json);
+use Cpanel::JSON::XS qw(decode_json encode_json);
+use Digest::SHA qw(sha256_hex);
 use Time::HiRes      qw(time);
 
 use LANraragi::Utils::Generic qw(intersect_arrays);
 use LANraragi::Utils::String  qw(trim);
 use LANraragi::Utils::Redis   qw(redis_decode redis_encode);
+use LANraragi::Utils::RedisScript qw(evalsha_cached);
+use LANraragi::Utils::SearchCache qw(store_results read_result_page);
 use LANraragi::Utils::Logging qw(get_logger);
 
 use LANraragi::Model::Archive;
@@ -29,28 +32,21 @@ use LANraragi::Model::Tankoubon qw(tank_has_archive_in_set get_tank_unified_tags
 # package scalar is safe scratch space.
 my $last_sort_seconds = 0;
 
-# Per-worker memo of Lua script SHAs so the script body is uploaded once per
-# process instead of on every request. EVALSHA after a Redis restart (script
-# cache flushed) raises NOSCRIPT — reload once and retry. Dies if Lua is
-# unavailable, so callers keep their existing eval + per-ID fallbacks.
-my %LUA_SHA;
+# Preserve parameter boundaries even when filters and namespaces contain hyphens.
+sub search_cache_key (@parts) {
+    return 'v3:' . sha256_hex( encode_json( [ map { defined $_ ? "$_" : "" } @parts ] ) );
+}
 
-sub _evalsha_cached ( $redis, $name, $script, @args ) {
-
-    my $sha = $LUA_SHA{$name};
-    unless ($sha) {
-        $sha = $redis->script_load($script);
-        $LUA_SHA{$name} = $sha;
+# Progress writes intentionally do not invalidate metadata/sort caches.
+# Dynamic categories can carry the same live predicates as the explicit filter.
+sub search_depends_on_progress ( $filter, $category_id, $sortkey, $hidecompleted ) {
+    return 1 if $hidecompleted || ( $sortkey // "" ) eq "lastread";
+    my @tokens = compute_search_filter($filter);
+    if ( length( $category_id // "" ) ) {
+        my %category = LANraragi::Model::Category::get_category($category_id);
+        push @tokens, compute_search_filter( $category{search} ) if $category{search};
     }
-
-    my $result = eval { $redis->evalsha( $sha, 0, @args ) };
-    if ($@) {
-        die $@ unless $@ =~ /NOSCRIPT/i;
-        $sha = $redis->script_load($script);
-        $LUA_SHA{$name} = $sha;
-        $result = $redis->evalsha( $sha, 0, @args );
-    }
-    return $result;
+    return scalar grep { $_->{tag} =~ /^read:(?:>=|<=|>|<)?\d+$/ } @tokens;
 }
 
 # do_search (filter, category_id, page, key, order, newonly, untaggedonly, grouptanks, hidecompleted)
@@ -92,32 +88,38 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
 
     # Look in searchcache first
     my $sortorder_inv = $sortorder ? 0 : 1;
-    my $cachekey      = redis_encode("$category_id-$filter-$sortkey-$sortorder-$newonly-$untaggedonly-$grouptanks-$hidecompleted");
+    my $cachekey = search_cache_key( $category_id, $filter, $sortkey, $sortorder, $newonly, $untaggedonly, $grouptanks, $hidecompleted );
     my $cachekey_inv =
-      redis_encode("$category_id-$filter-$sortkey-$sortorder_inv-$newonly-$untaggedonly-$grouptanks-$hidecompleted");
+      search_cache_key( $category_id, $filter, $sortkey, $sortorder_inv, $newonly, $untaggedonly, $grouptanks, $hidecompleted );
+    my $live = search_depends_on_progress( $filter, $category_id, $sortkey, $hidecompleted );
+    # Capture once: a concurrent invalidation must not publish old results into
+    # the new generation, including the full-corpus order built below.
+    my $gen = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
 
     my $preamble_done = time();
-    my ( $cachehit, @filtered ) = check_cache( $cachekey, $cachekey_inv );
+    my $keysperpage = LANraragi::Model::Config->get_pagesize;
+    my ( $cachehit, $filtered_count, @filtered ) = $live ? (0, 0) : read_result_page(
+        $redis, "LRR_SEARCHCACHE:$gen:$cachekey", "LRR_SEARCHCACHE:$gen:$cachekey_inv", $start, $keysperpage
+    );
     my $cacheget_done = time();
 
-    my $cache_status   = $cachehit ? ( $sortkey eq "lastread" ? "bypass" : "hit" ) : "miss";
+    my $cache_status   = $live ? "bypass" : $cachehit ? "hit" : "miss";
     my $search_seconds = 0;
     my $sort_seconds   = 0;
 
     # Don't use cache for history searches since setting lastreadtime doesn't (and shouldn't) cachebust
-    unless ( $cachehit && $sortkey ne "lastread" ) {
+    unless ($cachehit) {
         $logger->debug("No cache available (or history-sorted search), doing a full DB parse.");
         my $keyed_count;
         ( $keyed_count, @filtered ) =
-          search_uncached( $category_id, $filter, $sortkey, $sortorder, $newonly, $untaggedonly, $grouptanks, $hidecompleted );
+          search_uncached( $category_id, $filter, $sortkey, $sortorder, $newonly, $untaggedonly, $grouptanks, $hidecompleted, $gen );
         $search_seconds = time() - $cacheget_done;
         $sort_seconds   = $last_sort_seconds;
 
         # Per-entry TTL (5 min). invalidate_cache bumps LRR_SEARCHCACHE_GEN which makes every prior key unreachable;
         # those old keys expire naturally via TTL rather than via a blocking mass DEL.
         eval {
-            my $gen = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
-            $redis->set( "LRR_SEARCHCACHE:$gen:$cachekey", nfreeze( [ $keyed_count, @filtered ] ), 'EX', 300 );
+            store_results( $redis, "LRR_SEARCHCACHE:$gen:$cachekey", $keyed_count, \@filtered ) unless $live;
         };
         if ($@) {
             $logger->warn("Failed to write search result cache: $@");
@@ -134,65 +136,31 @@ sub do_search ( $filter, $category_id, $start, $sortkey, $sortorder, $newonly, $
         sort_seconds     => $sort_seconds,
     );
 
+    return ( $total, $filtered_count, @filtered ) if $cachehit;
+
     # If start is negative, return all possible data.
     if ( $start == -1 ) {
         return ( $total, $#filtered + 1, @filtered );
     }
 
     # Only get the first X keys
-    my $keysperpage = LANraragi::Model::Config->get_pagesize;
-
     # Return total keys and the filtered ones
     my $end = min( $start + $keysperpage - 1, $#filtered );
     return ( $total, $#filtered + 1, @filtered[ $start .. $end ] );
 }
 
-sub check_cache ( $cachekey, $cachekey_inv ) {
-
-    my $redis  = LANraragi::Model::Config->get_redis_search;
-    my $logger = get_logger( "Search Cache", "lanraragi" );
-
-    my @filtered = ();
-    my $cachehit = 0;
-    $logger->debug("Search request: $cachekey");
-
-    my $gen        = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
-    my $key        = "LRR_SEARCHCACHE:$gen:$cachekey";
-    my $key_inv    = "LRR_SEARCHCACHE:$gen:$cachekey_inv";
-    my $frozendata = $redis->get($key);
-
-    if ( defined $frozendata && length $frozendata ) {
-        $logger->debug("Using cache for this query.");
-        $cachehit = 1;
-
-        my @cached = @{ thaw $frozendata };
-        shift @cached;    # Discard the keyed count, since they're at the bottom of the list naturally
-        @filtered = @cached;
-
-    } else {
-        $frozendata = $redis->get($key_inv);
-        if ( defined $frozendata && length $frozendata ) {
-            $logger->debug("A cache key exists with the opposite sortorder.");
-            $cachehit = 1;
-
-            my @cached      = @{ thaw $frozendata };
-            my $keyed_count = shift @cached;
-
-            # Reverse only the keyed prefix; unkeyed archives stay at the back
-            if ( $keyed_count > 0 && $keyed_count < scalar @cached ) {
-                @filtered = ( reverse( @cached[ 0 .. $keyed_count - 1 ] ), @cached[ $keyed_count .. $#cached ] );
-            } else {
-                @filtered = reverse @cached;
-            }
-        }
-    }
-
+sub check_cache ( $cachekey, $cachekey_inv, $gen = undef ) {
+    my $redis = LANraragi::Model::Config->get_redis_search;
+    $gen //= $redis->get("LRR_SEARCHCACHE_GEN") // 0;
+    my ( $hit, $count, @ids ) = read_result_page(
+        $redis, "LRR_SEARCHCACHE:$gen:$cachekey", "LRR_SEARCHCACHE:$gen:$cachekey_inv", -1, 0
+    );
     $redis->quit();
-    return ( $cachehit, @filtered );
+    return ( $hit, @ids );
 }
 
 # Grab all our IDs, then filter them down according to the following filters and tokens' ID groups.
-sub search_uncached ( $category_id, $filter, $sortkey, $sortorder, $newonly, $untaggedonly, $grouptanks, $hidecompleted ) {
+sub search_uncached ( $category_id, $filter, $sortkey, $sortorder, $newonly, $untaggedonly, $grouptanks, $hidecompleted, $gen = undef ) {
 
     my $redis    = LANraragi::Model::Config->get_redis_search;
     my $redis_db = LANraragi::Model::Config->get_redis;
@@ -242,46 +210,6 @@ sub search_uncached ( $category_id, $filter, $sortkey, $sortorder, $newonly, $un
         @filtered = grep { /^TANK/ ? tank_has_archive_in_set( $_, \%new_set ) : $new_set{$_} } @filtered;
     }
 
-    # Hide completed archives (Consider an archive read if progress is past 85 % of total)
-    if ($hidecompleted) {
-
-        # Separate tanks from regular archives (It's likely we'll need a progress search index once tanks are live)
-        my @tanks     = grep { /^TANK/ } @filtered;
-        my @non_tanks = grep { !/^TANK/ } @filtered;
-
-        if ( scalar @non_tanks > 0 ) {
-
-            # Use a Lua script to check completion status in bulk, avoiding per-ID round-trips
-            my $script = <<'LUA';
-            local result = {}
-            for i = 1, #ARGV do
-                local id = ARGV[i]
-                local progress  = tonumber(redis.call('HGET', id, 'progress')  or "0") or 0
-                local pagecount = tonumber(redis.call('HGET', id, 'pagecount') or "0") or 0
-                if not (pagecount > 0 and (progress / pagecount) > 0.85) then
-                    result[#result + 1] = id
-                end
-            end
-            if #result == 0 then return "[]" end
-            return cjson.encode(result)
-LUA
-
-            my $data = eval { decode_json( _evalsha_cached( $redis_db, "hidecompleted", $script, @non_tanks ) ) };
-            if ($@) {
-                $logger->debug("Lua unavailable or failed for hidecompleted filter, falling back to per-ID queries. ($@)");
-                @non_tanks = grep {
-                    my $progress  = $redis_db->hget( $_, "progress" )  || 0;
-                    my $pagecount = $redis_db->hget( $_, "pagecount" ) || 0;
-                    !( $pagecount > 0 && ( $progress / $pagecount > 0.85 ) );
-                } @non_tanks;
-            } else {
-                @non_tanks = @$data;
-            }
-        }
-
-        @filtered = ( @tanks, @non_tanks );
-    }
-
     # Iterate through each token and intersect the results with the previous ones.
     unless ( scalar @tokens == 0 || scalar @filtered == 0 ) {
         foreach my $token (@tokens) {
@@ -314,82 +242,88 @@ LUA
                 # "read" -> "progress"
                 $col = $col eq "pages" ? "pagecount" : "progress";
 
-                # Go through all IDs in @filtered and check if they have the right pagecount
-                # This could be sped up with an index, but it's probably not worth it.
-                foreach my $id (@filtered) {
-
-                    # Tanks don't have a set pagecount property, so they're not included here for now.
-                    # TODO TANKS: Maybe an index would be good actually..
-                    if ( $id =~ /^TANK/ ) {
-                        next;
+                # Bound queued callbacks while avoiding one network round-trip per archive.
+                my @archives = grep { !/^TANK/ } @filtered;
+                while (@archives) {
+                    my @batch = splice @archives, 0, 256;
+                    my %counts;
+                    my $error;
+                    foreach my $id (@batch) {
+                        $redis_db->hget( $id, $col, sub {
+                            my ( $reply, $err ) = @_;
+                            $error //= $err;
+                            $counts{$id} = $reply || 0;
+                        } );
                     }
-
-                    # Default to 0 if null.
-                    my $count = $redis_db->hget( $id, $col ) || 0;
-
-                    if (   ( $operator eq "=" && $count == $pagecount )
-                        || ( $operator eq ">"  && $count > $pagecount )
-                        || ( $operator eq ">=" && $count >= $pagecount )
-                        || ( $operator eq "<"  && $count < $pagecount )
-                        || ( $operator eq "<=" && $count <= $pagecount ) ) {
-                        push @ids, $id;
+                    $redis_db->wait_all_responses;
+                    die $error if defined $error;
+                    foreach my $id (@batch) {
+                        my $count = $counts{$id};
+                        if (   ( $operator eq "=" && $count == $pagecount )
+                            || ( $operator eq ">"  && $count > $pagecount )
+                            || ( $operator eq ">=" && $count >= $pagecount )
+                            || ( $operator eq "<"  && $count < $pagecount )
+                            || ( $operator eq "<=" && $count <= $pagecount ) ) {
+                            push @ids, $id;
+                        }
                     }
                 }
-            }
-
-            # For exact tag searches, just check if an index for it exists
-            if ( $isexact && $redis->exists("INDEX_$tag") ) {
-
-                # Get the list of IDs for this tag
-                @ids = $redis->smembers("INDEX_$tag");
-                $logger->debug( "Found tag index for $tag, containing " . scalar @ids . " IDs" );
             } else {
 
-                # Walk the LRR_TAG_INDEX_NAMES lex-sorted set (B.4) instead of
-                # KEYS 'INDEX_*'. Namespaced tag ("ns:val*") gets a prefix
-                # ZRANGEBYLEX; bare tag ("*val*") needs a full scan + regex.
-                my @keys = _index_keys_matching( $redis, $tag );
+                # For exact tag searches, just check if an index for it exists
+                if ( $isexact && $redis->exists("INDEX_$tag") ) {
 
-                # Get the list of IDs for each key
-                foreach my $key (@keys) {
-                    my @keyids = $redis->smembers($key);
-                    $logger->trace( "Found index $key for $tag, containing " . scalar @ids . " IDs" );
-                    push @ids, @keyids;
+                    # Get the list of IDs for this tag
+                    @ids = $redis->smembers("INDEX_$tag");
+                    $logger->debug( "Found tag index for $tag, containing " . scalar @ids . " IDs" );
+                } else {
+
+                    # Walk the LRR_TAG_INDEX_NAMES lex-sorted set (B.4) instead of
+                    # KEYS 'INDEX_*'. Namespaced tag ("ns:val*") gets a prefix
+                    # ZRANGEBYLEX; bare tag ("*val*") needs a full scan + regex.
+                    my @keys = _index_keys_matching( $redis, $tag );
+
+                    # Get the list of IDs for each key
+                    foreach my $key (@keys) {
+                        my @keyids = $redis->smembers($key);
+                        $logger->trace( "Found index $key for $tag, containing " . scalar @ids . " IDs" );
+                        push @ids, @keyids;
+                    }
                 }
-            }
 
-            # Append fuzzy title search.
-            # Exact tokens without glob/escape chars are a pure "title\x00" prefix
-            # match — LRR_TITLES is lex-sorted (all scores 0), so ZRANGEBYLEX
-            # answers in one round-trip instead of a full COUNT-chunked ZSCAN.
-            if ( $isexact && $tag !~ /[\\*?\[\]]/ ) {
-                my @matches = $redis->zrangebylex( "LRR_TITLES", "[$tag\x00", "[$tag\x00\x{ff}" );
-                foreach my $title (@matches) {
-                    $logger->trace("Found title match: $title");
-                    push @ids, substr( $title, index( $title, "\x00" ) + 1 );
-                }
-            } else {
-                my $namesearch = $isexact ? "$tag\x00*" : "*$tag*";
-                my $scan       = -1;
-                while ( $scan != 0 ) {
-
-                    # First iteration
-                    if ( $scan == -1 ) { $scan = 0; }
-                    $logger->trace("Scanning for $namesearch, cursor=$scan");
-
-                    # COUNT 5000: at 10k-archive scale a COUNT of 100 turns this
-                    # scan into ~100 sequential round-trips per token.
-                    my @result = $redis->zscan( "LRR_TITLES", $scan, "MATCH", $namesearch, "COUNT", 5000 );
-                    $scan = $result[0];
-
-                    foreach my $title ( @{ $result[1] } ) {
-
-                        if ( $title eq "0" ) { next; }    # Skip scores
+                # Append fuzzy title search.
+                # Exact tokens without glob/escape chars are a pure "title\x00" prefix
+                # match — LRR_TITLES is lex-sorted (all scores 0), so ZRANGEBYLEX
+                # answers in one round-trip instead of a full COUNT-chunked ZSCAN.
+                if ( $isexact && $tag !~ /[\\*?\[\]]/ ) {
+                    my @matches = $redis->zrangebylex( "LRR_TITLES", "[$tag\x00", "[$tag\x00\x{ff}" );
+                    foreach my $title (@matches) {
                         $logger->trace("Found title match: $title");
+                        push @ids, substr( $title, index( $title, "\x00" ) + 1 );
+                    }
+                } else {
+                    my $namesearch = $isexact ? "$tag\x00*" : "*$tag*";
+                    my $scan       = -1;
+                    while ( $scan != 0 ) {
 
-                        # Strip everything before \x00 to get the ID out of the key
-                        my $id = substr( $title, index( $title, "\x00" ) + 1 );
-                        push @ids, $id;
+                        # First iteration
+                        if ( $scan == -1 ) { $scan = 0; }
+                        $logger->trace("Scanning for $namesearch, cursor=$scan");
+
+                        # COUNT 5000: at 10k-archive scale a COUNT of 100 turns this
+                        # scan into ~100 sequential round-trips per token.
+                        my @result = $redis->zscan( "LRR_TITLES", $scan, "MATCH", $namesearch, "COUNT", 5000 );
+                        $scan = $result[0];
+
+                        foreach my $title ( @{ $result[1] } ) {
+
+                            if ( $title eq "0" ) { next; }    # Skip scores
+                            $logger->trace("Found title match: $title");
+
+                            # Strip everything before \x00 to get the ID out of the key
+                            my $id = substr( $title, index( $title, "\x00" ) + 1 );
+                            push @ids, $id;
+                        }
                     }
                 }
             }
@@ -414,6 +348,51 @@ LUA
         }
     }
 
+    # Hide completed archives (Consider an archive read if progress is past 85 % of total)
+    if ($hidecompleted) {
+
+        # Separate tanks from regular archives (It's likely we'll need a progress search index once tanks are live)
+        my @tanks     = grep { /^TANK/ } @filtered;
+        my @non_tanks = grep { !/^TANK/ } @filtered;
+
+        if ( scalar @non_tanks > 0 ) {
+
+            # Use a Lua script to check completion status in bulk, avoiding per-ID round-trips
+            my $script = <<'LUA';
+            local result = {}
+            for i = 1, #ARGV do
+                local id = ARGV[i]
+                local progress  = tonumber(redis.call('HGET', id, 'progress')  or "0") or 0
+                local pagecount = tonumber(redis.call('HGET', id, 'pagecount') or "0") or 0
+                if not (pagecount > 0 and (progress / pagecount) > 0.85) then
+                    result[#result + 1] = id
+                end
+            end
+            if #result == 0 then return "[]" end
+            return cjson.encode(result)
+LUA
+
+            my @incomplete;
+            while (@non_tanks) {
+                my @batch = splice @non_tanks, 0, 256;
+                my $data = eval { decode_json( evalsha_cached( $redis_db, "hidecompleted", $script, @batch ) ) };
+                if ($@) {
+                    $logger->debug("Lua unavailable or failed for hidecompleted filter, falling back to per-ID queries. ($@)");
+                    push @incomplete, grep {
+                        my $progress  = $redis_db->hget( $_, "progress" )  || 0;
+                        my $pagecount = $redis_db->hget( $_, "pagecount" ) || 0;
+                        !( $pagecount > 0 && ( $progress / $pagecount > 0.85 ) );
+                    } @batch;
+                } else {
+                    push @incomplete, @$data;
+                }
+            }
+            @non_tanks = @incomplete;
+        }
+
+        @filtered = ( @tanks, @non_tanks );
+    }
+
     $last_sort_seconds = 0;
 
     if ( scalar @filtered > 0 ) {
@@ -425,7 +404,9 @@ LUA
             $sortkey = "title";
         }
 
-        if ( $sortkey eq "lastread" ) {
+        my $small_namespace_result = $sortkey ne "title" && scalar(@filtered) <= 128
+            && scalar(@filtered) * 8 < $redis->zcard("LRR_TITLES");
+        if ( $sortkey eq "lastread" || $small_namespace_result ) {
 
             # lastread order changes without a cache-gen bump (reading doesn't
             # invalidate caches), so it's sorted per-request, never from cache.
@@ -443,7 +424,7 @@ LUA
         # change — so the full-library ascending order is computed once per
         # (gen, sortkey) and shared by every query instead of re-sorted per
         # cache miss.
-        my ( $order_keyed_count, @ordered ) = get_sort_order( $redis, $redis_db, $sortkey );
+        my ( $order_keyed_count, @ordered ) = get_sort_order( $redis, $redis_db, $sortkey, $gen );
 
         # Walk the full order and keep the IDs that survived filtering.
         # Survivors inside the keyed prefix of the full order form the keyed
@@ -582,12 +563,12 @@ sub compute_search_filter ($filter) {
 # so metadata changes (gen bump) and build_stat_hashes' FLUSHDB invalidate both
 # together. Returns (keyed_count, @ordered_ids); IDs missing the sort namespace
 # sit at the back, past the keyed prefix.
-sub get_sort_order ( $redis, $redis_db, $sortkey ) {
+sub get_sort_order ( $redis, $redis_db, $sortkey, $gen = undef ) {
 
     my $logger = get_logger( "Search Sort", "lanraragi" );
 
-    my $gen      = $redis->get("LRR_SEARCHCACHE_GEN") // 0;
-    my $cachekey = "LRR_SORTCACHE:$gen:" . redis_encode($sortkey);
+    $gen //= $redis->get("LRR_SEARCHCACHE_GEN") // 0;
+    my $cachekey = "LRR_SORTCACHE:v2:$gen:" . redis_encode($sortkey);
 
     my $frozendata = eval { $redis->get($cachekey) };
     if ( defined $frozendata && length $frozendata ) {
@@ -663,7 +644,7 @@ sub sort_results ( $sortkey, $sortorder, @filtered ) {
         return cjson.encode(result)
 LUA
 
-        my $data = eval { decode_json( _evalsha_cached( $redis, "lastread_sort", $script, @filtered ) ) };
+        my $data = eval { decode_json( evalsha_cached( $redis, "lastread_sort", $script, @filtered ) ) };
         if ($@) {
             $logger->debug("Lua unavailable or failed for lastread sort, falling back to per-ID queries. ($@)");
             _fallback_lastread( $redis, \%tmpfilter, @filtered );
@@ -718,7 +699,7 @@ LUA
 
         # Treat user-controlled sort namespaces as literals (ReDoS / unintended match).
         my $re   = qr/\Q$sortkey\E/;
-        my $data = eval { decode_json( _evalsha_cached( $redis, "tag_sort", $script, @filtered ) ) };
+        my $data = eval { decode_json( evalsha_cached( $redis, "tag_sort", $script, @filtered ) ) };
         if ($@) {
             $logger->debug("Lua unavailable or failed for tag sort, falling back to per-ID queries. ($@)");
             _fallback_tags( $redis, \%tmpfilter, $re, @filtered );
@@ -741,11 +722,11 @@ LUA
 
         # Partition: IDs that have the sort namespace vs those that don't
         my @keyed_ids   = grep { $tmpfilter{$_} ne "zzzz" } @filtered;
-        my @unkeyed_ids = grep { $tmpfilter{$_} eq "zzzz" } @filtered;
+        my @unkeyed_ids = sort grep { $tmpfilter{$_} eq "zzzz" } @filtered;
 
         # Read comments from the bottom up for a better understanding of this sort algorithm.
         @sorted = map { $_->[0] }                  # Map back to only having the ID
-          sort { ncmp( $a->[1], $b->[1] ) }        # Sort by the tag
+          sort { ncmp( $a->[1], $b->[1] ) || $a->[0] cmp $b->[0] }        # Sort by the tag
           map  { [ $_, lc( $tmpfilter{$_} ) ] }    # Map to an array containing the ID and the lowercased tag
           @keyed_ids;                              # List of keyed archive IDs
 

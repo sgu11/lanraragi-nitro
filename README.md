@@ -10,6 +10,16 @@ reader, library workflow, duplicate review, image pipeline을 확장한 feature
 fork입니다. 많은 archive를 더 빠르게 탐색하고, 읽고, 비교하고, 정리하는
 과정에 초점을 둡니다.
 
+## 2026-09 업데이트
+
+- Reader에 중단 가능한 슬라이드 전환과 터치 탐색을 추가하고, 이동 방향과 디코딩된 픽셀 예산에 맞춰 다음 페이지를 준비합니다.
+- Archive별 adaptive offset에 콘텐츠 revision 검사, wide page 이후 spread anchor, 선택적 내부 worker 연동을 추가합니다.
+- 메타데이터 태그 저장과 편집기 대비를 수정하고, plugin registry 설치·업로드·삭제의 동시 처리를 보강합니다.
+- 검색, 중복 비교, 백업 복원과 업로드 처리를 보강하고 frontend 의존성을 갱신합니다.
+
+선택적 worker의 설치 조건과 프로토콜은 [worker 문서](tools/adaptive-offset-worker/README.md)를 참고하세요.
+아래 성능 수치는 2026-07-19의 이전 측정이며, 이번 업데이트를 다시 측정한 결과가 아닙니다.
+
 ## 기능 요약
 
 | 영역 | Nitro 전용 기능 | 사용자가 체감하는 변화 |

@@ -162,7 +162,7 @@ test("page movement follows configured reading direction", () => {
 test("tracked benchmark source has no private target or fixed archive and emits raw resource evidence", async () => {
     const source = await readFile(benchmarkUrl, "utf8");
 
-    assert.doesNotMatch(source, /private-host\.invalid|\/home\/private-user\//i);
+    assert.doesNotMatch(source, /https?:\/\/(?:192\.168\.|10\.)|\/Users\/[^/]+\//i);
     assert.doesNotMatch(source, /[a-f0-9]{40}/i);
     assert.match(source, /LRR_BENCH_TARGETS_JSON/);
     assert.match(source, /LRR_BENCH_ARCHIVE_ID/);

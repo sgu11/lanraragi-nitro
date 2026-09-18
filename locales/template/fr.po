@@ -2260,3 +2260,6 @@ msgstr "Nom du Tampon"
 
 msgid "Error setting up the Stamp"
 msgstr "Erreur lors de la création du Tampon"
+
+msgid "Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review"
+msgstr "Keyboard: n/p=next/previous · s=same cover · v=variant · x=not duplicate · r=needs review"

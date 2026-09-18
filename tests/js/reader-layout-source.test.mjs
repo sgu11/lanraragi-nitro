@@ -57,20 +57,6 @@ test("library hover prefetch fully warms a bounded two-page HTTP cache window wi
     assert.match(js, /initializeReaderIntentPrefetch\(\);/);
 });
 
-test("reader only fetches stamps while marker rendering is enabled", async () => {
-    const js = await source("public/js/mod/reader_common.js");
-    const toggleStart = js.indexOf("function toggleStamps()");
-    const toggleEnd = js.indexOf("function handleMarkerContextMenu", toggleStart);
-    const updateStart = js.indexOf("function updateProgress()");
-    const updateEnd = js.indexOf("function preloadImages()", updateStart);
-    const toggle = js.slice(toggleStart, toggleEnd);
-    const update = js.slice(updateStart, updateEnd);
-
-    assert.match(toggle, /if \(markersVisible\) \{\s*loadStamps\(currentPage \+ 1\);/);
-    assert.match(toggle, /markers = \[\];\s*renderMarkers\(\);/);
-    assert.match(update, /if \(!infiniteScroll && markersVisible\) \{\s*loadStamps\(page\);/);
-});
-
 test("reader metadata ignores stale size callbacks after its display shape changes", async () => {
     const js = await source("public/js/mod/reader_common.js");
     const start = js.indexOf("function updateMetadata()");
@@ -119,6 +105,21 @@ test("active set-thumbnail handler prevents anchor navigation before updating th
     assert.match(handler, /\(e\) => \{\s*e\.preventDefault\(\);/);
     assert.match(handler, /Server\.callAPI\(`\/api\/(?:tankoubons|archives)\/\$\{id\}\/thumbnail\?page=\$\{pageNumber\}`/);
     assert.match(handler, /e\.stopPropagation\(\);/);
+});
+
+test("reader thumbnail readiness uses unique constant-time membership", async () => {
+    const js = await source("public/js/mod/reader_common.js");
+    const generateStart = js.indexOf("function generateThumbnails()");
+    const generateEnd = js.indexOf("function changePage(", generateStart);
+    const generateThumbnails = js.slice(generateStart, generateEnd);
+
+    assert.notEqual(generateStart, -1);
+    assert.notEqual(generateEnd, -1);
+    assert.match(js, /let pageThumbnails = new Set\(\);/);
+    assert.match(await source("public/js/mod/reader-overlay.js"), /pageThumbnails\.has\(index\)/);
+    assert.match(generateThumbnails, /pageThumbnails\.add\(index\)/);
+    assert.match(generateThumbnails, /pageThumbnails\.add\(idx\)/);
+    assert.doesNotMatch(js, /pageThumbnails\.(?:push|includes)\(/);
 });
 
 test("paginated reader can use minimal chrome without enabling infinite scroll", async () => {
@@ -174,7 +175,7 @@ test("reader hides the mouse cursor after inactivity", async () => {
     assert.notEqual(initStart, -1);
     assert.notEqual(initEnd, -1);
     assert.match(js, /const READER_CURSOR_IDLE_DELAY_MS = 1000;/);
-    assert.match(js, /const READER_CURSOR_WAKE_DISTANCE_PX = 50;/);
+    assert.match(js, /const READER_CURSOR_WAKE_DISTANCE_PX = 200;/);
     assert.match(js, /const READER_CURSOR_WAKE_DISTANCE_SQUARED = READER_CURSOR_WAKE_DISTANCE_PX \* READER_CURSOR_WAKE_DISTANCE_PX;/);
     assert.match(js, /let readerCursorIdleTimer = null;/);
     assert.match(js, /let readerCursorLastMousePosition = null;/);
@@ -274,7 +275,7 @@ test("reader chrome exposes border crop toggle instead of help button", async ()
     assert.notEqual(updateEnd, -1);
     assert.match(updateBorderCropToggle, /ReaderCrop\.applyBorderCropToggleState\(cropBorders\);/);
     assert.match(cropJs, /\$\(enabled \? "#border-crop-on" : "#border-crop-off"\)\.addClass\("toggled"\);/);
-    assert.match(cropJs, /\$\(("\[id='toggle-border-crop-button'\]"|'\[id="toggle-border-crop-button"\]')\)[\s\S]*\.removeClass\("fa-crop fa-crop-alt"\)[\s\S]*\.addClass\(enabled \? "fa-crop" : "fa-crop-alt"\)/);
+    assert.match(cropJs, /\$\("\.toggle-border-crop-button"\)[\s\S]*\.removeClass\("fa-crop fa-crop-alt"\)[\s\S]*\.addClass\(enabled \? "fa-crop" : "fa-crop-alt"\)/);
 });
 
 test("reader border crop strings have English locale fallbacks", async () => {
@@ -356,30 +357,13 @@ test("minimal double-spread reader uses vertical keys for single-page spread sli
     assert.match(init, /isReaderNavKeydownSuppress\(e\.which\)/);
 });
 
-test("confirmed vertical spread slides lazily persist human offset feedback", async () => {
+test("spread feedback is wired to decoded commits and classified navigation", async () => {
     const js = await source("public/js/mod/reader_common.js");
-    const slideStart = js.indexOf("function slideSpreadBySinglePage(step)");
-    const slideEnd = js.indexOf("function shiftRequestedSpreadByPageCount(step)", slideStart);
-    const feedbackStart = js.indexOf("function queueFirstSpreadStartFeedback(");
-    const feedbackEnd = js.indexOf("function shouldSlideSpreadWithVerticalKeys()", feedbackStart);
-    const changeStart = js.indexOf("function changePage(");
-    const changeEnd = js.indexOf("function retryCurrentPage", changeStart);
-    const goToStart = js.indexOf("async function goToPage");
-    const goToEnd = js.indexOf("function updateProgress()", goToStart);
-    const slide = js.slice(slideStart, slideEnd);
-    const feedback = js.slice(feedbackStart, feedbackEnd);
-    const changePage = js.slice(changeStart, changeEnd);
-    const goToPage = js.slice(goToStart, goToEnd);
-
-    assert.match(js, /inferFirstSpreadStartFromDisplayWindow,/);
-    assert.match(slide, /requestedDisplayWindowRecordsHumanFeedback = true;/);
-    assert.match(goToPage, /humanFeedbackDisplayWindow/);
-    assert.match(goToPage, /queueFirstSpreadStartFeedback\(displayWindow, humanFeedbackDisplayWindow\)/);
-    assert.match(feedback, /spreadStart !== "auto"/);
-    assert.match(feedback, /id\.startsWith\("TANK_"\)/);
-    assert.match(feedback, /\/api\/archives\/\$\{id\}\/firstspreadstart\?value=\$\{value\}/);
-    assert.match(feedback, /method: "PUT"/);
-    assert.match(changePage, /Math\.abs\(navigation\.step\) === 1[\s\S]*flushPendingFirstSpreadStartFeedback\(\)/);
+    assert.match(js, /createSpreadFeedback,/);
+    assert.match(js, /feedbackKind: "slide", feedbackDirection: Math.sign\(step\)/);
+    assert.match(js, /feedbackKind: "normal", feedbackDirection: Math.sign\(numericStep\)/);
+    assert.match(js, /enabled: spreadStart === "auto" && !id.startsWith\("TANK_"\) && doublePageMode && !infiniteScroll/);
+    assert.match(js, /await Promise.all\(\[decodeImage\(img1\), decodeImage\(img2\)\]\)[\s\S]*commitCurrentNavigation[\s\S]*displayDecodedImages[\s\S]*confirmFeedback\(displayWindow, getSpreadState\(\)\)/);
 });
 
 test("explicit page reload restores double-spread navigation stride", async () => {

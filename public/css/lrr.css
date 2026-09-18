@@ -58,6 +58,18 @@ span.tags {
   cursor: text;
 }
 
+#editArchiveForm .tagger .tagger-new input {
+  color: inherit;
+  caret-color: currentColor;
+  min-height: 28px;
+}
+
+#editArchiveForm .tagger .tagger-new input:focus-visible,
+#editArchiveForm .tagger a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 
 div.id1 {
   width: 228px;
@@ -145,8 +157,10 @@ table thead .sorting_disabled a:after {
 }
 
 .paginate_button {
+  box-sizing: border-box;
   min-width: 2rem;
   width: auto !important;
+  padding: 0 10px;
 }
 
 .ellipsis {
@@ -212,6 +226,7 @@ p#nb {
   font-size: 10pt;
   padding: 3px 0px 7px;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .caption-tags {
@@ -859,8 +874,8 @@ body.swal2-shown>[aria-hidden="true"] {
   text-align: left;
 }
 
-#changelog>*>img {
-  max-width: 400px;
+#changelog img {
+  max-width: min(400px, 100%);
   height: auto;
 }
 
@@ -978,7 +993,7 @@ body.infinite-scroll .fullscreen-infinite img {
 .star-off-png,
 .raty-cancel {
   font-size: 1.5em;
-  font-family: var(--fa-style-family, "Font Awesome 6 Free");
+  font-family: var(--fa-style-family, "Font Awesome 7 Free");
   font-style: normal;
   font-variant: normal;
 }
@@ -1088,5 +1103,55 @@ body.infinite-scroll .fullscreen-infinite img {
   /* Ensure the paginator isn't blocked */
   .sn {
     margin-bottom: 60px !important;
+  }
+}
+
+/* Keep administrative forms inside narrow viewports without hiding content. */
+.batch-page .tag-options table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.batch-page .tag-options,
+.batch-page .tag-options td,
+.batch-page #archivelist label {
+  overflow-wrap: anywhere;
+}
+
+.batch-page .tag-options select,
+.batch-page .tag-options .stdinput {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.upload-page #download-url {
+  border: 0;
+  box-sizing: content-box;
+}
+
+@media all and (max-width: 600px) {
+  .batch-page .id1 {
+    box-sizing: border-box;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .batch-page .stdbtn,
+  .upload-page .stdbtn,
+  .batch-page select,
+  .upload-page select {
+    min-height: 44px;
+  }
+
+  .batch-page #archivelist li {
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+  }
+
+  .batch-page #archivelist label {
+    flex: 1;
+    padding: 8px 0;
+    min-width: 0;
   }
 }

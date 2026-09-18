@@ -7,6 +7,7 @@ use File::Temp qw(tempfile);
 
 use LANraragi::Model::Backup;
 use LANraragi::Model::Stats;
+use LANraragi::Model::Config;
 use LANraragi::Utils::Generic    qw(render_api_response);
 use LANraragi::Utils::Database   qw(invalidate_cache);
 use LANraragi::Utils::TempFolder qw(get_temp);
@@ -86,7 +87,7 @@ sub download_backup {
 
     # Depending on the requested format, either serve the file directly or read its contents and return as JSON
     if ( $self->req->param('format') && $self->req->param('format') eq 'json' ) {
-        open my $fh, '<:encoding(UTF-8)', $filepath or die "Cannot read $filepath: $!";
+        open my $fh, '<', $filepath or die "Cannot read $filepath: $!";
         local $/;
         my $json = <$fh>;
         close $fh;
@@ -148,6 +149,7 @@ sub drop_database {
 
     # Force a refresh
     invalidate_cache(1);
+    LANraragi::Model::Config::invalidate_config_cache();
 
     render_api_response( $self, "drop_database" );
 }
@@ -206,4 +208,3 @@ sub clear_new_all {
 }
 
 1;
-

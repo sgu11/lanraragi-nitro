@@ -1,0 +1,94 @@
+diff --git a/integration_tests/tests/simple/search/test_core.py b/integration_tests/tests/simple/search/test_core.py
+index 44cf364..10076c5 100644
+--- a/integration_tests/tests/simple/search/test_core.py
++++ b/integration_tests/tests/simple/search/test_core.py
+@@ -102 +102,3 @@ async def test_search_api(lrr_client: LRRClient, semaphore: asyncio.Semaphore, n
+-    assert len(response.data) == 100
++    # Nitro intentionally defaults archive pages to 30 instead of
++    # upstream's 100 to bound index payload and render cost.
++    assert len(response.data) == 30
+diff --git a/integration_tests/tests/simple/test_index.py b/integration_tests/tests/simple/test_index.py
+index f8df8a4..5d00f4a 100644
+--- a/integration_tests/tests/simple/test_index.py
++++ b/integration_tests/tests/simple/test_index.py
+@@ -52,4 +52 @@ async def test_header_click_sort(
+-    3. Click the Title column header (default is already asc, so first click toggles to desc).
+-       - Expect the header gains sorting_desc class.
+-       - Expect the rendered archives sorted by title descending.
+-    4. Click the Title header again.
++    3. Click the Title column header (Nitro defaults to date desc, so title starts unsorted).
+@@ -57,0 +55,3 @@ async def test_header_click_sort(
++    4. Click the Title header again.
++       - Expect the header gains sorting_desc class.
++       - Expect the rendered archives sorted by title descending.
+@@ -128 +128 @@ async def test_header_click_sort(
+-            # click title header to sort descending (default is already asc)
++            # click title header to sort ascending (title starts unsorted)
+@@ -133 +133 @@ async def test_header_click_sort(
+-            # verify header has sorting_desc class
++            # verify header has sorting_asc class
+@@ -135,2 +135,2 @@ async def test_header_click_sort(
+-            assert "sorting_desc" in header_class, (
+-                f"Expected sorting_desc on title header after click, got class={header_class!r}"
++            assert "sorting_asc" in header_class, (
++                f"Expected sorting_asc on title header after click, got class={header_class!r}"
+@@ -139,5 +139,5 @@ async def test_header_click_sort(
+-            # verify title descending order as rendered: C, B, A
+-            expected_desc = ["archive C", "archive B", "archive A"]
+-            sorted_titles = await read_rendered_titles(page, 3, expected_desc)
+-            assert sorted_titles == expected_desc, (
+-                f"Expected descending title sort, got: {sorted_titles}"
++            # verify title ascending order as rendered: A, B, C
++            expected_asc = ["archive A", "archive B", "archive C"]
++            sorted_titles = await read_rendered_titles(page, 3, expected_asc)
++            assert sorted_titles == expected_asc, (
++                f"Expected ascending title sort, got: {sorted_titles}"
+@@ -146 +146 @@ async def test_header_click_sort(
+-            # click title header again to sort ascending
++            # click title header again to sort descending
+@@ -154 +154 @@ async def test_header_click_sort(
+-            # verify header has sorting_asc class
++            # verify header has sorting_desc class
+@@ -156,2 +156,2 @@ async def test_header_click_sort(
+-            assert "sorting_asc" in header_class, (
+-                f"Expected sorting_asc on title header after second click, got class={header_class!r}"
++            assert "sorting_desc" in header_class, (
++                f"Expected sorting_desc on title header after second click, got class={header_class!r}"
+@@ -160,5 +160,5 @@ async def test_header_click_sort(
+-            # verify title ascending order as rendered: A, B, C
+-            expected_asc = ["archive A", "archive B", "archive C"]
+-            sorted_titles = await read_rendered_titles(page, 3, expected_asc)
+-            assert sorted_titles == expected_asc, (
+-                f"Expected ascending title sort, got: {sorted_titles}"
++            # verify title descending order as rendered: C, B, A
++            expected_desc = ["archive C", "archive B", "archive A"]
++            sorted_titles = await read_rendered_titles(page, 3, expected_desc)
++            assert sorted_titles == expected_desc, (
++                f"Expected descending title sort, got: {sorted_titles}"
+@@ -486 +486 @@ async def test_custom_column_sort_display(
+-       - Expect the rendered archives sorted by artist namespace (artist:Bob last in asc).
++       - Expect the rendered archives sorted by artist namespace (artist:Bob first in desc).
+@@ -491 +491 @@ async def test_custom_column_sort_display(
+-       - Expect archives sorted by series namespace (series:Another first in asc).
++       - Expect archives sorted by series namespace (series:Another last in desc).
+@@ -579,3 +579,3 @@ async def test_custom_column_sort_display(
+-            # archives 0,1 have artist:Alice, archive 2 has artist:Bob; asc order => Alice first
+-            assert sorted_titles[-1] == "test archive 2", (
+-                f"Expected 'test archive 2' (artist:Bob) last in ascending artist sort, got order: {sorted_titles}"
++            # Nitro preserves its default descending direction when changing sort namespaces.
++            assert sorted_titles[0] == "test archive 2", (
++                f"Expected 'test archive 2' (artist:Bob) first in descending artist sort, got order: {sorted_titles}"
+@@ -623,3 +623,3 @@ async def test_custom_column_sort_display(
+-            # archive 2 has series:Another, archives 0,1 have series:Test; asc => Another first
+-            assert sorted_titles[0] == "test archive 2", (
+-                f"Expected 'test archive 2' (series:Another) first in ascending series sort, got order: {sorted_titles}"
++            # Nitro preserves its default descending direction when changing sort namespaces.
++            assert sorted_titles[-1] == "test archive 2", (
++                f"Expected 'test archive 2' (series:Another) last in descending series sort, got order: {sorted_titles}"
+diff --git a/src/lanraragi/models/minion.py b/src/lanraragi/models/minion.py
+index 1a86b94..8e866d1 100644
+--- a/src/lanraragi/models/minion.py
++++ b/src/lanraragi/models/minion.py
+@@ -52 +52 @@ class GetMinionJobDetailResponse(LanraragiResponse):
+-    worker: int = Field(default=0)
++    worker: int | None = Field(default=None)

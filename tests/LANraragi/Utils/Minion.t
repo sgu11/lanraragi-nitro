@@ -40,6 +40,7 @@ package IngestTaskJob {
 package IngestTaskLogger {
     sub new { bless {}, shift }
     sub error { 1 }
+    sub info { 1 }
 }
 
 package main;
@@ -48,6 +49,12 @@ my $redis;
 my $config_mod = Test::MockModule->new('LANraragi::Model::Config');
 $config_mod->redefine('get_redis_config', sub { $redis = IngestTaskRedis->new });
 
+my $lease_mod = Test::MockModule->new('LANraragi::Utils::Minion');
+$lease_mod->redefine(_release_owned_lease => sub {
+    my ($redis, $key, $token) = @_;
+    return unless defined $token;
+    return $redis->del($key);
+});
 my $minion = IngestTaskMinion->new;
 LANraragi::Utils::Minion::add_tasks($minion);
 my $task = $IngestTaskMinion::tasks{ingest_archive_file};
@@ -67,9 +74,43 @@ for my $case (
 ) {
     my ($state, $expect_deleted, $description) = @$case;
     my $job = IngestTaskJob->new($state);
-    $task->($job, $filename, 'LRR_INGEST_PENDING:test');
+    $task->($job, $filename, 'LRR_INGEST_PENDING:test', 'test-owner');
     ok($job->{failed}, "$state attempt is failed through Minion");
     is(scalar @{$redis->{deleted}}, $expect_deleted, $description);
+}
+
+my $restore_task = $IngestTaskMinion::tasks{restore_backup};
+ok($restore_task, 'restore task registered');
+
+{
+    my @lock_args;
+    local *LANraragi::Utils::Minion::exec_with_lock_pure = sub {
+        @lock_args = @_;
+        return ( 0, undef );
+    };
+
+    my $job = IngestTaskJob->new('inactive');
+    $restore_task->( $job, '{}' );
+    is_deeply( $lock_args[0], ['database-restore'], 'restore uses a dedicated global lock' );
+    is( $lock_args[3], 86400, 'restore lock covers long-running restores' );
+    like( $job->{failed}{error}, qr/Another backup restore is already running/, 'concurrent restore is rejected' );
+}
+
+{
+    my $restored;
+    local *LANraragi::Utils::Minion::exec_with_lock_pure = sub {
+        my ( undef, $callback ) = @_;
+        return ( 1, $callback->() );
+    };
+    local *LANraragi::Model::Backup::restore_from_JSON = sub {
+        ( $restored ) = @_;
+        return;
+    };
+
+    my $job = IngestTaskJob->new('inactive');
+    $restore_task->( $job, '{"categories":[],"archives":[]}' );
+    is( $restored, '{"categories":[],"archives":[]}', 'locked restore invokes the backup model' );
+    is_deeply( $job->{finished}, { success => 1 }, 'successful restore finishes the job' );
 }
 
 done_testing();

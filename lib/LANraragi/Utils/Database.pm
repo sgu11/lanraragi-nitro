@@ -44,34 +44,31 @@ sub _load_archive_model {
     return;
 }
 
-# Returns the set of archive IDs. Backed by LRR_ALL_ARCHIVES (maintained by
-# add_archive_to_redis / delete_archive / change_archive_id). On an empty set
-# — first run after upgrade — falls back to a one-time KEYS scan and
-# populates the set so subsequent calls are O(1).
-sub all_archive_ids ($redis) {
-    my @ids = $redis->smembers("LRR_ALL_ARCHIVES");
+# Empty maintained sets are valid. Remember completed backfills independently
+# of membership; Redis removes the set itself when its last member is removed.
+sub _maintained_ids ( $redis, $key, $pattern ) {
+    my @ids = $redis->smembers($key);
     return @ids if @ids;
-    @ids = $redis->keys($ARCHIVE_ID_GLOB);
-    $redis->sadd( "LRR_ALL_ARCHIVES", @ids ) if @ids;
+    return () if $redis->get("$key:initialized");
+    @ids = $redis->keys($pattern);
+    $redis->sadd( $key, @ids ) if @ids;
+    $redis->set( "$key:initialized", 1 );
     return @ids;
+}
+
+# Enumerating a populated set is O(N), without a database-wide key scan.
+sub all_archive_ids ($redis) {
+    return _maintained_ids( $redis, "LRR_ALL_ARCHIVES", $ARCHIVE_ID_GLOB );
 }
 
 # Category IDs. Backed by LRR_CATEGORIES. Same lazy-backfill pattern.
 sub all_category_ids ($redis) {
-    my @ids = $redis->smembers("LRR_CATEGORIES");
-    return @ids if @ids;
-    @ids = $redis->keys('SET_??????????');
-    $redis->sadd( "LRR_CATEGORIES", @ids ) if @ids;
-    return @ids;
+    return _maintained_ids( $redis, "LRR_CATEGORIES", 'SET_??????????' );
 }
 
 # Tankoubon IDs. Backed by LRR_TANKS. Same lazy-backfill pattern.
 sub all_tank_ids ($redis) {
-    my @ids = $redis->smembers("LRR_TANKS");
-    return @ids if @ids;
-    @ids = $redis->keys('TANK_??????????');
-    $redis->sadd( "LRR_TANKS", @ids ) if @ids;
-    return @ids;
+    return _maintained_ids( $redis, "LRR_TANKS", 'TANK_??????????' );
 }
 
 # Creates a DB entry for a file path with the given ID.
@@ -137,13 +134,9 @@ sub change_archive_id ( $old_id, $new_id ) {
     # The renamed hash still carries previous content-derived caches; drop them so
     # the next reader/detector call rebuilds from the new on-disk content.
     $redis->hdel( $new_id, "pagefiles" );
-    $redis->hdel(
-        $new_id,
-        qw(
-          firstspreadstart firstspreadstart_confidence firstspreadstart_reason firstspreadstart_v firstspreadstart_err
-          firstpageside firstpageside_confidence firstpageside_reason firstpageside_v firstpageside_err
-        )
-    );
+    # Deferred require avoids the PageSide -> Database compile-time cycle.
+    require LANraragi::Utils::PageSide;
+    LANraragi::Utils::PageSide::clear_first_spread_start_detection($redis, $new_id);
 
     # The on-disk path for old_id is gone and new_id may resolve to a different
     # path; clear the per-worker id->path memo for both. Deferred call avoids a

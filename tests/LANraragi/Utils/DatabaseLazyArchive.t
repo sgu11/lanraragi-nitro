@@ -10,6 +10,8 @@ use LANraragi::Utils::Database;
 package FakeCleanDatabaseRedis {
     sub new { return bless { quit_count => 0 }, shift }
     sub exists { return 0 }
+    sub get { return undef }
+    sub set { return 1 }
     sub hexists { return 0 }
     sub hget { return undef }
     sub hvals { return () }

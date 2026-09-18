@@ -246,21 +246,85 @@ export function spreadStartFlags(mode, firstSpreadStart) {
 let spreadWindowsCache = null;
 let spreadWindowsSignature = null;
 
+/** Post-wide anchors belong to one archive/content revision. The stored end is
+ * an upper bound: a newly observed wide page always starts a new segment.
+ * Human corrections outrank inferred anchors within that same segment.
+ */
+export function resolveSegmentAnchors(maxPage, state) {
+    const anchors = new Map();
+    if (typeof state.archiveId !== "string" || !state.archiveId
+        || typeof state.contentRevision !== "string" || !/^[a-f0-9]{64}$/.test(state.contentRevision)
+        || !Array.isArray(state.segments)) return anchors;
+
+    for (const segment of state.segments) {
+        if (!segment || segment.archiveId !== state.archiveId || segment.contentRevision !== state.contentRevision
+            || segment.boundary !== "until_next_wide" || !["detector", "user_slide"].includes(segment.provenance)) continue;
+        const { segmentStart, segmentEnd, firstPairStart } = segment;
+        if (!Number.isInteger(segmentStart) || segmentStart < 2 || !state.widePages?.has(segmentStart - 1)
+            || state.widePages.has(segmentStart) || !Number.isInteger(segmentEnd) || segmentEnd <= segmentStart
+            || segmentEnd > maxPage + 1 || ![segmentStart, segmentStart + 1].includes(firstPairStart)
+            || firstPairStart >= segmentEnd) continue;
+        const priority = segment.provenance === "user_slide" ? 1 : 0;
+        const previous = anchors.get(segmentStart);
+        if (!previous || priority > previous.priority) {
+            anchors.set(segmentStart, { segmentStart, segmentEnd, firstPairStart, priority });
+        } else if (priority === previous.priority && (previous.firstPairStart !== firstPairStart || previous.segmentEnd !== segmentEnd)) {
+            anchors.set(segmentStart, { ...previous, firstPairStart: null });
+        }
+    }
+    return anchors;
+}
+
+/** Bounded reader polling. A cancelled request can never deliver late evidence.
+ * The caller cancels on archive departure, manual slides and adaptive-off.
+ */
+export function loadAdaptiveOffset({ archiveId, request, commit, intervalMs = 1500, attempts = 20, timeoutMs = 30000 }) {
+    const controller = new AbortController();
+    let timer;
+    let remaining = attempts;
+    const deadline = setTimeout(() => controller.abort(), timeoutMs);
+    const cancel = () => { controller.abort(); clearTimeout(timer); clearTimeout(deadline); };
+    const poll = async () => {
+        if (controller.signal.aborted || remaining <= 0) { cancel(); return; }
+        remaining -= 1;
+        try {
+            const result = await request(controller.signal);
+            if (controller.signal.aborted) return;
+            if (result.status === "disabled") { cancel(); return; }
+            if (result.archiveId === archiveId && /^[a-f0-9]{64}$/.test(result.contentRevision || "")
+                && result.status === "ready" && ["2", "4", "UNKNOWN"].includes(String(result.first_spread_start))) {
+                commit(result);
+                cancel();
+                return;
+            }
+        } catch (error) {
+            if (controller.signal.aborted || error?.name === "AbortError") { cancel(); return; }
+        }
+        if (remaining > 0) timer = setTimeout(poll, intervalMs);
+        else cancel();
+    };
+    poll();
+    return cancel;
+}
+
 function buildSpreadWindowsMemoized(maxPage, state) {
     const widePages = state.widePages || new Set();
     const wideKey = [...widePages].sort((a, b) => a - b).join(",");
-    const signature = `${Number(maxPage) || 0}|${state.doublePageMode ? 1 : 0}|${state.firstSpreadStart}|${wideKey}`;
+    const anchors = resolveSegmentAnchors(maxPage, state);
+    const segmentKey = [...anchors.values()].sort((a, b) => a.segmentStart - b.segmentStart)
+        .map(({ segmentStart, segmentEnd, firstPairStart }) => `${segmentStart}:${segmentEnd}:${firstPairStart}`).join(",");
+    const signature = `${Number(maxPage) || 0}|${state.doublePageMode ? 1 : 0}|${state.firstSpreadStart}|${wideKey}|${segmentKey}`;
 
     if (spreadWindowsCache && spreadWindowsSignature === signature) {
         return spreadWindowsCache;
     }
 
     spreadWindowsSignature = signature;
-    spreadWindowsCache = buildSpreadWindowsUncached(maxPage, state);
+    spreadWindowsCache = buildSpreadWindowsUncached(maxPage, state, anchors);
     return spreadWindowsCache;
 }
 
-function buildSpreadWindowsUncached(maxPage, state) {
+function buildSpreadWindowsUncached(maxPage, state, anchors) {
     const windows = [];
     const lastPage = Math.max(0, Number(maxPage) || 0);
     const widePages = state.widePages || new Set();
@@ -273,9 +337,13 @@ function buildSpreadWindowsUncached(maxPage, state) {
     }
 
     const firstPairPage = (normalizeFirstSpreadStart(state.firstSpreadStart) || 2) === 4 ? 2 : 1;
+    let lastWide = 0;
 
     for (let page = 0; page <= lastPage;) {
-        if (page === 0 || page < firstPairPage || widePages.has(page)) {
+        if (widePages.has(page)) lastWide = page;
+        const local = anchors.get(lastWide + 1);
+        const leadingSingle = local?.firstPairStart === page + 1 && local.segmentStart === page && page < local.segmentEnd;
+        if (page === 0 || page < firstPairPage || widePages.has(page) || leadingSingle) {
             windows.push({ start: page, end: page });
             page += 1;
             continue;
@@ -430,4 +498,57 @@ export function getPageNavigationOffset(targetPage, state) {
         offset *= 2;
     }
     return offset;
+}
+
+/** Confirm one slide only after a committed ordinary spread in the same direction.
+ * Navigation starts invalidate stale/failing requests; archive boundaries and
+ * direct jumps never teach a first anchor. Persistence failure does not re-arm.
+ */
+export function createSpreadFeedback({ persist, commit, onError = () => {} }) {
+    let pending = null;
+    let generation = 0;
+    let sliding = false;
+    let inFlight = false;
+    const ordinary = (window, state) => Boolean(state.doublePageMode && window
+        && window.start > 0 && window.end === window.start + 1 && window.end <= state.maxPage
+        && !state.widePages?.has(window.start) && !state.widePages?.has(window.end));
+    return {
+        cancel() { generation += 1; pending = null; sliding = false; },
+        begin({ archiveId, kind = "jump", direction, source, requested, enabled }) {
+            generation += 1;
+            const token = generation;
+            const previous = pending;
+            const secondSlide = pending !== null || sliding;
+            pending = null;
+            sliding = enabled && kind === "slide" && !secondSlide;
+            const canArm = sliding;
+            return async (target, state) => {
+                if (token !== generation) return false;
+                sliding = false;
+                if (!enabled || !ordinary(source, state) || !ordinary(target, state)
+                    || ![-1, 1].includes(direction)) return false;
+                const value = inferFirstSpreadStartFromDisplayWindow(target, state);
+                if (canArm && target.start === source.start + direction
+                    && target.start === requested?.start && target.end === requested?.end && value) {
+                    pending = { archiveId, direction, target, value };
+                    return false;
+                }
+                if (kind !== "normal" || !previous || inFlight || previous.archiveId !== archiveId
+                    || previous.direction !== direction || previous.target.start !== source.start
+                    || previous.target.end !== source.end || target.start !== source.start + direction * 2
+                    || value !== previous.value) return false;
+                inFlight = true;
+                try {
+                    await persist(archiveId, value);
+                    if (token === generation) commit(archiveId, value);
+                    return true;
+                } catch (error) {
+                    onError(error);
+                    return false;
+                } finally {
+                    inFlight = false;
+                }
+            };
+        },
+    };
 }

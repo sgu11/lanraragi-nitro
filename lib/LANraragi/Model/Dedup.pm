@@ -27,6 +27,54 @@ use LANraragi::Utils::PHash qw(hamming_hex);
 use LANraragi::Utils::String qw(clean_title trim);
 use String::Similarity;
 use Mojo::JSON qw(encode_json decode_json);
+use Digest::SHA qw(sha256_hex);
+use LANraragi::Utils::RedisScript qw(evalsha_cached);
+
+# A source token survives queued work but changes on every content mutation.
+# Initialize it only on an existing archive; failed jobs must not resurrect IDs.
+sub _dedup_source_snapshot {
+    my ($redis, $id) = @_;
+    my $script = <<'LUA';
+local file = redis.call('HGET', ARGV[1], 'file')
+if not file or file == '' then return {} end
+redis.call('HSETNX', ARGV[1], 'dedup_generation', ARGV[2])
+return {redis.call('HGET', ARGV[1], 'dedup_generation'), file}
+LUA
+    my $source = evalsha_cached($redis, 'dedup_source_snapshot', $script,
+        $id, sha256_hex(join ':', time(), $$, rand(), $id));
+    return ref $source eq 'ARRAY' && @$source == 2 ? $source : undef;
+}
+
+sub _publish_dedup_fields {
+    my ($redis, $id, $source, $fields, $remove) = @_;
+    return 0 unless $source;
+    my $script = <<'LUA';
+if redis.call('HGET', ARGV[1], 'dedup_generation') ~= ARGV[2]
+    or redis.call('HGET', ARGV[1], 'file') ~= ARGV[3] then return 0 end
+local fields = cjson.decode(ARGV[4])
+for field, value in pairs(fields) do redis.call('HSET', ARGV[1], field, value) end
+for _, field in ipairs(cjson.decode(ARGV[5])) do redis.call('HDEL', ARGV[1], field) end
+return 1
+LUA
+    return evalsha_cached($redis, 'dedup_publish_fields', $script,
+        $id, @$source, encode_json($fields), encode_json($remove // []));
+}
+
+sub _invalidate_dedup_source {
+    my ($redis, $id) = @_;
+    my $script = <<'LUA';
+if redis.call('EXISTS', ARGV[1]) == 0 then return 0 end
+redis.call('HSET', ARGV[1], 'dedup_generation', ARGV[2])
+for i = 3, #ARGV do redis.call('HDEL', ARGV[1], ARGV[i]) end
+return 1
+LUA
+    return evalsha_cached($redis, 'dedup_invalidate_source', $script,
+        $id, sha256_hex(join ':', time(), $$, rand(), $id), qw(
+            coverhash coverhash_v coverhash_err cover_fp cover_fp_v cover_fp_err
+            pagehashes pagehashes_v pagehashes_n pagehashes_err
+            lead_hashes lead_hashes_v lead_hashes_n lead_hashes_err
+            leadhashes leadhashes_v leadhashes_n leadhashes_err));
+}
 
 # Page-count-delta weight in the score formula. 20 means a 100% page-count
 # mismatch contributes 20 to the score.
@@ -42,7 +90,7 @@ sub normalize_title_for_dedup {
     $title =~ s/\[[^\]]*\]//g;
     $title =~ s/\([Cc]\d+[^)]*\)//g;
     $title =~ s/\b(?:dl|digital|scan|scanned|korean|english|japanese|raw|translated)\b//ig;
-    $title =~ s{\b(?:https?://)?[a-z0-9.-]+\.[a-z]{2,}(?:/[\w:/%.-]*)?}{}ig;
+    $title =~ s/\b(?:e[- ]?hentai|exhentai|nhentai|hitomi)\b[\w:\/.-]*//ig;
     $title =~ s/[_.,;:|+~!-]+/ /g;
     $title =~ s/\s+/ /g;
     return trim(clean_title($title));
@@ -61,13 +109,13 @@ sub work_key_for_dedup {
 sub dedup_source_key_from_tags {
     my ($tags) = @_;
     $tags //= '';
-    return '' unless $tags =~ /(?:^|,)\s*source:\s*([^,]+)/i;
-
-    my $source = lc(trim($1));
-    $source =~ s{^https?://}{}i;
-    $source =~ s{[?#].*\z}{};
-    $source =~ s{/+\z}{};
-    return $source;
+    return "ehentai:$1" if $tags =~ m{source:\s*https?://(?:e-hentai|exhentai)\.org/g/(\d+)/}i;
+    return "ehentai:$1" if $tags =~ m{source:\s*(?:e-hentai|exhentai)\.org/g/(\d+)/}i;
+    return "nhentai:$1" if $tags =~ m{source:\s*https?://nhentai\.net/g/(\d+)}i;
+    return "nhentai:$1" if $tags =~ m{source:\s*nhentai\.net/g/(\d+)}i;
+    return "hitomi:$1"  if $tags =~ m{source:\s*https?://hitomi\.la/[^,]*?(\d+)\.html}i;
+    return "hitomi:$1"  if $tags =~ m{source:\s*hitomi\.la/[^,]*?(\d+)\.html}i;
+    return '';
 }
 
 sub dedup_language_from_tags {
@@ -228,6 +276,7 @@ sub _valid_hash {
 #   - On total failure: writes pagehashes_err = "<algo>:<reason>" and returns -1.
 sub compute_pagehashes_for_archive {
     my ($redis, $id, $config) = @_;
+    my $source = _dedup_source_snapshot($redis, $id) or return -1;
     my $algo = $config->{algo_version} // 1;
     my $k    = $config->{pages_sampled} // 5;
 
@@ -236,14 +285,14 @@ sub compute_pagehashes_for_archive {
 
     my $file = _get_archive_path($redis, $id);
     unless ($file && -e $file) {
-        $redis->hset($id, "pagehashes_err", "$algo:archive_missing");
+        _publish_dedup_fields($redis, $id, $source, { pagehashes_err => "$algo:archive_missing" });
         return -1;
     }
 
     my @filelist = _get_filelist($file, $id);
     my $n = scalar @filelist;
     if ($n == 0) {
-        $redis->hset($id, "pagehashes_err", "$algo:empty_archive");
+        _publish_dedup_fields($redis, $id, $source, { pagehashes_err => "$algo:empty_archive" });
         return -1;
     }
 
@@ -272,13 +321,12 @@ sub compute_pagehashes_for_archive {
     }
 
     unless ($any_success) {
-        $redis->hset($id, "pagehashes_err", "$algo:all_extractions_failed");
+        _publish_dedup_fields($redis, $id, $source, { pagehashes_err => "$algo:all_extractions_failed" });
         return -1;
     }
 
-    $redis->hmset($id, "pagehashes", join(' ', @hashes), "pagehashes_v", $algo, "pagehashes_n", $n);
-    $redis->hdel($id, "pagehashes_err");
-    return 1;
+    return _publish_dedup_fields($redis, $id, $source,
+        { pagehashes => join(' ', @hashes), pagehashes_v => $algo, pagehashes_n => $n }, ['pagehashes_err']);
 }
 
 use Mojo::JSON qw(encode_json decode_json);
@@ -307,21 +355,26 @@ use Mojo::JSON qw(encode_json decode_json);
 #   - on failure: write coverhash_err = "<algo>:<reason>", return -1
 sub compute_coverhash_for_archive {
     my ($redis, $id, $config) = @_;
+    my $source = _dedup_source_snapshot($redis, $id) or return -1;
     my $algo = $config->{cover_algo_version} // COVER_HASH_ALGO_VERSION;
 
     my $existing_v = $redis->hget($id, "coverhash_v");
-    return 0 if defined $existing_v && $existing_v eq $algo;
+    return 0 if defined $existing_v && $existing_v eq $algo && _valid_hash($redis->hget($id, 'coverhash'));
 
-    my $file = _get_archive_path($redis, $id);
+    my $file = eval { _get_archive_path($redis, $id) };
     unless ($file && -e $file) {
-        $redis->hset($id, "coverhash_err", "$algo:archive_missing");
+        _publish_dedup_fields($redis, $id, $source, { coverhash_err => "$algo:archive_missing" });
         return -1;
     }
 
-    my @filelist = _get_filelist($file, $id);
+    my @filelist = eval { _get_filelist($file, $id) };
+    if ($@) {
+        _publish_dedup_fields($redis, $id, $source, { coverhash_err => "$algo:list_failed" });
+        return -1;
+    }
     my $n = scalar @filelist;
     if ($n == 0) {
-        $redis->hset($id, "coverhash_err", "$algo:empty_archive");
+        _publish_dedup_fields($redis, $id, $source, { coverhash_err => "$algo:empty_archive" });
         return -1;
     }
 
@@ -335,13 +388,12 @@ sub compute_coverhash_for_archive {
     _unlink_temp($extracted, $extracted_dir) if $extracted || $extracted_dir;
 
     if ($err || !$hash) {
-        $redis->hset($id, "coverhash_err", "$algo:extract_failed");
+        _publish_dedup_fields($redis, $id, $source, { coverhash_err => "$algo:extract_failed" });
         return -1;
     }
 
-    $redis->hmset($id, "coverhash", $hash, "coverhash_v", $algo);
-    $redis->hdel($id, "coverhash_err");
-    return 1;
+    return _publish_dedup_fields($redis, $id, $source,
+        { coverhash => $hash, coverhash_v => $algo }, ['coverhash_err']);
 }
 
 sub lead_hamming {
@@ -360,6 +412,7 @@ sub lead_hamming {
 
 sub compute_leadhashes_for_archive {
     my ($redis, $id, $config) = @_;
+    my $source = _dedup_source_snapshot($redis, $id) or return -1;
     my $algo = $config->{lead_algo_version} // 2;
     my $k    = $config->{lead_pages_sampled} // 3;
     $k = 1 if $k <= 0;
@@ -369,13 +422,13 @@ sub compute_leadhashes_for_archive {
 
     my $file = _get_archive_path($redis, $id);
     unless ($file && -e $file) {
-        $redis->hset($id, "lead_hashes_err", "$algo:archive_missing");
+        _publish_dedup_fields($redis, $id, $source, { lead_hashes_err => "$algo:archive_missing" });
         return -1;
     }
 
     my @filelist = _get_filelist($file, $id);
     if (!@filelist) {
-        $redis->hset($id, "lead_hashes_err", "$algo:empty_archive");
+        _publish_dedup_fields($redis, $id, $source, { lead_hashes_err => "$algo:empty_archive" });
         return -1;
     }
 
@@ -394,13 +447,12 @@ sub compute_leadhashes_for_archive {
 
     my @valid = grep { _valid_hash($_) } @hashes;
     unless (@valid) {
-        $redis->hset($id, "lead_hashes_err", "$algo:all_extractions_failed");
+        _publish_dedup_fields($redis, $id, $source, { lead_hashes_err => "$algo:all_extractions_failed" });
         return -1;
     }
 
-    $redis->hmset($id, "lead_hashes", join(' ', @hashes), "lead_hashes_v", $algo, "lead_hashes_n", scalar(@valid));
-    $redis->hdel($id, "lead_hashes_err");
-    return 1;
+    return _publish_dedup_fields($redis, $id, $source,
+        { lead_hashes => join(' ', @hashes), lead_hashes_v => $algo, lead_hashes_n => scalar(@valid) }, ['lead_hashes_err']);
 }
 
 sub _has_korean {
@@ -459,7 +511,8 @@ sub classify_dedup_pair {
     my $minp = $pa < $pb ? $pa : $pb;
     my $page_ratio = $maxp > 0 ? $minp / $maxp : 0;
 
-    my @risk_flags;
+    my @risk_flags = ('partial_visual_evidence');
+    push @risk_flags, 'unknown_page_count' if $pa <= 0 || $pb <= 0;
     my %out = (
         relation         => "none",
         confidence       => 0,
@@ -472,7 +525,7 @@ sub classify_dedup_pair {
         risk_flags       => \@risk_flags,
     );
 
-    if ($lead <= $strong_hamming && $title_or_source_strong && $page_ratio < $subset_ratio) {
+    if ($lead <= $strong_hamming && $title_or_source_strong && $pa > 0 && $pb > 0 && $page_ratio < $subset_ratio) {
         my ($smaller, $larger) = $pa <= $pb ? ($a, $b) : ($b, $a);
         my $small_lang = dedup_language_from_tags($smaller->{tags});
         my $large_lang = dedup_language_from_tags($larger->{tags});
@@ -480,8 +533,7 @@ sub classify_dedup_pair {
         my $small_q = quality_proxy($smaller);
         my $large_q = quality_proxy($larger);
         push @risk_flags, "deleting_higher_quality_subset" if $large_q > 0 && $small_q / $large_q >= $subset_quality_warn;
-        @out{qw(relation suggested_action suggested_delete suggested_keep confidence)} =
-            ("subset", "delete_subset", $smaller->{id}, $larger->{id}, 0.90);
+        @out{qw(relation confidence)} = ("subset", 0.90);
         return \%out;
     }
 
@@ -493,8 +545,6 @@ sub classify_dedup_pair {
             my ($ko, $other) = _has_korean($lang_a) ? ($a, $b) : _has_korean($lang_b) ? ($b, $a) : ();
             if ($ko && (quality_proxy($other) == 0 || quality_proxy($ko) >= $quality_floor * quality_proxy($other))) {
                 $out{suggested_keep} = $ko->{id};
-                $out{suggested_delete} = $other->{id};
-                $out{suggested_action} = "delete_non_preferred";
             } else {
                 $out{suggested_action} = "review";
                 push @risk_flags, "quality_warning" if $ko;
@@ -503,11 +553,9 @@ sub classify_dedup_pair {
             return \%out;
         }
 
-        my $qa = quality_proxy($a);
-        my $qb = quality_proxy($b);
-        my ($delete, $keep) = $qa <= $qb ? ($a, $b) : ($b, $a);
-        @out{qw(relation suggested_action suggested_delete suggested_keep confidence)} =
-            ("duplicate", "delete_lower_quality", $delete->{id}, $keep->{id}, 0.82);
+        # A matching lead page and a size-per-page proxy cannot establish
+        # full duplication or image quality. Keep this API advisory-only.
+        @out{qw(relation confidence)} = ("duplicate", 0.82);
         return \%out;
     }
 
@@ -737,6 +785,7 @@ sub find_cover_duplicate_pairs_in_memory {
     # Stable id order so cursor resumes mean what they meant last run.
     my @ids = sort keys %$cover_data;
     my $n_total = scalar @ids;
+    my @packed = map { pack('H*', $cover_data->{$_}) } @ids;
 
     $start_i = 0 if $start_i >= $n_total;
 
@@ -747,7 +796,7 @@ sub find_cover_duplicate_pairs_in_memory {
     my $cur_j           = 0;
 
     OUTER: for (my $i = $start_i; $i < $n_total; $i++) {
-        my $hash_i = $cover_data->{$ids[$i]};
+        my $hash_i = $packed[$i];
         my $j_begin = ($i == $start_i && $start_j > $i) ? $start_j : $i + 1;
 
         for (my $j = $j_begin; $j < $n_total; $j++) {
@@ -758,7 +807,7 @@ sub find_cover_duplicate_pairs_in_memory {
             }
             $candidates_seen++;
 
-            my $d = hamming_hex($hash_i, $cover_data->{$ids[$j]});
+            my $d = LANraragi::Utils::PHash::hamming_packed($hash_i, $packed[$j]);
             next if $d > $max_hamming;
 
             my ($a, $b) = sort ($ids[$i], $ids[$j]);
@@ -766,14 +815,19 @@ sub find_cover_duplicate_pairs_in_memory {
             next if $dismissed_members{$member};
             next if $existing_members{$member};
 
-            $redis->zadd($pair_key, $d, $member);
-            $redis->hset($pair_meta, $member,
-                encode_json({
+            my $meta = {
                     pass               => 'cover',
                     cover_hamming      => $d,
                     cover_algo_version => $algo,
                     ts                 => time(),
-                }));
+                    generation         => sha256_hex(join ':', time(), $$, rand(), $member),
+                };
+            if ($config->{publish_pair}) {
+                next unless $config->{publish_pair}->($member, $d, $meta);
+            } else {
+                $redis->zadd($pair_key, $d, $member);
+                $redis->hset($pair_meta, $member, encode_json($meta));
+            }
             $existing_members{$member} = 1;
             $stored++;
 

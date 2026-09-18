@@ -143,9 +143,11 @@ sub create_category {
         # Default values for new category
         $redis->hset( $cat_id, "archives", "[]" );
 
-        # Track in the LRR_CATEGORIES maintained set (B.3).
-        $redis->sadd( "LRR_CATEGORIES", $cat_id );
     }
+
+    # Restore IDs must remain visible even when the maintained set already contains other categories.
+    $redis->hsetnx( $cat_id, "archives", "[]" );
+    $redis->sadd( "LRR_CATEGORIES", $cat_id );
 
     # Set/update name, pin status and favtag
     $redis->hset( $cat_id, "name",   redis_encode($name) );
@@ -153,6 +155,7 @@ sub create_category {
     $redis->hset( $cat_id, "pinned", $pinned );
 
     $redis->quit;
+    invalidate_cache();
 
     return $cat_id;
 }
@@ -184,6 +187,7 @@ sub delete_category {
         $redis->srem( "LRR_CATEGORIES", $cat_id );
         $redis->del($cat_id);
         $redis->quit;
+        invalidate_cache();
         return 1;
     } else {
         $redis->srem( "LRR_CATEGORIES", $cat_id );

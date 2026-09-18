@@ -28,6 +28,9 @@
          discovers the remaining reader dependencies from the import map. -->
     <link rel="modulepreload" href="[% c.url_for("/js/reader.js?$asset_version") %]" />
     <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader_common.js?$asset_version") %]" />
+    <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader-overlay.js?$asset_version") %]" />
+    <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader-options.js?$asset_version") %]" />
+    <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader-image-loader.js?$asset_version") %]" />
     <link rel="modulepreload" href="[% c.url_for("/js/i18n.js?$asset_version") %]" />
     <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/server.js?$asset_version") %]" />
     <link rel="modulepreload" href="[% c.url_for("/js/$version/mod/reader-progress.js?$asset_version") %]" />
@@ -307,6 +310,15 @@
     </span>
     <input id="track-progress" class="favtag-btn config-btn" type="button" value="[% c.lh('Enabled') %]">
     <input id="untrack-progress" class="favtag-btn config-btn" type="button" value="[% c.lh('Disabled') %]">
+</div>
+
+<div id="page-slide-settings">
+    <h2 class="config-panel"><label for="slide-pages">[% c.lh("Sliding page transitions") %]</label></h2>
+    <input id="slide-pages" type="checkbox">
+    <p><label for="slide-duration">[% c.lh("Slide duration") %]</label>
+    <output id="slide-duration-value" for="slide-duration">200 ms</output></p>
+    <input id="slide-duration" type="range" min="50" max="1000" step="25" value="200" disabled aria-describedby="slide-duration-help">
+    <p id="slide-duration-help">[% c.lh("Click duration; touch uses this value as spring response time, not a fixed completion time. Single and double pages only.") %]</p>
 </div>
 
 <div id="toggle-infinite-scroll">

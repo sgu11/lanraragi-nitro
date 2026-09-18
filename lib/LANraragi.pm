@@ -27,6 +27,9 @@ use LANraragi::Utils::I18NInitializer;
 
 use LANraragi::Model::Search;
 use LANraragi::Model::Config;
+use LANraragi::Model::Plugins;
+use LANraragi::Model::Registry;
+use LANraragi::Model::Server;
 use LANraragi::Model::Setup      qw(first_install_actions);
 use LANraragi::Model::Metrics;
 
@@ -200,7 +203,7 @@ sub startup {
     # Check old settings and migrate them if needed.
     # Ignore maintained archive-DB index sets (LRR_ALL_ARCHIVES/LRR_CATEGORIES/LRR_TANKS)
     # so a clean install doesn't trip the migration path every restart.
-    my @legacy_keys = grep { !/^LRR_(ALL_ARCHIVES|CATEGORIES|TANKS)$/ } $self->LRR_CONF->get_redis->keys('LRR_*');
+    my @legacy_keys = grep { !/^LRR_(ALL_ARCHIVES|CATEGORIES|TANKS)(?::initialized)?$/ } $self->LRR_CONF->get_redis->keys('LRR_*');
     if ( @legacy_keys ) {
         say "Migrating old settings to new format...";
         migrate_old_settings($self);
@@ -217,6 +220,25 @@ sub startup {
     # Route Mojolicious/plugin logs (including OpenAPI validation warnings)
     # through LRR's rotating logger pipeline.
     $self->log( get_logger( "Mojolicious", "mojo" ) );
+
+    # Reconcile discovered plugins with Redis state.
+    my $redis_config = $self->LRR_CONF->get_redis_config;
+    LANraragi::Model::Plugins::scan_plugins($redis_config);
+
+    # Refresh plugin registries at server start.
+    # This doesn't really help long-running servers, but those can just hit manual refreshes
+    # in the Registry UI.
+    foreach my $registry ( LANraragi::Model::Registry::get_registry_list($redis_config) ) {
+        my $registry_id = $registry->{id};
+        my ( $status, undef, $error ) = LANraragi::Model::Registry::refresh_registry( $registry_id, $redis_config );
+        unless ( $status == 200 ) {
+            $self->LRR_LOGGER->warn("Startup refresh of registry '$registry_id' failed: $error");
+        }
+    }
+
+    # Reset restart flag.
+    LANraragi::Model::Server::clear_restart_pending($redis_config);
+    $redis_config->quit();
 
     #Plugin listing
     my @plugins = get_plugins("metadata");
@@ -382,11 +404,36 @@ sub startup {
             }
         );
 
+        Mojo::IOLoop->recurring(1 => sub {
+            LANraragi::Model::Metrics::flush_phase_metrics();
+        });
+
         # Periodically collect process metrics and flush cached request metrics to redis
         Mojo::IOLoop->recurring(30 => sub {
             LANraragi::Model::Metrics::collect_process_metrics( "http" );
             LANraragi::Model::Metrics::flush_request_metrics_to_redis();
         });
+
+        # Manage Mojo worker lifecycles
+        $self->hook(
+            before_server_start => sub {
+                my ( $server, $app ) = @_;
+
+                # track all active workers.
+                $server->on(
+                    spawn => sub {
+                        my ( $prefork, $pid ) = @_;
+                        LANraragi::Model::Metrics::register_worker($pid);
+                    }
+                );
+                $server->on(
+                    reap => sub {
+                        my ( $prefork, $pid ) = @_;
+                        LANraragi::Model::Metrics::unregister_worker($pid);
+                    }
+                );
+            }
+        );
 
         $self->LRR_LOGGER->info("Metrics collection is enabled.");
 
@@ -414,7 +461,10 @@ sub shutdown_from_pid {
 sub add_sigint_handler {
     my $old_int = $SIG{INT};
     $SIG{INT} = sub {
-        LANraragi::Model::Metrics::flush_request_metrics_to_redis() if LANraragi::Model::Config->enable_metrics;
+        if (LANraragi::Model::Config->enable_metrics) {
+            LANraragi::Model::Metrics::flush_request_metrics_to_redis();
+            LANraragi::Model::Metrics::flush_phase_metrics();
+        }
         shutdown_from_pid( get_temp . "/shinobu.pid" );
         shutdown_from_pid( get_temp . "/minion.pid" );
 

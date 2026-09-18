@@ -1,4 +1,7 @@
+lib/LANraragi/Plugin/Managed
+
 node_modules
+.perl5
 content
 thumb
 .minion.db*
@@ -26,4 +29,5 @@ smoke-*.png
 # Agent artifact files
 .sisyphus/
 .claude/
+.opencode/
 *.original.md

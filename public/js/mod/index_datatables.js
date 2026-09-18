@@ -110,7 +110,7 @@ export function initializeAll() {
         lengthChange: false,
         pageLength: Index.pageSize,
         order: [[DEFAULT_INDEX_SORT_COLUMN, DEFAULT_INDEX_SORT_DIRECTION]],
-        dom: `<"top"ip>rt<"bottom"p><"clear">`,
+        dom: `<"top"ip>rt<"clear">`,
         language: {
             info: I18N.IndexPageCount,
             infoEmpty: `<h1><br/><i class="fas fa-4x fa-sad-cry"></i><br/><br/>
@@ -297,7 +297,7 @@ export function initializeThumbView() {
  * @param {number} dataIndex index of row
  * @param {Node[]} cells cells for the column
  */
-export function createdRow(row, data, dataIndex, cells) {
+export function createdRow(row, data, _dataIndex, _cells) {
     // Update row with id and context-menu class
     row.id = data.arcid || data.id;
     row.classList.add("context-menu");

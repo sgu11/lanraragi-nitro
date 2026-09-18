@@ -89,7 +89,7 @@ Duplicates.pollMinionJob = function (job) {
     );
 };
 
-Duplicates.drawCallbackDataTable = function (settings) {
+Duplicates.drawCallbackDataTable = function (_settings) {
     var groupColumn = 0;
     var api = this.api();
     var rows = api.rows({ page: "current" }).nodes();
@@ -222,7 +222,8 @@ Duplicates.deleteArchive = function (event) {
         text: I18N.ConfirmArchiveDeletion,
         icon: "warning",
         showCancelButton: true,
-        focusConfirm: false,
+        focusConfirm: true,
+        allowEnterKey: true,
         confirmButtonText: I18N.ConfirmYes,
         reverseButtons: true,
         confirmButtonColor: "#d33",
@@ -239,7 +240,8 @@ Duplicates.deleteArchives = function () {
         text: I18N.ConfirmArchivesDeletion,
         icon: "warning",
         showCancelButton: true,
-        focusConfirm: false,
+        focusConfirm: true,
+        allowEnterKey: true,
         confirmButtonText: I18N.ConfirmYes,
         reverseButtons: true,
         confirmButtonColor: "#d33",

@@ -10,7 +10,7 @@ use List::Util qw(min max);
 use CHI;
 use Config;
 use Fcntl     qw(:flock);
-use File::Path qw(make_path remove_tree);
+use File::Path qw(make_path);
 use Mojo::JSON qw(decode_json encode_json);
 
 use LANraragi::Utils::Logging  qw(get_logger);
@@ -21,7 +21,7 @@ use constant DEFAULT_PAGE_SIZE_MB => 32;
 
 # Contains all functions related to caching entire pages
 use Exporter 'import';
-our @EXPORT_OK = qw(fetch put clear clear_by_id);
+our @EXPORT_OK = qw(fetch put clear clear_by_id get_generation is_current_generation);
 
 my $cache = undef;
 my $page_size_bytes = undef;
@@ -79,14 +79,57 @@ sub _write_index_unlocked ( $path, @keys ) {
     return rename $tmp_path, $path;
 }
 
-sub _with_index_lock ( $id, $callback ) {
+sub _with_global_lock ( $mode, $callback ) {
     my $dir = _ensure_index_dir();
-    my $lock_file = _index_lock_file( $dir, $id );
-    open( my $lock, '>>', $lock_file ) or return $callback->($dir);
-    flock( $lock, LOCK_EX );
+    open my $lock, '>>', "$dir/global.lock" or die "Cannot open PageCache global lock: $!\n";
+    flock( $lock, $mode ) or die "Cannot lock PageCache: $!\n";
     my $result = $callback->($dir);
     close $lock;
     return $result;
+}
+
+sub _with_index_lock ( $id, $callback ) {
+    return _with_global_lock( LOCK_SH, sub ($dir) {
+        my $lock_file = _index_lock_file( $dir, $id );
+        open( my $lock, '>>', $lock_file ) or die "Cannot open PageCache archive lock: $!\n";
+        flock( $lock, LOCK_EX ) or die "Cannot lock PageCache archive: $!\n";
+        my $result = $callback->($dir);
+        close $lock;
+        return $result;
+    });
+}
+
+sub _read_generation ($path) {
+    return 0 unless -e $path;
+    open my $fh, '<', $path or die "Cannot read PageCache generation: $!\n";
+    my $value = <$fh>;
+    close $fh;
+    die "Invalid PageCache generation\n" unless defined $value && $value =~ /\A\d+\z/;
+    return $value;
+}
+
+sub _advance_generation ($path) {
+    my $value = _read_generation($path) + 1;
+    my $temporary = "$path.$$";
+    open my $fh, '>', $temporary or die "Cannot write PageCache generation: $!\n";
+    print {$fh} $value or die "Cannot write PageCache generation: $!\n";
+    close $fh or die "Cannot close PageCache generation: $!\n";
+    rename $temporary, $path or die "Cannot publish PageCache generation: $!\n";
+}
+
+sub _generation_unlocked ( $dir, $id ) {
+    return _read_generation("$dir/global.generation") . ':' . _read_generation("$dir/$id.generation");
+}
+
+# Tokens live beside stable lock files, outside the evictable byte cache. A
+# clear must advance the token even when there are no cached entries yet.
+sub get_generation ($id) {
+    return '' unless defined $id && $id =~ /\A[0-9a-f]{40}\z/i;
+    return _with_index_lock( $id, sub ($dir) { _generation_unlocked($dir, $id) } );
+}
+
+sub is_current_generation ( $id, $generation ) {
+    return get_generation($id) eq $generation;
 }
 
 sub calc_max_size() {
@@ -154,14 +197,20 @@ sub initialize() {
 }
 
 # Fetches data from cache if available. Returns undef if nothing is there
-sub fetch( $key ) {
+sub fetch( $key, $generation = undef ) {
     if (!defined($cache)) {
         initialize;
     }
     my $logger = get_logger( "PageCache", "lanraragi" );
     $logger->debug("Fetch $key");
 
-    my $content = $cache->get($key);
+    my $id = _archive_id_from_key($key);
+    my $content = defined $generation && defined $id
+        ? _with_index_lock( $id, sub ($dir) {
+            return unless _generation_unlocked($dir, $id) eq $generation;
+            return $cache->get($key);
+        } )
+        : $cache->get($key);
     if (defined $content) {
         $logger->debug("Cache HIT for $key");
     } else {
@@ -171,7 +220,7 @@ sub fetch( $key ) {
 }
 
 # Attempts to store data in the cache. Do not assume that fetch will work immediately after, cache may be disabled etc
-sub put( $key, $content ) {
+sub put( $key, $content, $generation = undef ) {
     if (!defined($cache)) {
         initialize;
     }
@@ -191,12 +240,16 @@ sub put( $key, $content ) {
         _with_index_lock(
             $id,
             sub ($dir) {
+                return if defined $generation && _generation_unlocked($dir, $id) ne $generation;
                 $stored = $cache->set( $key, $content );
                 if ($stored) {
                     my $path = _index_file( $dir, $id );
                     my @keys = _read_index_unlocked($path);
                     push @keys, $key;
-                    _write_index_unlocked( $path, @keys );
+                    unless (_write_index_unlocked( $path, @keys )) {
+                        $cache->remove($key);
+                        die "Cannot index PageCache entry\n";
+                    }
                 }
             }
         );
@@ -213,10 +266,13 @@ sub clear() {
 
     my $logger = get_logger( "PageCache", "lanraragi" );
     $logger->debug("Clearing cache");
-    $cache->clear();
-
-    my $index_dir = _index_dir();
-    remove_tree($index_dir) if -d $index_dir;
+    _with_global_lock( LOCK_EX, sub ($dir) {
+        _advance_generation("$dir/global.generation");
+        $cache->clear();
+        # Keep lock inodes and generation tokens stable for existing workers.
+        for my $path (glob "$dir/*.json") { unlink $path; }
+        return 1;
+    } );
 }
 
 sub clear_by_id ($id) {
@@ -233,6 +289,7 @@ sub clear_by_id ($id) {
         _with_index_lock(
             $id,
             sub ($dir) {
+                _advance_generation("$dir/$id.generation");
                 my $path = _index_file( $dir, $id );
                 my @keys = _read_index_unlocked($path);
                 foreach my $key (@keys) {

@@ -9,6 +9,8 @@ import I18N from "i18n";
 const Category = {};
 
 Category.categories = [];
+Category.saveQueue = Promise.resolve();
+Category.saveRevision = 0;
 
 export function initializeAll() {
 
@@ -52,7 +54,8 @@ Category.addNewCategory = function (isDynamic) {
             const searchtag = isDynamic ? "language:english" : "";
 
             // Make an API request to create category, search is empty -> static, otherwise dynamic
-            Server.callAPI(`/api/categories?name=${result.value}&search=${searchtag}`, "PUT", `Category "${result.value}" created!`, "Error creating category:",
+            const params = new URLSearchParams({ name: result.value, search: searchtag });
+            Server.callAPI(`/api/categories?${params}`, "PUT", `Category "${result.value}" created!`, "Error creating category:",
                 (data) => {
                     // Reload categories and select the newly created ID
                     Category.loadCategories(data.category_id);
@@ -101,7 +104,7 @@ Category.updateCategoryDetails = function () {
 
     document.getElementById("catname").value = category.name;
     document.getElementById("catsearch").value = category.search;
-    document.getElementById("pinned").checked = category.pinned === "1";
+    document.getElementById("pinned").checked = Number(category.pinned) === 1;
 
     if (category.search === "") {
         // Show tankoubons and archives if static and check the matching IDs
@@ -153,17 +156,23 @@ Category.saveCurrentCategoryDetails = function () {
     const catName = document.getElementById("catname").value;
     const searchtag = document.getElementById("catsearch").value;
     const pinned = document.getElementById("pinned").checked ? "1" : "0";
+    Category.saveRevision += 1;
+    const revision = Category.saveRevision;
+    const params = new URLSearchParams({ name: catName, search: searchtag, pinned });
 
     Category.indicateSaving();
 
-    // PUT update with name and search (search is empty if this is a static category)
-    // Indicate saved and load categories are placed inside the API call to avoid race conditions.
-    Server.callAPI(`/api/categories/${categoryID}?name=${catName}&search=${searchtag}&pinned=${pinned}`, "PUT", null, "Error updating category:",
-        (data) => {
-            Category.indicateSaved();
-            Category.loadCategories(data.category_id);
-        },
-    );
+    // Serialize full-state updates so a slower older request cannot overwrite a newer edit.
+    Category.saveQueue = Category.saveQueue
+        .catch(() => undefined)
+        .then(() => Server.callAPI(`/api/categories/${categoryID}?${params}`, "PUT", null, "Error updating category:",
+            (data) => {
+                if (revision !== Category.saveRevision) return;
+                Category.indicateSaved();
+                const selectedID = document.getElementById("category").value;
+                Category.loadCategories(selectedID || data.category_id);
+            },
+        ));
 };
 
 Category.updateBookmarkLink = function () {

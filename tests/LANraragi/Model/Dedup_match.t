@@ -230,7 +230,8 @@ note("relation matcher: store metadata, then upsert + preserve status on re-run"
     is($r1->{removed}, 0, "nothing to GC on first run");
     ok(exists $zset->{"large|small"}, "stores canonical sorted pair id");
     like($meta->{"large|small"}, qr/"relation":"subset"/,        "meta stores subset relation");
-    like($meta->{"large|small"}, qr/"suggested_delete":"small"/, "meta stores suggested delete");
+    unlike($meta->{"large|small"}, qr/"suggested_delete"/, "partial evidence stores no deletion recommendation");
+    like($meta->{"large|small"}, qr/"suggested_action":"review"/, "relation candidate remains review-only");
     like($meta->{"large|small"}, qr/"pass":"relation"/,          "meta stores relation pass");
     like($meta->{"large|small"}, qr/"status":"new"/,             "fresh pair gets status new");
 

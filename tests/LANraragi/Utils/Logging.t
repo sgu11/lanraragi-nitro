@@ -8,7 +8,7 @@ use POSIX ":sys_wait_h";
 use Mojo::Log;
 use File::Temp qw(tempdir);
 use Time::HiRes qw(sleep time);
-use Sys::CpuAffinity;
+use MCE::Util;
 
 BEGIN { use_ok('LANraragi::Utils::Logging'); }
 
@@ -257,7 +257,7 @@ note('testing init-time concurrent log rotation...');
     with_logging_context( sub {
         my $tmpdir              = $ENV{LRR_LOG_DIRECTORY};
         my $create_before_fork  = 0;
-        my $num_cpus            = Sys::CpuAffinity::getNumCpus();
+        my $num_cpus            = MCE::Util::get_ncpu();
         my $children            = $num_cpus < 4 ? $num_cpus : 4;
         my $messages_per_child  = 250;
         my $batches             = 2;

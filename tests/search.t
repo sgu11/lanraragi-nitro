@@ -431,8 +431,8 @@ note('testing gen-keyed sort-order cache (N-11)...');
     # The earlier artist-sorted searches should have populated the full-corpus
     # order cache under the current generation (no invalidation ran yet → gen 0).
     my ( $base_total, $base_filtered, @base_ids ) = LANraragi::Model::Search::do_search( "", "", -1, "artist", 0, 0, 0, 0, 0 );
-    ok( defined $redis->get("LRR_SORTCACHE:0:artist"), 'Artist sort order is cached under gen 0' );
-    ok( defined $redis->get("LRR_SORTCACHE:0:title"),  'Title sort order is cached under gen 0' );
+    ok( defined $redis->get("LRR_SORTCACHE:v2:0:artist"), 'Artist sort order is cached under gen 0' );
+    ok( defined $redis->get("LRR_SORTCACHE:v2:0:title"),  'Title sort order is cached under gen 0' );
 
     # A different filter with the same sortkey misses the per-query cache but
     # reuses the cached order: subset comes back in full-corpus order.
@@ -445,7 +445,7 @@ note('testing gen-keyed sort-order cache (N-11)...');
     LANraragi::Utils::Database::invalidate_cache();
     my ( $re_total, $re_filtered, @re_ids ) = LANraragi::Model::Search::do_search( "", "", -1, "artist", 0, 0, 0, 0, 0 );
     is_deeply( \@re_ids, \@base_ids, 'Artist sort results identical after gen bump (recomputed order)' );
-    ok( defined $redis->get("LRR_SORTCACHE:1:artist"), 'Artist sort order re-cached under bumped gen' );
+    ok( defined $redis->get("LRR_SORTCACHE:v2:1:artist"), 'Artist sort order re-cached under bumped gen' );
 }
 
 note('testing per-query search cache writes (nfreeze precedence regression)...');
@@ -456,7 +456,8 @@ note('testing per-query search cache writes (nfreeze precedence regression)...')
     # options as nfreeze arguments, croaked inside the eval, and every search
     # became a full DB parse. Gen is 1 here after the invalidate_cache above.
     LANraragi::Model::Search::do_search( "uniquecachewrite", "", 0, 0, 0, 0, 0, 0, 0 );
-    ok( defined $redis->get("LRR_SEARCHCACHE:1:-uniquecachewrite-0-0-0-0-0-0"),
+    my $cachekey = LANraragi::Model::Search::search_cache_key( "", "uniquecachewrite", 0, 0, 0, 0, 0, 0 );
+    ok( defined $redis->get("LRR_SEARCHCACHE:1:$cachekey"),
         'do_search writes its per-query cache entry' );
 }
 

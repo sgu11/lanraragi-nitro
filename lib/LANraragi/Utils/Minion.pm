@@ -13,8 +13,10 @@ use MCE::Loop;
 use MCE::Shared;
 use Config;
 
+use LANraragi::Utils::Generic    qw(exec_with_lock_pure);
 use LANraragi::Utils::Logging    qw(get_logger);
 use LANraragi::Utils::Redis      qw(redis_decode);
+use LANraragi::Utils::RedisScript qw(evalsha_cached release_owned_lease);
 use LANraragi::Utils::Archive    qw(extract_thumbnail);
 use LANraragi::Utils::Database   ();
 use LANraragi::Utils::Plugins    qw(get_downloader_for_url get_plugin get_plugin_parameters use_plugin);
@@ -31,17 +33,21 @@ use LANraragi::Utils::Minion::PageSide;
 use LANraragi::Utils::Minion::Tachiyomi;
 
 use constant IS_UNIX => ( $Config{osname} ne 'MSWin32' );
+use constant INSTALL_LOCK_TTL => 300;
+use constant RESTORE_LOCK_TTL => 86400;
 
 sub _clear_thumbnail_job_lock {
     my ( $lock_key, $job_id ) = @_;
     return unless $lock_key && defined $job_id;
 
     my $redis = LANraragi::Model::Config->get_redis_config;
-    my $stored = $redis->get($lock_key);
-    if ( defined $stored && $stored eq $job_id ) {
-        $redis->del($lock_key);
-    }
+    _release_owned_lease($redis, $lock_key, $job_id);
     $redis->quit;
+}
+
+sub _release_owned_lease {
+    my ($redis, $key, $token) = @_;
+    return release_owned_lease($redis, $key, $token);
 }
 
 # Add Tasks to the Minion instance.
@@ -50,7 +56,7 @@ sub add_tasks {
 
     $minion->add_task(
         ingest_archive_file => sub {
-            my ( $job, $file, $lock_key ) = @_;
+            my ( $job, $file, $lock_key, $lease_token ) = @_;
             my $logger = get_logger( "Minion", "minion" );
             my $redis_cfg = LANraragi::Model::Config->get_redis_config;
             my $error;
@@ -66,11 +72,11 @@ sub add_tasks {
                 $logger->error("Failed to ingest $file: $error");
                 $job->fail( { errors => [$error], file => $file } );
                 my $state = eval { $job->info->{state} } // '';
-                $redis_cfg->del($lock_key) if $lock_key && $state eq 'failed';
+                _release_owned_lease($redis_cfg, $lock_key, $lease_token) if $state eq 'failed';
                 $redis_cfg->quit;
                 return;
             }
-            $redis_cfg->del($lock_key) if $lock_key;
+            _release_owned_lease($redis_cfg, $lock_key, $lease_token);
             $redis_cfg->quit;
             $job->finish( { file => $file } );
         }
@@ -375,7 +381,7 @@ sub add_tasks {
 
             my $ua     = Mojo::UserAgent->new;
             my $logger = get_logger( "Minion", "minion" );
-            $logger->info("Downloading url $url...");
+            $logger->info("Downloading requested URL...");
 
             # Keep a clean copy of the url for display and tagging
             my $og_url = $url;
@@ -447,7 +453,7 @@ sub add_tasks {
                     # Plugin provided a URL and User-Agent to download
                     $url = $plugin_result->{download_url};
                     $ua  = $plugin_result->{user_agent};
-                    $logger->info("URL transformed by plugin to $url");
+                    $logger->info("Downloader plugin provided a transformed URL.");
                 }
             } else {
                 $logger->debug("No downloader found, trying direct URL.");
@@ -524,15 +530,72 @@ sub add_tasks {
                 my ($id) = @{ $job->args };
                 return unless $id;
                 my $redis = LANraragi::Model::Config->get_redis;
-                my $stored = $redis->hget( $id, "thumbjob" );
-                if ( defined $stored && $stored eq $job->id ) {
-                    $redis->hdel( $id, "thumbjob" );
-                }
+                my $script = <<'LUA';
+if redis.call('HGET', ARGV[1], 'thumbjob') == ARGV[2] then
+    return redis.call('HDEL', ARGV[1], 'thumbjob')
+end
+return 0
+LUA
+                evalsha_cached($redis, 'release_page_thumbnails', $script, $id, $job->id);
                 $redis->quit;
             } elsif ( $job->task eq 'thumbnail_task' || $job->task eq 'tank_thumbnail_task' ) {
                 my $lock_key = $job->args->[-1];
                 _clear_thumbnail_job_lock( $lock_key, $job->id );
             }
+        }
+    );
+
+    $minion->add_task(
+        install_plugin => sub {
+            my ( $job, @args ) = @_;
+            my ( $namespace, $registry_id, $version, $force ) = @args;
+
+            my $logger = get_logger( "Minion", "minion" );
+            $logger->info("Installing managed plugin '$namespace' from registry '$registry_id'...");
+
+            my $redis = LANraragi::Model::Config->get_redis_config;
+            my ( $acquired, $result ) = eval {
+                exec_with_lock_pure(
+                    [ "plugin-write:" . uc($namespace) ],
+                    sub {
+                        my ( $status, $plugmeta, $message ) =
+                            LANraragi::Model::Plugins::install_plugin( $namespace, $redis, $registry_id, $version, $force );
+                        return { status => $status, plugmeta => $plugmeta, message => $message };
+                    },
+                    $redis,
+                    INSTALL_LOCK_TTL
+                );
+            };
+            my $err = $@;
+            eval { $redis->quit(); 1 } or $logger->warn("Failed to close Redis connection after install of '$namespace': $@");
+
+            if ($err) {
+                $logger->error("install_plugin failed for '$namespace': $err");
+                return $job->fail( { error => "Plugin installation failed." } );
+            }
+
+            unless ($acquired) {
+                return $job->finish(
+                    { success => 0, error => "Another plugin operation is already in progress for '$namespace'." } );
+            }
+
+            my ( $status, $plugmeta, $message ) = ( $result->{status}, $result->{plugmeta}, $result->{message} );
+            if ( $status != 200 ) {
+                return $job->finish( { success => 0, error => $message } );
+            }
+
+            $job->finish(
+                {   success => 1,
+                    error   => undef,
+                    data    => {
+                        name      => $plugmeta->{name},
+                        namespace => $namespace,
+                        version   => $plugmeta->{version},
+                        registry  => $plugmeta->{registry},
+                        sha256    => $plugmeta->{sha256},
+                    }
+                }
+            );
         }
     );
 
@@ -552,7 +615,7 @@ sub add_tasks {
                 my $filename = "backup_" . $job->id . ".json";
                 my $filepath = "$tempdir/$filename";
 
-                open my $fh, '>:encoding(UTF-8)', $filepath
+                open my $fh, '>', $filepath
                   or die "Cannot write to $filepath: $!";
                 print $fh $json;
                 close $fh;
@@ -584,8 +647,16 @@ sub add_tasks {
             $logger->info("Starting backup restoration...");
 
             eval {
-                # Restore from JSON with progress reporting
-                LANraragi::Model::Backup::restore_from_JSON( $json_data, $job );
+                my ($acquired) = exec_with_lock_pure(
+                    ["database-restore"],
+                    sub {
+                        # Restore from JSON with progress reporting
+                        LANraragi::Model::Backup::restore_from_JSON( $json_data, $job );
+                    },
+                    undef,
+                    RESTORE_LOCK_TTL
+                );
+                die "Another backup restore is already running.\n" unless $acquired;
 
                 $logger->info("Backup restored successfully");
 

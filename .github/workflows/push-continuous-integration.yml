@@ -27,14 +27,14 @@
       integration_test_ref:
         description: "Integration testing repository git commit hash or branch"
         required: true
-        default: "64b12b317ed85e6f1185328f6a0e3ca4b34cab87"
+        default: "8f2fba6cfc5f582e776615359113d9ff37218b3d"
 
 permissions:
   contents: read
 
 env:
   INTEGRATION_TEST_REPOSITORY: ${{ inputs.integration_test_repository || 'psilabs-dev/aio-lanraragi' }}
-  INTEGRATION_TEST_REF: ${{ inputs.integration_test_ref || '64b12b317ed85e6f1185328f6a0e3ca4b34cab87' }}
+  INTEGRATION_TEST_REF: ${{ inputs.integration_test_ref || '8f2fba6cfc5f582e776615359113d9ff37218b3d' }}
 
 name: Fork Validation Gate
 
@@ -96,7 +96,7 @@ jobs:
           node-version: "22"
           cache: npm
       - name: Download classified change inventory
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: lrr-change-inventory
           path: /tmp/lrr-change-inventory
@@ -131,10 +131,12 @@ jobs:
           outputs: type=docker
           cache-from: type=gha,scope=buildkit-linux-amd64
           cache-to: type=gha,mode=max,scope=buildkit-linux-amd64
-      - name: Copy tests
-        run: cp -R tests .github/action-run-tests
+      - name: Build LANraragi test image
+        run: |
+          cp -R tests .github/action-run-tests
+          docker build --tag lanraragi:test-suite .github/action-run-tests
       - name: LANraragi Test Suite
-        uses: ./.github/action-run-tests
+        run: docker run --rm lanraragi:test-suite
       - name: Perl Critic
         uses: Difegue/action-perlcritic@d7e751eb07c818ee735b2b0cd03c6974bb7d0d5b # 2.1.0
         env:
@@ -145,6 +147,8 @@ jobs:
   integrationTestsDocker:
     name: Guarded Linux browser integration
     runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
     needs:
       - classify
       - testSuite
@@ -170,11 +174,20 @@ jobs:
       - name: Load LRR Docker image
         run: docker load -i "${{ runner.temp }}/lanraragi-ci.tar"
       - name: Checkout aio-lanraragi integration tests
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ env.INTEGRATION_TEST_REPOSITORY }}
-          ref: ${{ env.INTEGRATION_TEST_REF }}
-          path: aio-lanraragi
+        run: |
+          printf '%s\n' "$INTEGRATION_TEST_REPOSITORY" |
+            grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+          printf '%s\n' "$INTEGRATION_TEST_REF" |
+            grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]*$'
+          git init aio-lanraragi
+          git -C aio-lanraragi remote add origin \
+            "https://github.com/${INTEGRATION_TEST_REPOSITORY}.git"
+          git -C aio-lanraragi fetch --depth=1 origin "$INTEGRATION_TEST_REF"
+          git -C aio-lanraragi checkout --detach FETCH_HEAD
+          git -C aio-lanraragi apply --unidiff-zero --check \
+            ../lanraragi/tools/fixtures/aio-lanraragi-nitro.patch
+          git -C aio-lanraragi apply --unidiff-zero \
+            ../lanraragi/tools/fixtures/aio-lanraragi-nitro.patch
       - name: Set up Python
         uses: actions/setup-python@v6
         with:

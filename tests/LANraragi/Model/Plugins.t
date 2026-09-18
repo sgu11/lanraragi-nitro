@@ -125,4 +125,20 @@ note('exec_script_plugin doesn\'t die when run_script fails');
     cmp_deeply( \%rdata, { 'error' => re('Ooops!') }, 'returned error' );
 }
 
+
+note('metadata tags compare complete normalized tags and deduplicate this response');
+{
+    my $plugin = Test::MockObject->new();
+    $plugin->mock( plugin_info => sub { return (); } );
+    $plugin->mock( get_tags => sub { return ( tags => 'artist:ann, ARTIST:ANN, artist:anna, language:en, tag' ); } );
+    my $redis = metadata_redis_mock( thumbhash => 'dummy', tags => 'artist:anna, language:english, tag longer' );
+    no warnings 'once', 'redefine';
+    local *LANraragi::Model::Plugins::get_logger = sub { return get_logger_mock() };
+    local *LANraragi::Model::Plugins::exec_login_plugin = sub { return; };
+    local *LANraragi::Model::Config::get_redis = sub { return $redis };
+    local *LANraragi::Model::Config::enable_tagrules = sub { return; };
+    my %result = LANraragi::Model::Plugins::exec_metadata_plugin( $plugin, 'dummy' );
+    is( $result{new_tags}, ' artist:ann, language:en, tag', 'prefix tags survive and case duplicates appear once' );
+}
+
 done_testing();

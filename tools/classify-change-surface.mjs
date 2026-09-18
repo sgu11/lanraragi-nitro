@@ -37,6 +37,7 @@ const S6_RE = /(?:^|\/)s6(?:\/|$)/i;
 const DOCKER_BUILD_SUPPORT_RE = /^tools\/build\/all(?:\/|$)/i;
 const IMAGE_RUNTIME_INPUT_RE = /^(?:(?:\.dockerignore|lrr\.conf)$|script(?:\/|$))/i;
 const RUNTIME_INPUT_RE = /(?:^|\/)(?:runtime|entrypoint|dependencies?|requirements?)(?:[./_-]|\/|$)/i;
+const TEST_ACTION_RE = /^\.github\/action-run-tests(?:\/|$)/i;
 const IMAGE_ONLY_VENDOR_ASSET_RE = /^public\/(?:js\/vendor|css\/(?:vendor|webfonts))(?:\/|$)/i;
 const IMAGE_ONLY_PUBLIC_ASSET_RE = /^public\/(?!js(?:\/|$)|css(?:\/|$)|themes(?:\/|$)).+/i;
 const GUARD_POLICY_SURFACE_RE = /^(?:tools\/classify-change-surface\.mjs|tests\/js\/(?:change-surface|workflow-policy-source)\.test\.mjs|\.github\/workflows\/push-continuous-integration\.yml)$/i;
@@ -142,6 +143,8 @@ function isMountAuditPath(path) {
 }
 
 function isTier3Path(path) {
+    // This action builds the test runner, not the production image.
+    if (TEST_ACTION_RE.test(path)) return false;
     if (PACKAGE_INPUT_RE.test(path) || CPANFILE_RE.test(path)) return true;
     if (INSTALL_SCRIPT_RE.test(path)) return true;
     if (DOCKERFILE_RE.test(path) || S6_RE.test(path) || DOCKER_BUILD_SUPPORT_RE.test(path) || IMAGE_RUNTIME_INPUT_RE.test(path)) return true;
@@ -255,7 +258,7 @@ export function classifyChangeSurface(input = [], options = {}) {
         if (paths.some(isPerlPath)) perlHit = true;
         if (paths.some(isGuardedPerlSurface)) guardedPerlHit = true;
         if (paths.some(isGuardedRouteSurface)) guardedRouteHit = true;
-        if (paths.some((path) => GUARD_POLICY_SURFACE_RE.test(path))) guardPolicyHit = true;
+        if (paths.some((path) => GUARD_POLICY_SURFACE_RE.test(path) || TEST_ACTION_RE.test(path))) guardPolicyHit = true;
 
         if (openapiHit) mountAuditHit = true;
         if ((kind === "M" || kind === "A" || kind === "D" || kind === "R") && paths.some(isPublicAssetPath)) {

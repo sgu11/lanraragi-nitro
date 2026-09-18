@@ -1324,7 +1324,6 @@ export function migrateProgress() {
                         return null;
                     }
                     if (!response.ok || data === null) {
-                        // eslint-disable-next-line no-console
                         console.warn(`Failed to migrate progress for ${id} (status ${response.status})`);
                         return null;
                     }
@@ -1422,7 +1421,7 @@ export function loadCategories() {
 
             for (let i = 0; i < iteration; i++) {
                 const category = data[i];
-                const pinned = category.pinned === "1";
+                const pinned = Number(category.pinned) === 1;
 
                 let catName = (pinned ? "📌" : "") + category.name;
                 catName = LRR.encodeHTML(catName);
@@ -1498,7 +1497,7 @@ export function promptCustomColumn(column) {
 
                 IndexTable.dataTable.settings()[0].aoColumns[column].sName = namespace;
                 // Update header text in-place to preserve DataTables sort handlers
-                $(`#header-${column}`).html(namespace.charAt(0).toUpperCase() + namespace.slice(1));
+                $(`#header-${column}`).text(namespace.charAt(0).toUpperCase() + namespace.slice(1));
                 IndexTable.doSearch();
             }
         }
@@ -1555,7 +1554,7 @@ export function handleCustomSort() {
         localStorage.customColumn1 = namespace;
         IndexTable.dataTable.settings()[0].aoColumns[1].sName = namespace;
         // Update header text in-place to preserve DataTables sort handlers
-        $(`#header-1`).html(namespace.charAt(0).toUpperCase() + namespace.slice(1));
+        $(`#header-1`).text(namespace.charAt(0).toUpperCase() + namespace.slice(1));
     }
 
     IndexTable.dataTable.order(order);
@@ -1576,7 +1575,8 @@ export function handleColumnNum() {
 export function generateTableHeaders(columnCount) {
     const headerRow = $("#header-row");
     headerRow.empty();
-    const headerWidth = localStorage.getItem(`resizeColumn0`) || "";
+    const storedHeaderWidth = localStorage.getItem(`resizeColumn0`) || "";
+    const headerWidth = /^\d+px$/.test(storedHeaderWidth) ? storedHeaderWidth : "";
     headerRow.append(`
         <th id="titleheader" width="${headerWidth}">
             <a>${I18N.IndexTitle}</a>
@@ -1584,12 +1584,14 @@ export function generateTableHeaders(columnCount) {
 
     for (let i = 1; i <= columnCount; i++) {
         const customColumn = localStorage[`customColumn${i}`] || `Header ${i}`;
-        const colWidth = localStorage.getItem(`resizeColumn${i}`) || "";
+        const storedColWidth = localStorage.getItem(`resizeColumn${i}`) || "";
+        const colWidth = /^\d+px$/.test(storedColWidth) ? storedColWidth : "";
+        const columnLabel = LRR.encodeHTML(customColumn.charAt(0).toUpperCase() + customColumn.slice(1));
 
         const headerHtml = `
             <th id="customheader${i}" width="${colWidth}">
                 <i id="edit-header-${i}" class="fas fa-pencil-alt edit-header-btn" title="${I18N.IndexEditColumn}"></i>
-                <a id="header-${i}">${customColumn.charAt(0).toUpperCase() + customColumn.slice(1)}</a>
+                <a id="header-${i}">${columnLabel}</a>
             </th>`;
         headerRow.append(headerHtml);
     }
@@ -1611,7 +1613,7 @@ export function updateTableHeaders() {
         const customColumn = localStorage[`customColumn${i}`] || `${I18N.IndexHeader} ${i}`;
         $(`#customcol${i}`).val(customColumn);
 
-        $(`#header-${i}`).html(customColumn.charAt(0).toUpperCase() + customColumn.slice(1) || `${I18N.IndexHeader} ${i}`);
+        $(`#header-${i}`).text(customColumn.charAt(0).toUpperCase() + customColumn.slice(1) || `${I18N.IndexHeader} ${i}`);
     }
 }
 

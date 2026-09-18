@@ -12,7 +12,7 @@ Duplicates._reviewActionInFlight = false;
 
 const DUPES_THRESHOLD_LS_KEY = "lrr.duplicates.threshold";
 const DUPES_THRESHOLD_DEFAULT = 22;
-const DUPES_THRESHOLD_MIN = 12;
+const DUPES_THRESHOLD_MIN = 0;
 const DUPES_THRESHOLD_MAX = 25;
 const REVIEW_BATCH_SIZE = 24;
 const TOP_UP_THRESHOLD = 6;
@@ -24,6 +24,12 @@ const STATUS_LABELS = {
     not_duplicate: I18N.DuplicatesNotDuplicate,
     needs_review: I18N.DuplicatesNeedsReview,
     resolved: I18N.DuplicatesResolved,
+};
+
+const VERIFICATION_LABELS = {
+    same_images: I18N.DuplicatesSameImages,
+    different_images: I18N.DuplicatesDifferentImages,
+    unavailable: I18N.DuplicatesVerificationUnavailable,
 };
 
 function loadStoredThreshold() {
@@ -107,7 +113,7 @@ function resolutionScore(archive) {
 function formatResolution(archive) {
     const width = numericValue(archive.cover_width);
     const height = numericValue(archive.cover_height);
-    if (width > 0 && height > 0) return `${width}x${height}`;
+    if (width > 0 && height > 0) return `${width} × ${height}`;
     return I18N.DuplicatesUnknown;
 }
 
@@ -134,7 +140,7 @@ function buildResolutionChips(archive, otherArchive) {
         { kind: "pages", label: I18N.DuplicatesPages, value: String(numericValue(archive.pagecount)), highlighted: signals.pages },
         { kind: "size", label: I18N.DuplicatesSize, value: formatSize(numericValue(archive.arcsize)), highlighted: signals.size },
         { kind: "tags", label: I18N.DuplicatesTags, value: String(numericValue(archive.tag_count)), highlighted: signals.tags },
-        { kind: "language", label: "KR", value: isKoreanLanguage(language) ? I18N.DuplicatesKorean : language, highlighted: signals.language },
+        { kind: "language", label: I18N.DuplicatesLanguage, value: isKoreanLanguage(language) ? I18N.DuplicatesKorean : language, highlighted: signals.language },
         { kind: "resolution", label: I18N.DuplicatesResolution, value: formatResolution(archive), highlighted: signals.resolution },
         { kind: "recent", label: I18N.DuplicatesDate, value: formatDate(archive.date_added) || I18N.DuplicatesUnknown, highlighted: signals.recent },
     ];
@@ -169,11 +175,19 @@ Duplicates.state = {
     activeIndex: 0,
     reviewedCount: 0,
     reviewedPairs: new Set(),
+    removedArchives: new Set(),
     activePairRenderedAt: 0,
     loadingMore: false,
 };
 
 Duplicates._poller = null;
+
+Duplicates.syncPreset = function () {
+    const value = String(Duplicates.state.threshold);
+    const hasPreset = $("#preset-select option").toArray().some((option) => option.value === value);
+    $("#preset-select option[value='custom']").text(value).prop("hidden", hasPreset);
+    $("#preset-select").val(hasPreset ? value : "custom");
+};
 
 Duplicates.updateReviewMetrics = function () {
     $("#dupes-review-count").text(I18N.DuplicatesReviewed(Duplicates.state.reviewedCount));
@@ -182,8 +196,7 @@ Duplicates.updateReviewMetrics = function () {
 };
 
 Duplicates.refreshStats = function () {
-    fetch(new LRR.ApiURL("/api/duplicates/cover/stats"))
-        .then((r) => r.json())
+    Duplicates.fetchJSON(new LRR.ApiURL("/api/duplicates/cover/stats"))
         .then((s) => {
             const coverHashed  = s.archives_with_coverhashes || 0;
             const coverPending = s.archives_cover_pending    || 0;
@@ -220,21 +233,32 @@ Duplicates.refreshStats = function () {
         });
 };
 
-Duplicates.buildPairsURL = function (limit = Duplicates.state.limit) {
+Duplicates.scheduleStats = function () {
+    if (Duplicates._statsTimer) return;
+    Duplicates._statsTimer = setTimeout(() => {
+        Duplicates._statsTimer = null;
+        Duplicates.refreshStats();
+    }, 5000);
+};
+
+Duplicates.buildPairsURL = function (limit = Duplicates.state.limit, offset = 0) {
     return new LRR.ApiURL("/api/duplicates/cover/pairs") +
         `?threshold=${encodeURIComponent(Duplicates.state.threshold)}` +
         `&limit=${encodeURIComponent(limit)}` +
+        `&offset=${encodeURIComponent(offset)}` +
         `&status=${encodeURIComponent(Duplicates.state.status)}`;
 };
 
-Duplicates.fetchPairs = function (limit = Duplicates.state.limit) {
-    return fetch(Duplicates.buildPairsURL(limit)).then((r) => r.json());
+Duplicates.fetchPairs = function (limit = Duplicates.state.limit, offset = 0) {
+    return Duplicates.fetchJSON(Duplicates.buildPairsURL(limit, offset));
 };
 
 Duplicates.loadPairs = function () {
     Duplicates._pairsGeneration += 1;
     const generation = Duplicates._pairsGeneration;
     Duplicates.state.loadingMore = false;
+    Duplicates.state.pairs = [];
+    Duplicates.state.activeIndex = 0;
     $("#dupes-list").html(`<div class="dupes-loading"><i class="fas fa-spinner fa-spin"></i> ${I18N.DuplicatesLoadingPairs}</div>`);
     $("#dupes-queue-list").empty();
     return Duplicates.fetchPairs(Duplicates.state.limit)
@@ -262,14 +286,29 @@ Duplicates.loadMorePairs = function () {
     const generation = Duplicates._pairsGeneration;
     Duplicates.state.loadingMore = true;
 
-    return Duplicates.fetchPairs(Duplicates.state.limit)
+    // Reviewed pairs remain visible in the All/status views. Walk past them
+    // instead of repeatedly fetching the same first page forever.
+    const known = new Set([...Duplicates.state.pairs.map(pairMember), ...Duplicates.state.reviewedPairs]);
+    const fetchNext = async function (offset = 0) {
+        const data = await Duplicates.fetchPairs(Duplicates.state.limit, offset);
+        if (generation !== Duplicates._pairsGeneration) return data;
+        const rows = data.pairs || [];
+        const incoming = rows.filter((pair) => !known.has(pairMember(pair))
+            && !Duplicates.state.removedArchives.has(pair.id_a) && !Duplicates.state.removedArchives.has(pair.id_b));
+        if (!incoming.length && rows.length && offset + rows.length < data.filtered_total) {
+            return fetchNext(offset + rows.length);
+        }
+        return { ...data, pairs: incoming };
+    };
+    return fetchNext()
         .then((data) => {
             if (generation !== Duplicates._pairsGeneration) return;
             Duplicates.state.total = data.filtered_total !== undefined ? data.filtered_total : (data.total || 0);
             const known = new Set(Duplicates.state.pairs.map(pairMember));
             const incoming = (data.pairs || []).filter((pair) => {
                 const member = pairMember(pair);
-                return !known.has(member) && !Duplicates.state.reviewedPairs.has(member);
+                return !known.has(member) && !Duplicates.state.reviewedPairs.has(member)
+                    && !Duplicates.state.removedArchives.has(pair.id_a) && !Duplicates.state.removedArchives.has(pair.id_b);
             });
 
             if (incoming.length) {
@@ -328,7 +367,7 @@ Duplicates.renderSide = function (side, archive, otherArchive) {
     return `
         <section class="dupe-side dupe-side-${side}">
             <div class="dupe-side-label">${sideName}</div>
-            <a class="dupe-image-frame" href="${readerUrl(archiveId)}">
+            <a class="dupe-image-frame" href="${readerUrl(archiveId)}" target="_blank" rel="noopener">
                 <img class="dupe-thumb" src="${thumbnailUrl(archiveId)}" alt="${LRR.encodeHTML(title)}" loading="eager" />
             </a>
             <div class="dupe-title">${htmlText(title)}</div>
@@ -362,7 +401,11 @@ Duplicates.renderReasonChips = function (pair) {
     const status = pair.status || "new";
     const chips = [];
     if (pair.cover_hamming !== undefined) chips.push(`pHash ${Number(pair.cover_hamming).toFixed(0)}`);
-    if (pair.score !== undefined) chips.push(`score ${Number(pair.score).toFixed(0)}`);
+    chips.push(VERIFICATION_LABELS[pair.verification?.state] || I18N.DuplicatesCoverOnly);
+    if (numericValue(pair.a?.pagecount) !== numericValue(pair.b?.pagecount)) chips.push(I18N.DuplicatesPageCountDiffers);
+    if (pair.a?.language && pair.b?.language && pair.a.language.toLowerCase() !== pair.b.language.toLowerCase()) {
+        chips.push(I18N.DuplicatesLanguageDiffers);
+    }
     if (status !== "new") chips.push(STATUS_LABELS[status] || status);
 
     return chips
@@ -382,8 +425,8 @@ Duplicates.renderActivePair = function () {
         return;
     }
 
-    const status = pair.status || "new";
-    const statusLabel = STATUS_LABELS[status] || status;
+    const status = Object.hasOwn(STATUS_LABELS, pair.status) ? pair.status : "new";
+    const statusLabel = STATUS_LABELS[status];
     const hamming = pair.cover_hamming !== undefined ? pair.cover_hamming : pair.score;
     Duplicates.state.activePairRenderedAt = Date.now();
 
@@ -393,12 +436,12 @@ Duplicates.renderActivePair = function () {
                 <span class="dupe-score"><span class="dupe-pass-badge">COVER</span> hamming ${Number(hamming || 0).toFixed(0)}</span>
                 <span class="dupe-status-badge status-${status}">${statusLabel}</span>
             </header>
+            <div class="dupe-reason-chips">${Duplicates.renderReasonChips(pair)}</div>
             <div class="dupe-compare-grid">
                 ${Duplicates.renderSide("a", pair.a || {}, pair.b || {})}
                 ${Duplicates.renderActionRail(pair)}
                 ${Duplicates.renderSide("b", pair.b || {}, pair.a || {})}
             </div>
-            <div class="dupe-reason-chips">${Duplicates.renderReasonChips(pair)}</div>
         </article>
     `);
     Duplicates.updateReviewMetrics();
@@ -432,6 +475,7 @@ Duplicates.renderQueueRail = function () {
                 <span class="dupe-queue-copy">
                     <span class="dupe-queue-title">${htmlText(titleA || titleB)}</span>
                     <span class="dupe-queue-meta">hamming ${Number(hamming || 0).toFixed(0)}</span>
+                    <span class="dupe-queue-evidence">${htmlText(VERIFICATION_LABELS[pair.verification?.state] || "")}</span>
                 </span>
             </button>
         `);
@@ -440,6 +484,7 @@ Duplicates.renderQueueRail = function () {
 };
 
 Duplicates.setActiveIndex = function (idx) {
+    if (Duplicates._reviewActionInFlight) return;
     if (!Duplicates.state.pairs.length) return;
     Duplicates.state.activeIndex = Math.max(0, Math.min(idx, Duplicates.state.pairs.length - 1));
     Duplicates.renderActivePair();
@@ -448,27 +493,35 @@ Duplicates.setActiveIndex = function (idx) {
 
 Duplicates.fetchJSON = function (url, init) {
     return fetch(url, init).then((r) => {
-        return r.json().then((json) => {
-            if (!r.ok || json.error) {
-                throw new Error(json.error || `HTTP ${r.status}`);
+        return r.text().then((body) => {
+            let json;
+            try { json = body.trim() ? JSON.parse(body) : {}; } catch {
+                throw new Error(`HTTP ${r.status}: invalid API response`);
+            }
+            if (!r.ok || json?.error || json?.success === false) {
+                const error = new Error(json?.error || `HTTP ${r.status}`);
+                error.status = r.status;
+                throw error;
             }
             return json;
         });
     });
 };
 
-Duplicates.deleteArchive = function (arcid) {
+Duplicates.deleteArchive = function (arcid, pair) {
+    if (!pair?.generation) return Promise.reject(Object.assign(new Error("Pair changed; reload the review queue"), { status: 409 }));
+    const query = new URLSearchParams({ cover_pair: pairMember(pair), cover_generation: pair.generation });
     return Duplicates.fetchJSON(
-        new LRR.ApiURL(`/api/archives/${encodeURIComponent(arcid)}`),
+        new LRR.ApiURL(`/api/archives/${encodeURIComponent(arcid)}?${query}`),
         { method: "DELETE" },
     );
 };
 
-Duplicates.dismissPair = function (pair) {
+Duplicates.dismissPair = function (pair, generation) {
     return Duplicates.fetchJSON(new LRR.ApiURL("/api/duplicates/cover/pairs"), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pair }),
+        body: JSON.stringify({ pair, generation }),
     });
 };
 
@@ -533,6 +586,7 @@ Duplicates.visibleSnapshot = function (pair) {
 
 Duplicates.reviewLogPayload = function (pair, inputMethod) {
     return {
+        generation: pair.generation,
         context: Duplicates.reviewContext(inputMethod),
         visible_snapshot: Duplicates.visibleSnapshot(pair),
     };
@@ -549,9 +603,53 @@ Duplicates.updateStatus = function (pair, status, reviewLogPayload = {}) {
     );
 };
 
-Duplicates.rebuildCover = function () {
+Duplicates.rebuildCover = function (retryFailed = false) {
     const url = new LRR.ApiURL("/api/duplicates/cover/rebuild");
-    return Duplicates.fetchJSON(url, { method: "POST" });
+    return Duplicates.fetchJSON(url + `?threshold=${Duplicates.state.threshold}&retry_failed=${retryFailed ? 1 : 0}`, { method: "POST" });
+};
+
+Duplicates.waitForRebuild = async function (job, progress = null) {
+    let currentJob = job;
+    for (;;) {
+        const data = await Duplicates.fetchJSON(new LRR.ApiURL(`/api/minion/${encodeURIComponent(currentJob)}/detail`));
+        if (data.state === "failed") throw new Error(data.error || data.result || "Cover scan failed");
+        if (progress) progress(data.notes || {});
+        if (data.state === "finished") {
+            if (data.result?.next_job) {
+                currentJob = data.result.next_job;
+            } else {
+                return data.result;
+            }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+};
+
+Duplicates.updateControls = function () {
+    const reviewing = Duplicates._reviewActionInFlight;
+    $("#dupes-toolbar button, #dupes-toolbar input, #dupes-toolbar select").prop("disabled", reviewing);
+    $("#run-find-cover, #run-refresh").prop("disabled", reviewing || !!Duplicates._scanInFlight)
+        .attr("aria-busy", String(!!Duplicates._scanInFlight));
+    $("#run-verify").prop("disabled", reviewing || !!Duplicates._verifyInFlight)
+        .attr("aria-busy", String(!!Duplicates._verifyInFlight));
+};
+
+Duplicates.runScan = async function (refresh = false) {
+    if (Duplicates._scanInFlight) return;
+    Duplicates._scanInFlight = true;
+    Duplicates.updateControls();
+    try {
+        if (refresh) await Duplicates.refreshDeck();
+        const queued = await Duplicates.rebuildCover(refresh);
+        await Duplicates.waitForRebuild(queued.job);
+        await Duplicates.loadMorePairs();
+        Duplicates.refreshStats();
+    } catch (err) {
+        LRR.showPopUp({ title: I18N.DuplicatesQueueFailed, text: String(err), icon: "error" });
+    } finally {
+        Duplicates._scanInFlight = false;
+        Duplicates.updateControls();
+    }
 };
 
 Duplicates.refreshDeck = function () {
@@ -567,6 +665,7 @@ Duplicates.advanceAfterReviewAction = function ({ pair, archiveId = null }) {
     Duplicates.state.reviewedCount += 1;
 
     if (archiveId) {
+        Duplicates.state.removedArchives.add(archiveId);
         Duplicates.state.pairs = Duplicates.state.pairs.filter((candidate) => !pairIncludesArchive(candidate, archiveId));
     } else {
         Duplicates.state.pairs = Duplicates.state.pairs.filter((candidate) => pairMember(candidate) !== member);
@@ -578,32 +677,38 @@ Duplicates.advanceAfterReviewAction = function ({ pair, archiveId = null }) {
 
     Duplicates.renderActivePair();
     Duplicates.renderQueueRail();
-    Duplicates.refreshStats();
+    Duplicates.scheduleStats();
 
     if (Duplicates.state.pairs.length <= TOP_UP_THRESHOLD) {
         Duplicates.loadMorePairs();
+        if (Duplicates.state.status === "new") Duplicates.runScan();
     }
 };
 
 Duplicates.performReviewAction = function ({ pair, action, archiveId = null, errorTitle }) {
     if (Duplicates._reviewActionInFlight) return Promise.resolve(false);
     Duplicates._reviewActionInFlight = true;
+    Duplicates.updateControls();
     const $card = $("#dupes-list .dupe-focus-card");
     $card.addClass("is-busy");
 
     return Promise.resolve()
         .then(action)
-        .then(() => {
+        .then((result) => {
+            if (result?.warning) LRR.showPopUp({ title: I18N.DuplicatesReviewWarning, text: result.warning, icon: "warning" });
             $card.addClass("is-exiting");
             setTimeout(() => {
                 Duplicates._reviewActionInFlight = false;
+                Duplicates.updateControls();
                 Duplicates.advanceAfterReviewAction({ pair, archiveId });
             }, 160);
             return true;
         })
         .catch((err) => {
             Duplicates._reviewActionInFlight = false;
+            Duplicates.updateControls();
             $card.removeClass("is-busy is-exiting");
+            if (err.status === 409 || err.status === 404) Duplicates.loadPairs();
             LRR.showPopUp({ title: errorTitle, text: String(err), icon: "error" });
             return false;
         });
@@ -646,7 +751,7 @@ $(function () {
     const initial = Duplicates.state.threshold;
     $("#threshold-slider").val(initial);
     $("#threshold-value").text(initial);
-    $("#preset-select").val(String(initial));
+    Duplicates.syncPreset();
 
     Duplicates.refreshStats();
     Duplicates.loadPairs();
@@ -661,13 +766,14 @@ $(function () {
     });
     $("#threshold-slider").on("change", function () {
         saveStoredThreshold(Duplicates.state.threshold);
-        $("#preset-select").val(String(Duplicates.state.threshold));
+        Duplicates.syncPreset();
         Duplicates.loadPairs();
         Duplicates.refreshStats();
     });
 
     $("#preset-select").on("change", function () {
-        const v = parseInt(this.value, 10) || DUPES_THRESHOLD_DEFAULT;
+        const parsed = parseInt(this.value, 10);
+        const v = Number.isFinite(parsed) ? parsed : DUPES_THRESHOLD_DEFAULT;
         Duplicates.state.threshold = v;
         saveStoredThreshold(v);
         $("#threshold-slider").val(v);
@@ -681,37 +787,37 @@ $(function () {
         Duplicates.loadPairs();
     });
 
-    $("#run-refresh").on("click", function () {
-        const $btn = $(this).prop("disabled", true);
-        Duplicates.refreshDeck()
-            .then(() => Duplicates.rebuildCover())
-            .then(() => {
-                setTimeout(() => {
-                    Duplicates.refreshStats();
-                    Duplicates.loadPairs();
-                    $btn.prop("disabled", false);
-                }, 2000);
-            })
-            .catch((err) => {
-                $btn.prop("disabled", false);
-                LRR.showPopUp({ title: I18N.DuplicatesRefreshFailed, text: String(err), icon: "error" });
+    $("#run-refresh").on("click", function () { Duplicates.runScan(true); });
+    $("#run-find-cover").on("click", function () { Duplicates.runScan(); });
+    $("#run-verify").on("click", async function () {
+        if (Duplicates._verifyInFlight) return;
+        const pairs = Duplicates.state.pairs.slice(0, REVIEW_BATCH_SIZE).map(pairMember);
+        if (!pairs.length) return;
+        Duplicates._verifyInFlight = true;
+        Duplicates.updateControls();
+        const label = $("#run-verify").text();
+        const generation = Duplicates._pairsGeneration;
+        try {
+            const queued = await Duplicates.fetchJSON(new LRR.ApiURL("/api/duplicates/cover/verify"), {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pairs }),
             });
-    });
-
-    $("#run-find-cover").on("click", function () {
-        const $btn = $(this).prop("disabled", true);
-        Duplicates.rebuildCover()
-            .then(() => {
-                setTimeout(() => {
-                    Duplicates.refreshStats();
-                    Duplicates.loadPairs();
-                    $btn.prop("disabled", false);
-                }, 2000);
-            })
-            .catch((err) => {
-                $btn.prop("disabled", false);
-                LRR.showPopUp({ title: I18N.DuplicatesQueueFailed, text: String(err), icon: "error" });
+            const result = await Duplicates.waitForRebuild(queued.job, (notes) => {
+                $("#run-verify").text(`${label} (${notes.completed || 0}/${notes.total || pairs.length})`);
             });
+            // Refresh evidence without resetting the selected pair/review queue.
+            if (generation === Duplicates._pairsGeneration) {
+                const evidence = new Map(Object.entries(result?.pairs || {}));
+                Duplicates.state.pairs.forEach((pair) => { pair.verification = evidence.get(pairMember(pair)) || pair.verification; });
+                if (!Duplicates._reviewActionInFlight) Duplicates.renderActivePair();
+                Duplicates.renderQueueRail();
+            }
+        } catch (err) {
+            LRR.showPopUp({ title: I18N.DuplicatesVerificationUnavailable, text: String(err), icon: "error" });
+        } finally {
+            Duplicates._verifyInFlight = false;
+            $("#run-verify").text(label);
+            Duplicates.updateControls();
+        }
     });
 
     $("#dupes-active-stage").on("click", ".dupe-action", function () {
@@ -738,7 +844,7 @@ $(function () {
         Duplicates.performReviewAction({
             pair,
             archiveId,
-            action: () => Duplicates.deleteArchive(archiveId),
+            action: () => Duplicates.deleteArchive(archiveId, pair),
             errorTitle: I18N.DuplicatesDeleteFailed,
         });
     });
@@ -748,7 +854,8 @@ $(function () {
     });
 
     $(document).on("keydown", function (e) {
-        if ($(e.target).is("input, textarea, select")) return;
+        if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || Duplicates._reviewActionInFlight) return;
+        if ($(e.target).is("input, textarea, select, button, a") || e.target.isContentEditable) return;
 
         if (e.key === "n" || e.key === "N") {
             e.preventDefault();

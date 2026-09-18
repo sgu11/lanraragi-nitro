@@ -25,7 +25,9 @@ sub build_backup_JSON {
     # Basic structure of the backup object
     my %backup = (
         categories => [],
-        archives   => []
+        archives   => [],
+        tankoubons => [],
+        stamps     => []
     );
 
     # Backup categories first
@@ -136,7 +138,7 @@ sub build_backup_JSON {
     # Pipelined HMGET — fetch only the 5 fields we need for backup, one round-trip instead of N.
     # Callback sig is (reply, error); use $_[0] for the arrayref of field values.
     my @hmget_results;
-    my @fields = qw(name title tags summary thumbhash spreadstart stamps);
+    my @fields = qw(name title tags summary thumbhash spreadstart stamps toc);
     for my $id (@keys) {
         $redis->hmget( $id, @fields, sub { push @hmget_results, [ $id, $_[0] ] } );
     }
@@ -145,9 +147,9 @@ sub build_backup_JSON {
     for my $pair (@hmget_results) {
         my ( $id, $values ) = @$pair;
         eval {
-            my ( $name, $title, $tags, $summary, $thumbhash, $spreadstart, $stamps ) = @$values;
+            my ( $name, $title, $tags, $summary, $thumbhash, $spreadstart, $stamps, $toc ) = @$values;
 
-            ( $_ = redis_decode($_) ) for ( $name, $title, $tags, $summary );
+            ( $_ = redis_decode($_) ) for ( $name, $title, $tags, $summary, $toc );
             ( $_ = trim_CRLF($_) )    for ( $name, $title, $tags, $summary );
 
             # Backup all user-generated metadata, alongside the unique ID.
@@ -159,7 +161,8 @@ sub build_backup_JSON {
                 thumbhash   => $thumbhash,
                 filename    => $name,
                 spreadstart => $spreadstart,
-                stamps      => $stamps
+                stamps      => $stamps,
+                toc         => $toc
             );
 
             push @{ $backup{archives} }, \%arc;
@@ -201,14 +204,101 @@ sub build_backup_JSON {
 
 }
 
+sub _validate_restore_payload {
+    my ($json) = @_;
+
+    die "Invalid backup: root must be an object.\n" unless ref $json eq "HASH";
+
+    for my $field (qw(categories archives)) {
+        die "Invalid backup: '$field' must be an array.\n"
+          unless ref $json->{$field} eq "ARRAY";
+    }
+
+    for my $field (qw(tankoubons stamps)) {
+        $json->{$field} = [] unless exists $json->{$field};
+        die "Invalid backup: '$field' must be an array.\n"
+          unless ref $json->{$field} eq "ARRAY";
+    }
+
+    for my $category ( @{ $json->{categories} } ) {
+        die "Invalid backup: every category must be an object.\n" unless ref $category eq "HASH";
+        die "Invalid backup: category identifiers and names must be strings.\n"
+          unless defined $category->{catid}
+          && !ref $category->{catid}
+          && defined $category->{name}
+          && !ref $category->{name};
+        die "Invalid backup: category identifier has an invalid format.\n"
+          unless $category->{catid} =~ /^SET_\d{10}$/;
+        die "Invalid backup: category archives must be an array.\n"
+          unless ref $category->{archives} eq "ARRAY";
+        for my $id ( @{ $category->{archives} } ) {
+            die "Invalid backup: category archive identifier has an invalid format.\n"
+              unless defined($id) && !ref($id) && ( $id =~ /^[a-f0-9]{40}$/i || $id =~ /^TANK_\d{10}$/ );
+        }
+        $category->{search} = "" unless defined $category->{search};
+        die "Invalid backup: category search must be a string.\n" if ref $category->{search};
+    }
+
+    for my $tank ( @{ $json->{tankoubons} } ) {
+        die "Invalid backup: every tankoubon must be an object.\n" unless ref $tank eq "HASH";
+        die "Invalid backup: tankoubon identifiers and names must be strings.\n"
+          unless defined $tank->{tankid}
+          && !ref $tank->{tankid}
+          && defined $tank->{name}
+          && !ref $tank->{name};
+        die "Invalid backup: tankoubon identifier has an invalid format.\n"
+          unless $tank->{tankid} =~ /^TANK_\d{10}$/;
+        die "Invalid backup: tankoubon archives must be an array.\n"
+          unless ref $tank->{archives} eq "ARRAY";
+        for my $id ( @{ $tank->{archives} } ) {
+            die "Invalid backup: tankoubon archive identifier has an invalid format.\n"
+              unless defined($id) && !ref($id) && $id =~ /^[a-f0-9]{40}$/i;
+        }
+        for my $field (qw(summary tags)) {
+            $tank->{$field} = "" unless defined $tank->{$field};
+            die "Invalid backup: tankoubon '$field' must be a string.\n" if ref $tank->{$field};
+        }
+    }
+
+    for my $archive ( @{ $json->{archives} } ) {
+        die "Invalid backup: every archive must be an object.\n" unless ref $archive eq "HASH";
+        die "Invalid backup: archive identifiers must be strings.\n"
+          unless defined $archive->{arcid} && !ref $archive->{arcid};
+        die "Invalid backup: archive identifier has an invalid format.\n"
+          unless $archive->{arcid} =~ /^[a-f0-9]{40}$/i;
+        for my $field (qw(title tags summary)) {
+            $archive->{$field} = "" unless defined $archive->{$field};
+            die "Invalid backup: archive '$field' must be a string.\n" if ref $archive->{$field};
+        }
+        for my $field (qw(thumbhash spreadstart stamps toc)) {
+            die "Invalid backup: archive '$field' must be a string or null.\n"
+              if defined $archive->{$field} && ref $archive->{$field};
+        }
+    }
+
+    for my $stamp ( @{ $json->{stamps} } ) {
+        die "Invalid backup: every stamp must be an object.\n" unless ref $stamp eq "HASH";
+        for my $field (qw(stamp_id content position archive_id)) {
+            die "Invalid backup: stamp '$field' must be a string.\n"
+              unless defined $stamp->{$field} && !ref $stamp->{$field};
+        }
+        die "Invalid backup: stamp identifier has an invalid format.\n"
+          unless $stamp->{stamp_id} =~ /^STAMPS_\d+_\d+$/;
+        die "Invalid backup: stamp archive identifier has an invalid format.\n"
+          unless $stamp->{archive_id} =~ /^[a-f0-9]{40}$/i;
+    }
+
+    return $json;
+}
+
 #restore_from_JSON(backupJSON, $job)
 #Restores metadata from a JSON to the Redis archive, for existing IDs.
 #If $job is provided (Minion job), progress will be reported via job notes.
 sub restore_from_JSON {
     my ( $json_data, $job ) = @_;
+    my $json   = _validate_restore_payload( decode_json($json_data) );
     my $redis  = LANraragi::Model::Config->get_redis;
     my $logger = get_logger( "Backup/Restore", "lanraragi" );
-    my $json   = decode_json($json_data);
 
     $logger->info("Received a JSON backup to restore.");
 
@@ -222,59 +312,30 @@ sub restore_from_JSON {
     my $arc_count   = 0;
     my $total_arcs  = scalar @{ $json->{archives} };
 
-    foreach my $category ( @{ $json->{categories} } ) {
+    my $skipped_memberships = 0;
 
-        my $cat_id = $category->{"catid"};
-        $logger->info("Restoring Category $cat_id...");
-
-        my $name     = redis_encode( $category->{"name"} );
-        my $search   = redis_encode( $category->{"search"} );
-        my @archives = @{ $category->{"archives"} };
-
-        LANraragi::Model::Category::create_category( $name, $search, 0, $cat_id );
-
-        # Explicitly set "new category" values to avoid them being absent from the DB entry
-        # (which likely breaks a bunch of things)
-        $redis->hset( $cat_id, "archives", "[]" );
-
-        foreach my $arcid (@archives) {
-            LANraragi::Model::Category::add_to_category( $cat_id, $arcid );
-        }
-
-        $cat_count++;
-
-        # Report progress if job is provided
-        if ($job) {
-            $job->note(
-                categories_processed => $cat_count,
-                total_categories     => $total_cats,
-                status               => "Restoring categories..."
-            );
-        }
-    }
-
+    # Create tankoubons before resolving category references to them.
     foreach my $tank ( @{ $json->{tankoubons} } ) {
 
         my $tank_id = $tank->{"tankid"};
         $logger->info("Restoring Tankoubon $tank_id...");
 
-        my $name     = redis_encode( $tank->{"name"} );
-        my $summary  = $tank->{"summary"} // "";
-        my $tags     = $tank->{"tags"}    // "";
-        my @archives = @{ $tank->{"archives"} };
+        LANraragi::Model::Tankoubon::create_tankoubon( $tank->{name}, $tank_id )
+          unless $redis->exists($tank_id);
+        my ( $updated, $error ) = LANraragi::Model::Tankoubon::update_metadata(
+            $tank_id, { metadata => { map { $_ => $tank->{$_} // "" } qw(name summary tags) } }
+        );
+        die "Could not restore Tankoubon $tank_id: $error\n" unless $updated;
 
-        LANraragi::Model::Tankoubon::create_tankoubon( $name, $tank_id );
-
-        # Restore summary and tags if present
-        if ( $summary ne "" ) {
-            LANraragi::Model::Tankoubon::update_metadata( $tank_id, undef, $summary, undef );
-        }
-        if ( $tags ne "" ) {
-            LANraragi::Model::Tankoubon::set_tank_tags( $tank_id, $tags );
-        }
-
-        # Backups use the same data structure as tank updates, so we can just pass the data object as-is.
-        LANraragi::Model::Tankoubon::update_archive_list( $tank_id, $tank );
+        # Metadata backups can be restored over a partial matching library.
+        # Keep available members and report missing references instead of
+        # silently rejecting the complete list.
+        my @archives = grep { $redis->exists($_) } @{ $tank->{archives} };
+        $skipped_memberships += @{ $tank->{archives} } - @archives;
+        ( $updated, $error ) = LANraragi::Model::Tankoubon::update_archive_list(
+            $tank_id, { archives => \@archives }
+        );
+        die "Could not restore Tankoubon $tank_id members: $error\n" unless $updated;
 
         $tank_count++;
 
@@ -290,6 +351,43 @@ sub restore_from_JSON {
         }
     }
 
+    foreach my $category ( @{ $json->{categories} } ) {
+
+        my $cat_id = $category->{"catid"};
+        $logger->info("Restoring Category $cat_id...");
+
+        my $name     = $category->{"name"};
+        my $search   = $category->{"search"};
+        my @archives = @{ $category->{"archives"} };
+
+        LANraragi::Model::Category::create_category( $name, $search, 0, $cat_id );
+
+        # Explicitly set "new category" values to avoid them being absent from the DB entry
+        # (which likely breaks a bunch of things)
+        $redis->hset( $cat_id, "archives", "[]" );
+
+        foreach my $arcid (@archives) {
+            next if length $search;
+            unless ( $redis->exists($arcid) ) {
+                $skipped_memberships++;
+                next;
+            }
+            my ( $added, $error ) = LANraragi::Model::Category::add_to_category( $cat_id, $arcid );
+            die "Could not restore Category $cat_id: $error\n" unless $added;
+        }
+
+        $cat_count++;
+
+        # Report progress if job is provided
+        if ($job) {
+            $job->note(
+                categories_processed => $cat_count,
+                total_categories     => $total_cats,
+                status               => "Restoring categories..."
+            );
+        }
+    }
+
     foreach my $archive ( @{ $json->{archives} } ) {
         my $id = $archive->{"arcid"};
 
@@ -297,7 +395,7 @@ sub restore_from_JSON {
         if ( $redis->exists($id) ) {
 
             $logger->info("Restoring metadata for Archive $id...");
-            my $thumbhash = redis_encode( $archive->{"thumbhash"} );
+            my $thumbhash = redis_encode( $archive->{"thumbhash"} // "" );
 
             set_title( $id, $archive->{"title"} );
             set_tags( $id, $archive->{"tags"} );
@@ -319,6 +417,28 @@ sub restore_from_JSON {
                 $redis->hset( $id, "stamps", "[]" );
             }
 
+            if ( defined $archive->{"toc"} ) {
+                my $toc = redis_encode( $archive->{"toc"} );
+                $redis->hset( $id, "toc", $toc );
+            } else {
+                $redis->hset( $id, "toc", "{}" );
+            }
+
+        }
+
+        $arc_count++;
+
+        # Report progress periodically (every 100 archives) if job is provided
+        if ( $job && $arc_count % 100 == 0 ) {
+            $job->note(
+                categories_processed => $cat_count,
+                total_categories     => $total_cats,
+                tankoubons_processed => $tank_count,
+                total_tankoubons     => $total_tanks,
+                archives_processed   => $arc_count,
+                total_archives       => $total_arcs,
+                status               => "Restoring archives..."
+            );
         }
     }
 
@@ -339,21 +459,10 @@ sub restore_from_JSON {
             $redis->hset( $stamp_id, "archive_id", $archive_id);
         }
 
-        $arc_count++;
-
-        # Report progress periodically (every 100 archives) if job is provided
-        if ( $job && $arc_count % 100 == 0 ) {
-            $job->note(
-                categories_processed => $cat_count,
-                total_categories     => $total_cats,
-                tankoubons_processed => $tank_count,
-                total_tankoubons     => $total_tanks,
-                archives_processed   => $arc_count,
-                total_archives       => $total_arcs,
-                status               => "Restoring archives..."
-            );
-        }
     }
+
+    $logger->warn("Skipped $skipped_memberships missing collection members during restore.")
+      if $skipped_memberships;
 
     # Final progress update
     if ($job) {
@@ -364,6 +473,7 @@ sub restore_from_JSON {
             total_tankoubons     => $total_tanks,
             archives_processed   => $arc_count,
             total_archives       => $total_arcs,
+            skipped_memberships  => $skipped_memberships,
             status               => "Finalizing restore..."
         );
     }

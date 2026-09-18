@@ -17,7 +17,6 @@ use local::lib;
 
 use FindBin;
 use MCE::Loop;
-use Sys::CpuAffinity;
 use Storable   qw(lock_store);
 use Mojo::JSON qw(to_json);
 use Digest::SHA qw(sha256_hex);
@@ -36,6 +35,7 @@ use LANraragi::Utils::Database   qw(invalidate_cache compute_id change_archive_i
 use LANraragi::Utils::Logging    qw(get_logger);
 use LANraragi::Utils::Generic    qw(is_archive exec_with_lock_pure get_minion_mce_worker_count);
 use LANraragi::Utils::Redis      qw(redis_encode);
+use LANraragi::Utils::RedisScript qw(release_owned_lease);
 use LANraragi::Utils::Path       qw(create_path open_path find_path get_archive_path);
 use LANraragi::Utils::PageCache  qw(clear_by_id);
 use LANraragi::Utils::PageSide   qw(clear_first_spread_start_detection enqueue_first_spread_start_detection);
@@ -123,6 +123,10 @@ sub initialize_from_new_process {
     my $userdir = LANraragi::Model::Config->get_userdir;
     my $metrics_enabled = LANraragi::Model::Config->enable_metrics;
 
+    if ($metrics_enabled) {
+        LANraragi::Model::Metrics::unregister_shinobu();
+    }
+
     $logger->info("Shinobu File Watcher started.");
     $logger->info("Content folder is $userdir.");
 
@@ -135,7 +139,7 @@ sub initialize_from_new_process {
     my $class = ref($contentwatcher);
     $logger->debug("Watcher class is $class");
 
-    # Track the content directory inode to detect directory replacement
+    # Track the content directory inode to detect ZFS dataset changes
     # (inotify watches are inode-based and become stale if the inode changes)
     my $watched_ino = (stat $userdir)[1];
     $logger->debug("Content directory inode: $watched_ino");
@@ -156,7 +160,7 @@ sub initialize_from_new_process {
         }
 
         # Every 60 seconds, verify the content directory inode hasn't changed
-        # (filesystem replacement or rename can change inodes and stale inotify)
+        # (ZFS receive/rollback/rename can change inodes, silently breaking inotify)
         if ( ++$inode_check_counter >= 60 ) {
             $inode_check_counter = 0;
             my $current_ino = (stat $userdir)[1];
@@ -520,20 +524,21 @@ sub new_file_callback ($name) {
     # is still being copied. Coalesce events with a short Redis lease and move
     # stability checks, hashing, thumbnails and plugins into Minion.
     my $lock_key = "LRR_INGEST_PENDING:" . sha256_hex( Encode::encode_utf8($name) );
+    my $lease_token = sha256_hex(join ':', time(), $$, rand(), $name);
     my $redis = LANraragi::Model::Config->get_redis_config;
-    my $acquired = eval { $redis->set( $lock_key, time(), "NX", "EX", 900 ) };
+    my $acquired = eval { $redis->set( $lock_key, $lease_token, "NX", "EX", 900 ) };
     $redis->quit();
     return if !$acquired;
 
     my $job_id = eval {
         LANraragi::Model::Config->get_minion->enqueue(
-            ingest_archive_file => [ $name, $lock_key ] => { priority => 5, attempts => 3 }
+            ingest_archive_file => [ $name, $lock_key, $lease_token ] => { priority => 5, attempts => 3 }
         );
     };
     if ( !$job_id ) {
         my $error = $@ || "Minion did not return a job id";
         my $cleanup = LANraragi::Model::Config->get_redis_config;
-        $cleanup->del($lock_key);
+        release_owned_lease($cleanup, $lock_key, $lease_token);
         $cleanup->quit();
         $logger->error("Error queueing new file $name: $error");
     }
@@ -542,6 +547,10 @@ sub new_file_callback ($name) {
 # Deleted files are simply dropped from the filemap.
 # Deleted subdirectories trigger deleted events for every file deleted.
 sub deleted_file_callback ($name) {
+
+    # A queued deletion event can arrive after an upload atomically replaced
+    # the path. Never remove the replacement's newly committed file mapping.
+    return if -e $name;
 
     $logger->info("$name was deleted from the content folder!");
     unless ( -d $name ) {

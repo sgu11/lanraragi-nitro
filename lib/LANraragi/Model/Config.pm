@@ -2,7 +2,6 @@ package LANraragi::Model::Config;
 
 use strict;
 use warnings;
-use feature 'state';
 use utf8;
 use Cwd 'abs_path';
 use URI::Escape;
@@ -14,7 +13,7 @@ use Mojolicious::Plugin::Config;
 use Mojo::Home;
 use Mojo::JSON qw(decode_json);
 use MIME::Base64 qw(encode_base64);
-use Authen::Passphrase;
+use Crypt::Passphrase;
 
 # Be very careful about importing LANraragi stuff; this file is used almost everywhere and it's easy to introduce dependency cycles!
 use LANraragi::Utils::Redis qw(redis_decode);
@@ -202,6 +201,7 @@ sub get_redis_conf {
 # sees fresh values immediately; other workers refresh on their next TTL expiry (<= 30s).
 sub invalidate_config_cache {
     %CONFIG_CACHE = ();
+    invalidate_auth_cache();
 }
 
 # Functions that return the config variables stored in Redis, or default values if they don't exist.
@@ -319,33 +319,52 @@ sub get_pdfdpi {
     return &get_redis_conf( "pdfdpi", "200" );
 }
 
+# Authentication-derived values are kept separate from the generic config
+# cache so destructive resets can explicitly invalidate them.
+my ( $DEFAULT_PASSWORD_CACHED, $DEFAULT_PASSWORD_EXPIRY );
+my ( $APIKEY_CACHED_KEY, $APIKEY_CACHED_BEARER, $APIKEY_EXPIRY );
+my $AUTHENTICATOR = Crypt::Passphrase->new(
+    encoder => {
+        module  => "Bcrypt",
+        subtype => "2a"
+    },
+);
+
+sub invalidate_auth_cache {
+    undef $DEFAULT_PASSWORD_CACHED;
+    undef $DEFAULT_PASSWORD_EXPIRY;
+    undef $APIKEY_CACHED_KEY;
+    undef $APIKEY_CACHED_BEARER;
+    undef $APIKEY_EXPIRY;
+}
+
 # Cached check for whether the default "kamimamita" password is still active.
-# bcrypt is ~50-100ms; cache per-worker for 30s. Trade-off: prefork workers may serve stale
-# state for up to 30s after a password change.
+# bcrypt is ~50-100ms; cache per-worker for 30s. Config writes and destructive
+# database resets invalidate this worker immediately; other prefork workers
+# still refresh within 30s.
 sub is_default_password {
-    state ( $cached, $expiry );
     my $now = time;
-    if ( !defined $expiry || $now >= $expiry ) {
-        my $pw = &get_password;
-        $cached = ( $pw && Authen::Passphrase->from_rfc2307($pw)->match("kamimamita") ) ? 1 : 0;
-        $expiry = $now + 30;
+    if ( !defined $DEFAULT_PASSWORD_EXPIRY || $now >= $DEFAULT_PASSWORD_EXPIRY ) {
+        my $hash = &get_password;
+        $hash =~ s/^\{CRYPT\}// if $hash;
+        $DEFAULT_PASSWORD_CACHED = ( $hash && $AUTHENTICATOR->verify_password( "kamimamita", $hash ) ) ? 1 : 0;
+        $DEFAULT_PASSWORD_EXPIRY = $now + 30;
     }
-    return $cached;
+    return $DEFAULT_PASSWORD_CACHED;
 }
 
 # Returns ($apikey, $bearer_header) cached for 30s per worker. Avoids the
 # Redis round-trip + base64 encode on every authenticated API request.
 # Trade-off: rotated keys may take up to 30s to propagate across workers.
 sub get_apikey_and_bearer {
-    state ( $cached_key, $cached_bearer, $expiry );
     my $now = time;
-    if ( !defined $expiry || $now >= $expiry ) {
+    if ( !defined $APIKEY_EXPIRY || $now >= $APIKEY_EXPIRY ) {
         my $key = &get_apikey;
-        $cached_key    = $key;
-        $cached_bearer = $key ne "" ? "Bearer " . encode_base64( $key, "" ) : "";
-        $expiry        = $now + 30;
+        $APIKEY_CACHED_KEY    = $key;
+        $APIKEY_CACHED_BEARER = $key ne "" ? "Bearer " . encode_base64( $key, "" ) : "";
+        $APIKEY_EXPIRY        = $now + 30;
     }
-    return ( $cached_key, $cached_bearer );
+    return ( $APIKEY_CACHED_KEY, $APIKEY_CACHED_BEARER );
 }
 
 1;

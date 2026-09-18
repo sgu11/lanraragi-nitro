@@ -1,8 +1,17 @@
+<script async src="[% c.url_for("/js/vendor/es-module-shims.js") %]" type="text/JAVASCRIPT"></script>
 <script type="importmap">
     {
         "imports": {
             "i18n": "[% c.url_for("/js/i18n.js?$asset_version") %]",
             "progress-migration": "[% c.url_for("/js/$version/mod/progress-migration.js?$asset_version") %]",
+            "lrr-batch-session": "[% c.url_for("/js/$version/mod/batch-session.js?$asset_version") %]",
+            "lrr-batch-archive-loader": "[% c.url_for("/js/$version/mod/batch-archive-loader.js?$asset_version") %]",
+            "lrr-reader-display": "[% c.url_for("/js/$version/mod/reader-display.js?$asset_version") %]",
+            "lrr-reader-slide": "[% c.url_for("/js/$version/mod/reader-slide.js?$asset_version") %]",
+            "lrr-reader-slide-motion": "[% c.url_for("/js/$version/mod/reader-slide-motion.js?$asset_version") %]",
+            "lrr-reader-slide-controller": "[% c.url_for("/js/$version/mod/reader-slide-controller.js?$asset_version") %]",
+            "lrr-reader-stamps": "[% c.url_for("/js/$version/mod/reader-stamps.js?$asset_version") %]",
+            "lrr-reader-navigation": "[% c.url_for("/js/$version/mod/reader-navigation.js?$asset_version") %]",
             "lrr-common": "[% c.url_for("/js/$version/mod/common.js?$asset_version") %]",
             "lrr-archive-data-cache": "[% c.url_for("/js/$version/mod/archive-data-cache.js?$asset_version") %]",
             "lrr-server": "[% c.url_for("/js/$version/mod/server.js?$asset_version") %]",
@@ -12,6 +21,9 @@
             "lrr-index-contextmenu": "[% c.url_for("/js/$version/mod/index_contextmenu.js?$asset_version") %]",
             "lrr-index-grid-selection": "[% c.url_for("/js/$version/mod/index_grid_selection.js?$asset_version") %]",
             "lrr-index-order": "[% c.url_for("/js/$version/mod/index-order.js?$asset_version") %]",
+            "lrr-reader-overlay": "[% c.url_for("/js/$version/mod/reader-overlay.js?$asset_version") %]",
+            "lrr-reader-options": "[% c.url_for("/js/$version/mod/reader-options.js?$asset_version") %]",
+            "lrr-reader-image-loader": "[% c.url_for("/js/$version/mod/reader-image-loader.js?$asset_version") %]",
             "lrr-reader-crop": "[% c.url_for("/js/$version/mod/reader-crop.js?$asset_version") %]",
             "lrr-reader-chrome": "[% c.url_for("/js/$version/mod/reader-chrome.js?$asset_version") %]",
             "lrr-reader-spread": "[% c.url_for("/js/$version/mod/reader-spread.js?$asset_version") %]",

@@ -24,6 +24,7 @@ I18N.SaveSuccess = "[% c.lh("Saved!") %]";
 I18N.SaveError = "[% c.lh("Error saving data") %]";
 I18N.LoginRequired = (url) => `[% c.lh("<a href='\${url}'>Login</a> to toggle bookmark feature.") %]`;
 
+I18N.BatchNoSelection = "[% c.lh("Select at least one archive.") %]";
 I18N.BatchOperationStart = "[% c.lh("Started Batch Operation...") %]";
 I18N.BatchSelectionBanner = (n) => `[% c.lh("Displaying \${n} Archives from previous selection.") %]`;
 I18N.BatchOperationEnd = "[% c.lh("Batch Operation complete!") %]";
@@ -207,6 +208,14 @@ I18N.StampError = "[% c.lh("Error setting up the Stamp") %]"
 
 I18N.DuplicatesNew = "[% c.lh("New") %]";
 I18N.DuplicatesSameCover = "[% c.lh("Same Cover") %]";
+I18N.DuplicatesSameImages = "[% c.lh("Same image bytes; order not checked") %]";
+I18N.DuplicatesDifferentImages = "[% c.lh("Image bytes differ; visual variants may still match") %]";
+I18N.DuplicatesVerificationUnavailable = "[% c.lh("Content verification unavailable; review manually") %]";
+I18N.DuplicatesCoverOnly = "[% c.lh("Cover evidence only; content not verified") %]";
+I18N.DuplicatesPageCountDiffers = "[% c.lh("Page counts differ") %]";
+I18N.DuplicatesLanguageDiffers = "[% c.lh("Languages differ") %]";
+I18N.DuplicatesLanguage = "[% c.lh("Language") %]";
+I18N.DuplicatesReviewWarning = "[% c.lh("Review saved with a warning") %]";
 I18N.DuplicatesVariant = "[% c.lh("Variant") %]";
 I18N.DuplicatesNotDuplicate = "[% c.lh("Not Duplicate") %]";
 I18N.DuplicatesNeedsReview = "[% c.lh("Needs Review") %]";

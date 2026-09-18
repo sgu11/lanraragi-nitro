@@ -71,8 +71,11 @@ sub update_category {
         $catid,
         sub {
             my $name   = $self->req->param('name')   || $category{name};
-            my $search = $self->req->param('search') || $category{search};
-            my $pinned = ( $self->req->param('pinned') && $self->req->param('pinned') ne "false" ) ? 1 : 0;
+            my $search = $self->req->param('search') // $category{search};
+            my $pinned_param = $self->req->param('pinned');
+            my $pinned = defined $pinned_param
+              ? ( $pinned_param && $pinned_param ne "false" ? 1 : 0 )
+              : $category{pinned};
 
             my $updated_id = LANraragi::Model::Category::create_category( $name, $search, $pinned, $catid );
 

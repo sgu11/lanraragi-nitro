@@ -1,17 +1,24 @@
 /**
  * Batch Operations
  */
-import * as LRR from "./mod/common.js";
-import * as Server from "./mod/server.js";
+import * as LRR from "lrr-common";
+import * as Server from "lrr-server";
 import I18N from "i18n";
+import { createBatchSession } from "lrr-batch-session";
+import { createBatchArchiveLoader, validBatchSelection } from "lrr-batch-archive-loader";
 
 const Batch = {};
 
-Batch.socket = {};
+Batch.session = null;
+Batch.reloadTimer = null;
 Batch.treatedArchives = 0;
 Batch.totalArchives = 0;
 Batch.currentOperation = "";
 Batch.currentPlugin = "";
+
+Batch.appendLog = function (message) {
+    document.getElementById("log-container").append(document.createTextNode(String(message ?? "")));
+};
 
 Batch.initializeAll = function () {
     // bind events to DOM
@@ -33,17 +40,14 @@ Batch.initializeAll = function () {
 
     // If a selected subset of archives is present, load only those archives.
     // Otherwise load the full archive list.
-    const msmSelection = localStorage.getItem("msmSelection");
-    if (msmSelection) {
-        try {
-            const ids = JSON.parse(msmSelection);
-            if (Array.isArray(ids) && ids.length > 0) {
-                Batch.loadSelectionOnly(ids);
-                return;
-            }
-        } catch (e) {
-            console.warn("Failed to parse msmSelection:", e);
+    try {
+        const ids = validBatchSelection(JSON.parse(localStorage.getItem("msmSelection")));
+        if (ids.length) {
+            Batch.loadSelectionOnly(ids);
+            return;
         }
+    } catch {
+        // Storage may be unavailable or hold an invalid selection.
     }
 
     Batch.loadAllArchives();
@@ -74,114 +78,80 @@ Batch.showOverride = function () {
     if ($("#override")[0].checked) { $(`.${Batch.currentPlugin}-arg`).show(); }
 };
 
-/**
- * Load only the archives from the MSM selection, fetching each archive's metadata individually.
- * Tankoubons are expanded to their constituent archives.
- * Shows the MSM selection banner and pre-checks all loaded archives.
- * @param {string[]} ids Array of archive IDs from msmSelection
- */
-Batch.loadSelectionOnly = function (ids) {
+function renderArchiveList(archives, checked) {
+    const fragment = document.createDocumentFragment();
+    // Keep the API's order within the checked and unchecked groups.
+    for (const archive of archives.filter((row) => checked.has(row.arcid))
+        .concat(archives.filter((row) => !checked.has(row.arcid)))) {
+        const row = document.createElement("li");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.name = "archive";
+        input.className = "archive";
+        input.id = archive.arcid;
+        input.checked = checked.has(archive.arcid);
+        const label = document.createElement("label");
+        label.htmlFor = archive.arcid;
+        label.textContent = String(archive.title ?? "") + (archive.isnew === "true" ? " 🆕" : "");
+        row.append(input, label);
+        fragment.append(row);
+    }
+    document.getElementById("archivelist").replaceChildren(fragment);
+    $("#no-archives-msg").toggle(archives.length === 0);
+    $("#start-batch").prop("disabled", archives.length === 0);
+}
 
-    const tankIds = ids.filter((id) => id.startsWith("TANK_"));
-    const archiveIds = ids.filter((id) => !id.startsWith("TANK_"));
+const archiveLoader = createBatchArchiveLoader({
+    request: (url, options) => Server.callAPISilent(url, "GET", options),
+    publish: renderArchiveList,
+    failed: (error) => LRR.showErrorToast(I18N.ArchiveListLoadFailure, error),
+    complete: () => {
+        $("#arclist-container, #check-uncheck").show();
+        $("#loading-placeholder").hide();
+    },
+});
 
-    // Acquire archive IDs from Tanks and merge with directly selected archive IDs, then fetch metadata for each archive ID
-    const tankFetches = tankIds.map((id) => 
-        Server.callAPI(`/api/tankoubons/${id}`, "GET", null, I18N.ArchiveListLoadFailure, (data) => {
-            archiveIds.push(...(data.archives || []));
-        }));
-        
-    Promise.all(tankFetches).then(() => {
-
-        const archiveFetches = archiveIds.map((id) =>
-            Server.callAPI(`/api/archives/${id}/metadata`, "GET", null, null, (data) => data)
-                .catch(() => null),
-        );
-
-        Promise.all(archiveFetches).then((results) => { 
-
-            const addedIds = new Set();
-
-            results.forEach((archive) => {
-                if (!archive) return;
-                const arcId = archive.arcid;
-                if (!arcId || addedIds.has(arcId)) return;
-                addedIds.add(arcId);
-                const escapedTitle = LRR.encodeHTML(archive.title) + (archive.isnew === "true" ? " 🆕" : "");
-                const html = `<li><input type='checkbox' name='archive' id='${arcId}' class='archive' checked><label for='${arcId}'>${escapedTitle}</label></li>`;
-                $("#archivelist").append(html);
-            });
-
-            if (addedIds.size > 0) $("#no-archives-msg").hide();
-
-            // Show the MSM selection banner
-            $("#msm-banner-count").text(I18N.BatchSelectionBanner(ids.length));
-            $("#msm-banner").show();
-        }).finally(() => {
-            $("#arclist-container").show();
-            $("#loading-placeholder").hide();
-        });
-    });
-};
-
-/**
- * Load the full archive list from the API.
- * Hides the selection banner (if present) and prechecks untagged archives.
- */
-Batch.loadAllArchives = function () {
+function beginArchiveLoad() {
     $("#archivelist").empty();
     $("#no-archives-msg").show();
-    $("#msm-banner").html("");
     $("#arclist-container").hide();
     $("#loading-placeholder").show();
+    $("#start-batch").prop("disabled", true);
+}
 
-    // Clear selection if present
-    localStorage.removeItem("msmSelection");
-
-    Server.callAPI("/api/archives", "GET", null, I18N.ArchiveListLoadFailure,
-        (data) => {
-            data.forEach((archive) => {
-                const escapedTitle = LRR.encodeHTML(archive.title) + (archive.isnew === "true" ? " 🆕" : "");
-                const html = `<li><input type='checkbox' name='archive' id='${archive.arcid}' class='archive' ><label for='${archive.arcid}'>${escapedTitle}</label></li>`;
-                $("#archivelist").append(html);
-            });
-
-            if (data.length > 0) $("#no-archives-msg").hide();
-
-            Server.callAPI("/api/archives/untagged", "GET", null, I18N.UntaggedLoadFailure,
-                (data) => { preCheckInternal(data); },
-            );
-        },
-    ).finally(() => {
-        $("#arclist-container").show();
-        $("#check-uncheck").show();
-        $("#loading-placeholder").hide();
-    });
+Batch.loadSelectionOnly = function (ids) {
+    beginArchiveLoad();
+    $("#msm-banner-count").text(I18N.BatchSelectionBanner(ids.length));
+    $("#msm-banner").show();
+    return archiveLoader.load(ids);
 };
 
-
-function preCheckInternal(ids) {
-    ids.forEach((id) => {
-        const checkbox = document.getElementById(id);
-
-        if (checkbox != null) {
-            checkbox.checked = true;
-            // Prepend matching <li> element to the top of the list
-            checkbox.parentElement.parentElement.prepend(checkbox.parentElement);
-        }
-    });
-}
+Batch.loadAllArchives = function () {
+    beginArchiveLoad();
+    $("#msm-banner").hide();
+    try {
+        localStorage.removeItem("msmSelection");
+    } catch {
+        // Loading the library remains available when storage is disabled.
+    }
+    return archiveLoader.load();
+};
 
 /**
  * Pop up a confirm dialog if operation is destructive.
  */
 Batch.startBatchCheck = function () {
+    if (!document.querySelector("input[name=archive]:checked")) {
+        LRR.toast({ heading: I18N.BatchNoSelection, icon: "warning" });
+        return;
+    }
     if (Batch.currentOperation === "delete") {
         LRR.showPopUp({
             text: I18N.ConfirmArchivesDeletion,
             icon: "warning",
             showCancelButton: true,
-            focusConfirm: false,
+            focusConfirm: true,
+            allowEnterKey: true,
             confirmButtonText: I18N.ConfirmYes,
             reverseButtons: true,
             confirmButtonColor: "#d33",
@@ -200,6 +170,10 @@ Batch.startBatchCheck = function () {
  * This crafts a JSON list to send to the batch tagging websocket service.
  */
 Batch.startBatch = function () {
+    const arcs = Array.from(document.querySelectorAll("input[name=archive]:checked")).map((item) => item.id);
+    if (!arcs.length) return;
+    Batch.session?.dispose();
+    clearTimeout(Batch.reloadTimer);
     $(".tag-options").hide();
 
     $("#log-container").html(I18N.BatchOperationStart + "\n************\n");
@@ -207,10 +181,6 @@ Batch.startBatch = function () {
     $("#restart-job").hide();
     $(".job-status").show();
 
-    const checkeds = document.querySelectorAll("input[name=archive]:checked");
-
-    // Extract IDs from nodelist
-    const arcs = Array.from(checkeds).map((item) => item.id);
     let args = [];
 
     // Reset counts
@@ -242,96 +212,66 @@ Batch.startBatch = function () {
         args,
     };
 
-    // Close any existing connection
-    // eslint-disable-next-line no-empty
-    try { Batch.socket.close(); } catch { }
-
-    let wsProto = "ws://";
-    if (document.location.protocol === "https:") wsProto = "wss://";
-    let socket_path = new LRR.ApiURL("/batch/socket");
-    Batch.socket = new WebSocket(`${wsProto + window.location.host}${socket_path}`);
-
-    Batch.socket.onopen = function () {
-        const command = commandBase;
-        command.archive = arcs.splice(0, 1)[0];
-
-        console.log(command);
-        Batch.socket.send(JSON.stringify(command));
-    };
-
-    Batch.socket.onmessage = function (event) {
-        // Update log
-        Batch.updateBatchStatus(event);
-
-        // If there are no archives left, end session
-        if (arcs.length === 0) {
-            Batch.socket.close(1000);
-            return;
-        }
-
-        if (timeout !== 0) {
-            $("#log-container").append(I18N.BatchSleeping(timeout));
-            $("#log-container").append("\n");
-        }
-        // Wait timeout and pass next archive
-        setTimeout(() => {
-            const command = commandBase;
-            command.archive = arcs.splice(0, 1)[0];
-
-            console.log(command);
-            Batch.socket.send(JSON.stringify(command));
-        }, timeout * 1000);
-    };
-
-    Batch.socket.onerror = Batch.batchError;
-    Batch.socket.onclose = Batch.endBatch;
+    const wsProto = document.location.protocol === "https:" ? "wss://" : "ws://";
+    const socketPath = new LRR.ApiURL("/batch/socket");
+    const socket = new WebSocket(`${wsProto + window.location.host}${socketPath}`);
+    const session = createBatchSession({
+        socket, archives: arcs, command: commandBase, cooldown: timeout,
+        onResult: (result) => Batch.updateBatchStatus(result),
+        onWait: (seconds) => Batch.appendLog(`${I18N.BatchSleeping(seconds)}\n`),
+        onError: Batch.batchError,
+        onClose: (event) => {
+            if (Batch.session === session) Batch.endBatch(event);
+        },
+    });
+    Batch.session = session;
 };
 
 /**
  * On websocket message, update the UI to show the archive currently being treated
- * @param {*} event The websocket message
+ * @param {*} msg The validated response for the current archive
  */
-Batch.updateBatchStatus = function (event) {
-    const msg = JSON.parse(event.data);
+Batch.updateBatchStatus = function (msg) {
 
     if (msg.success === 0) {
-        $("#log-container").append(I18N.BatchOperationError(msg.id, msg.message));
+        Batch.appendLog(I18N.BatchOperationError(msg.id, msg.message));
     } else {
         switch (Batch.currentOperation) {
             case "plugin":
-                $("#log-container").append(I18N.BatchSuccessPlugin(msg.id, Batch.currentPlugin, msg.tags));
+                Batch.appendLog(I18N.BatchSuccessPlugin(msg.id, Batch.currentPlugin, msg.tags));
                 break;
             case "delete":
-                $("#log-container").append(I18N.BatchSuccessDelete(msg.id, msg.filename));
+                Batch.appendLog(I18N.BatchSuccessDelete(msg.id, msg.filename));
                 break;
             case "tagrules":
-                $("#log-container").append(I18N.BatchSuccessTagRul(msg.id, msg.tags));
+                Batch.appendLog(I18N.BatchSuccessTagRul(msg.id, msg.tags));
                 break;
             case "addcat":
                 // Append the message at the end of this log,
                 // as it can contain the warning about the ID already being in the category
-                $("#log-container").append(I18N.BatchSuccessCategr(msg.id, msg.category, msg.message));
+                Batch.appendLog(I18N.BatchSuccessCategr(msg.id, msg.category, msg.message));
                 break;
             case "clearnew": {
-                $("#log-container").append(I18N.BatchSuccessClrNew(msg.id));
+                Batch.appendLog(I18N.BatchSuccessClrNew(msg.id));
                 // Remove last character from matching row
                 const t = $(`#${msg.id}`).next().text().replace("🆕", "");
                 $(`#${msg.id}`).next().text(t);
                 break;
             }
             default:
-                $("#log-container").append(I18N.BatchUnknownOperat(Batch.currentOperation, msg.message));
+                Batch.appendLog(I18N.BatchUnknownOperat(Batch.currentOperation, msg.message));
                 break;
         }
 
-        $("#log-container").append("\n\n");
+        Batch.appendLog("\n\n");
 
         // Uncheck ID in list
-        $(`#${msg.id}`)[0].checked = false;
+        const checkbox = document.getElementById(msg.id);
+        if (checkbox) checkbox.checked = false;
 
         if (msg.title !== undefined && msg.title !== "") {
-            $("#log-container").append(I18N.BatchChangedTitle(msg.title));
-            $("#log-container").append("\n");
+            Batch.appendLog(I18N.BatchChangedTitle(msg.title));
+            Batch.appendLog("\n");
         }
     }
 
@@ -349,7 +289,7 @@ Batch.updateBatchStatus = function (event) {
  * Handle websocket errors.
  */
 Batch.batchError = function () {
-    $("#log-container").append("************\n" + I18N.BatchOperationFailed + "\n");
+    Batch.appendLog("************\n" + I18N.BatchOperationFailed + "\n");
     Batch.scrollLogs();
 
     LRR.toast({
@@ -369,7 +309,7 @@ Batch.endBatch = function (event) {
 
     if (event.code === 1001) { status = "warning"; }
 
-    $("#log-container").append(`************\n${event.reason}(code ${event.code})\n`);
+    Batch.appendLog(`************\n${event.reason}(code ${event.code})\n`);
     Batch.scrollLogs();
 
     LRR.toast({
@@ -383,18 +323,17 @@ Batch.endBatch = function (event) {
     $("#cancel-job").hide();
 
     if (Batch.currentOperation === "delete") {
-        $("#log-container").append(I18N.BatchReloadingPage + "\n");
-        setTimeout(() => { window.location.reload(); }, 5000);
+        Batch.appendLog(I18N.BatchReloadingPage + "\n");
+        Batch.reloadTimer = setTimeout(() => { window.location.reload(); }, 5000);
     } else {
         $("#restart-job").show();
     }
 };
 
 Batch.checkAll = function () {
-    const btn = $("#check-uncheck")[0];
-
-    $(".checklist > * > input:checkbox").prop("checked", btn.checked);
-    btn.checked = !btn.checked;
+    const checkboxes = [...document.querySelectorAll("#archivelist input.archive")];
+    const shouldCheck = checkboxes.some((checkbox) => !checkbox.checked);
+    checkboxes.forEach((checkbox) => { checkbox.checked = shouldCheck; });
 };
 
 Batch.scrollLogs = function () {
@@ -402,11 +341,14 @@ Batch.scrollLogs = function () {
 };
 
 Batch.cancelBatch = function () {
-    $("#log-container").append(I18N.BatchCancelling + "\n");
-    Batch.socket.close();
+    Batch.appendLog(I18N.BatchCancelling + "\n");
+    Batch.session?.cancel();
 };
 
 Batch.restartBatchUI = function () {
+    clearTimeout(Batch.reloadTimer);
+    Batch.session?.dispose();
+    Batch.session = null;
     $(".tag-options").show();
     $(".job-status").hide();
 };

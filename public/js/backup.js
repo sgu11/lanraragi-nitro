@@ -23,7 +23,7 @@ function initializeAll() {
                 // Poll the job status
                 pollJob(data.result.job, false);
             } else {
-                $("#result").html(data.result.error);
+                $("#result").text(data.result.error);
             }
         },
 
@@ -87,7 +87,7 @@ function pollJob(jobId, isBackup) {
             // Job failed
             $("#processing").attr("style", "display:none");
             $("#do-backup").prop("disabled", false);
-            $("#result").html(I18N.BackupFailed + "<br/>" + error);
+            $("#result").text(`${I18N.BackupFailed}: ${error}`);
         },
         (notes) => {
             // Progress update

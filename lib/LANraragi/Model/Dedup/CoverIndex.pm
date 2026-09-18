@@ -5,10 +5,12 @@ use strict;
 use warnings;
 
 use Mojo::JSON qw(encode_json decode_json);
+use Digest::SHA qw(sha256_hex);
 use LANraragi::Utils::Database ();
 use LANraragi::Utils::Logging  ();
 use LANraragi::Utils::PHash    qw(hamming_hex);
 use LANraragi::Utils::Redis    qw(redis_decode);
+use LANraragi::Utils::RedisScript qw(evalsha_cached);
 use LANraragi::Model::Dedup    ();
 
 use constant DECK_TARGET => 100;
@@ -26,7 +28,7 @@ sub band_key {
 # Split a 16-char hex hash into 4 bands of 4 chars each.
 sub _hash_bands {
     my ($hash) = @_;
-    return () unless defined $hash && length($hash) == 16;
+    return () unless defined $hash && $hash =~ /\A[0-9a-f]{16}\z/i;
     my $h = lc($hash);
     return map { substr($h, $_ * BAND_WIDTH, BAND_WIDTH) } 0 .. NUM_BANDS - 1;
 }
@@ -37,6 +39,130 @@ sub PAIR_META_KEY  { "LRR_COVER_DUPLICATE_PAIR_META" }
 sub DISMISSED_KEY  { "LRR_COVER_DUPLICATE_DISMISSED" }
 sub CONFIG_KEY     { "LRR_COVER_DEDUP_CONFIG" }
 sub LAST_SCAN_KEY  { "LRR_COVER_DEDUP_LAST_SCAN" }
+
+# Patch only owned fields atomically: background verification must not erase a
+# human decision, and a stale browser must not recreate a removed pair.
+sub patch_pair_meta {
+    my ($redis_cfg, $pair, $patch, $expected, $generation) = @_;
+    my $script = <<'LUA';
+if not redis.call('ZSCORE', ARGV[1], ARGV[3]) then return '' end
+local raw = redis.call('HGET', ARGV[2], ARGV[3]) or '{}'
+if ARGV[5] ~= '' and raw ~= ARGV[5] then return '' end
+local ok, meta = pcall(cjson.decode, raw)
+if not ok or type(meta) ~= 'table' then meta = {} end
+if ARGV[6] ~= '' and meta.generation ~= ARGV[6] then return '' end
+local previous = cjson.encode(meta)
+local patch = cjson.decode(ARGV[4])
+for k, v in pairs(patch) do meta[k] = v end
+redis.call('HSET', ARGV[2], ARGV[3], cjson.encode(meta))
+return previous
+LUA
+    my $previous = evalsha_cached($redis_cfg, 'cover_patch_meta', $script,
+        PAIR_KEY, PAIR_META_KEY, $pair, encode_json($patch), $expected // '', $generation // '');
+    return unless defined $previous && length $previous;
+    return decode_json($previous);
+}
+
+# Upgrade historical pairs on read, without replacing a concurrently regenerated
+# pair's token or metadata. Only the displayed page (at most 200) needs tokens.
+sub _pair_generation {
+    my ($redis_cfg, $pair, $expected) = @_;
+    my $script = <<'LUA';
+if not redis.call('ZSCORE', ARGV[1], ARGV[3]) then return '' end
+local raw = redis.call('HGET', ARGV[2], ARGV[3]) or '{}'
+if raw ~= ARGV[5] then return '' end
+local ok, meta = pcall(cjson.decode, raw)
+if not ok or type(meta) ~= 'table' then meta = {} end
+if not meta.generation or meta.generation == '' then
+    meta.generation = ARGV[4]
+    redis.call('HSET', ARGV[2], ARGV[3], cjson.encode(meta))
+end
+return cjson.encode(meta)
+LUA
+    my $raw = evalsha_cached($redis_cfg, 'cover_pair_generation', $script,
+        PAIR_KEY, PAIR_META_KEY, $pair, sha256_hex(join ':', time(), $$, rand(), $pair), $expected // '{}');
+    return length($raw // '') ? decode_json($raw) : undef;
+}
+
+# Archive and config databases share one Redis server. SELECT is local to the
+# script; checking sources and publishing the pair must be one atomic operation.
+sub _publish_cover_pair {
+    my ($redis_cfg, $pair, $score, $meta, $sources) = @_;
+    my ($a, $b) = split /\|/, $pair, 2;
+    my $script = <<'LUA';
+redis.call('SELECT', ARGV[1])
+local valid = true
+for i = 8, 12, 4 do
+    local row = redis.call('HMGET', ARGV[i], 'coverhash', 'coverhash_v', 'dedup_generation')
+    if row[1] ~= ARGV[i+1] or row[2] ~= ARGV[i+2] or (row[3] or '') ~= ARGV[i+3] then valid = false end
+end
+redis.call('SELECT', ARGV[2])
+if not valid or redis.call('SISMEMBER', ARGV[5], ARGV[6]) == 1
+    or redis.call('ZSCORE', ARGV[3], ARGV[6]) then return 0 end
+redis.call('ZADD', ARGV[3], ARGV[7], ARGV[6])
+redis.call('HSET', ARGV[4], ARGV[6], ARGV[16])
+return 1
+LUA
+    return evalsha_cached($redis_cfg, 'cover_publish_pair', $script,
+        LANraragi::Model::Config->get_archivedb, LANraragi::Model::Config->get_configdb,
+        PAIR_KEY, PAIR_META_KEY, DISMISSED_KEY, $pair, $score,
+        $a, @{$sources->{$a}}, $b, @{$sources->{$b}}, encode_json($meta));
+}
+
+# A single bounded HMGET replaces one Redis command per historical pair.
+sub _visit_pair_meta {
+    my ($redis_cfg, $members, $visit) = @_;
+    for (my $offset = 0; $offset < @$members; $offset += 256) {
+        my $end = $offset + 255 < $#$members ? $offset + 255 : $#$members;
+        my @batch = @$members[$offset .. $end];
+        $redis_cfg->hmget(PAIR_META_KEY, @batch, sub {
+            my ($reply, $error) = @_;
+            die "Cannot read cover pair metadata\n" if $error || ref $reply ne 'ARRAY';
+            for my $i (0 .. $#batch) {
+                my $meta = eval { decode_json($reply->[$i] // '{}') };
+                $meta = {} unless ref $meta eq 'HASH';
+                $visit->($batch[$i], $meta, $reply->[$i] // '{}');
+            }
+        });
+        $redis_cfg->wait_all_responses;
+    }
+}
+
+# Human decisions remain queryable, but must not consume the active deck.
+sub active_deck_size {
+    my ($redis_cfg) = @_;
+    my @members = $redis_cfg->zrange(PAIR_KEY, 0, -1);
+    my $count = 0;
+    _visit_pair_meta($redis_cfg, \@members, sub {
+        my ($member, $meta) = @_;
+        $count++ if ($meta->{status} // 'new') eq 'new';
+    });
+    return $count;
+}
+
+sub _trim_unreviewed_pairs {
+    my ($redis_cfg, $threshold) = @_;
+    my @members = $redis_cfg->zrangebyscore(PAIR_KEY, "($threshold", '+inf');
+    my $script = <<'LUA';
+local removed = 0
+for i = 4, #ARGV do
+    local member = ARGV[i]
+    local score = tonumber(redis.call('ZSCORE', ARGV[1], member))
+    local ok, meta = pcall(cjson.decode, redis.call('HGET', ARGV[2], member) or '{}')
+    if not ok or type(meta) ~= 'table' then meta = {} end
+    if score and score > tonumber(ARGV[3]) and (meta.status or 'new') == 'new' then
+        redis.call('ZREM', ARGV[1], member)
+        redis.call('HDEL', ARGV[2], member)
+        removed = removed + 1
+    end
+end
+return removed
+LUA
+    while (@members) {
+        evalsha_cached($redis_cfg, 'cover_trim_unreviewed', $script,
+            PAIR_KEY, PAIR_META_KEY, $threshold, splice(@members, 0, 256));
+    }
+}
 
 sub LEGACY_PAIR_KEY      { "LRR_DUPLICATE_PAIRS" }
 sub LEGACY_PAIR_META_KEY { "LRR_DUPLICATE_PAIR_META" }
@@ -52,6 +178,7 @@ sub cover_config_from_redis {
         candidate_pair_cap => ($h{candidate_pair_cap} // 10_000_000) + 0,
         cover_cursor_i     => ($h{cover_cursor_i}     // 0) + 0,
         cover_cursor_j     => ($h{cover_cursor_j}     // 0) + 0,
+        cover_sweep_complete => $h{cover_sweep_complete},
         cover_cursor_threshold => defined $h{cover_cursor_threshold}
             ? $h{cover_cursor_threshold} + 0
             : undef,
@@ -70,6 +197,8 @@ sub cover_pairs {
     my $offset    = $opts->{offset}    // 0;
     my $limit     = $opts->{limit}     // 100;
     my $status    = $opts->{status}    // 'new';
+    $offset = 0 if $offset < 0;
+    $limit = 1 if $limit < 1;
     $limit = 200 if $limit > 200;
 
     my @raw = $redis_cfg->zrangebyscore(PAIR_KEY, 0, $max_score, "WITHSCORES");
@@ -83,20 +212,11 @@ sub cover_pairs {
     }
 
     # Batched meta fetch
-    my %meta_cache;
-    if (@raw_tuples) {
-        my @meta_results;
-        for my $t (@raw_tuples) {
-            $redis_cfg->hmget(PAIR_META_KEY, $t->[0],
-                sub { push @meta_results, [ $t->[0], $_[0] ] });
-        }
-        $redis_cfg->wait_all_responses;
-        for my $r (@meta_results) {
-            my ($member, $reply) = @$r;
-            my $json = ($reply && ref $reply eq 'ARRAY' && $reply->[0]) ? $reply->[0] : '{}';
-            $meta_cache{$member} = eval { decode_json($json) } // {};
-        }
-    }
+    my (%meta_cache, %raw_cache);
+    _visit_pair_meta($redis_cfg, [map { $_->[0] } @raw_tuples], sub {
+        $meta_cache{$_[0]} = $_[1];
+        $raw_cache{$_[0]} = $_[2];
+    });
 
     my @filtered;
     for my $t (@raw_tuples) {
@@ -107,7 +227,7 @@ sub cover_pairs {
     }
     my $filtered_total = scalar @filtered;
     my $total = $filtered_total;
-    my @pair_tuples = splice @filtered, $offset, $limit;
+    my @pair_tuples = $offset < @filtered ? splice(@filtered, $offset, $limit) : ();
 
     my %seen_ids;
     for my $t (@pair_tuples) {
@@ -140,6 +260,8 @@ sub cover_pairs {
     for my $t (@pair_tuples) {
         my ($member, $score, $id_a, $id_b) = @$t;
         my $meta = $meta_cache{$member} // {};
+        $meta = _pair_generation($redis_cfg, $member, $raw_cache{$member}) unless length($meta->{generation} // '');
+        next unless $meta;
         push @pairs, {
             id_a         => $id_a,
             id_b         => $id_b,
@@ -147,6 +269,8 @@ sub cover_pairs {
             cover_hamming => $meta->{cover_hamming},
             pass         => 'cover',
             status       => $meta->{status} // 'new',
+            generation   => $meta->{generation},
+            verification => ref $meta->{verification} eq 'HASH' ? $meta->{verification} : undef,
             a            => $brief_cache{$id_a} // {},
             b            => $brief_cache{$id_b} // {},
         };
@@ -206,38 +330,90 @@ sub _nonnegative_number {
 sub cover_stats {
     my ($redis_cfg, $redis) = @_;
 
-    my $deck_size = $redis_cfg->zcard(PAIR_KEY) + 0;
+    my $deck_size = active_deck_size($redis_cfg);
     my $config = cover_config_from_redis($redis_cfg);
     my $last_scan = $redis_cfg->get(LAST_SCAN_KEY);
 
-    my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
     my $algo = $config->{cover_algo_version};
 
-    my ($hashed, $errored, $pending) = (0, 0, 0);
-    my @results;
-    for my $id (@ids) {
-        $redis->hmget($id, "coverhash_v", "coverhash_err",
-            sub { push @results, $_[0] });
+    # all_archive_ids lazily backfills this set with a one-time KEYS scan after
+    # upgrades. Preserve that behavior before the server-side fast path, but
+    # do not pull the maintained IDs into Perl on ordinary requests.
+    if ( !( $redis->scard("LRR_ALL_ARCHIVES") + 0 ) ) {
+        LANraragi::Utils::Database::all_archive_ids($redis);
     }
-    $redis->wait_all_responses;
-    for my $reply (@results) {
-        my ($v, $err) = @{ $reply // [] };
-        $v   //= ''; $err //= '';
-        if    ($v eq $algo)                 { $hashed++ }
-        elsif ($err =~ /^\Q$algo\E:/)       { $errored++ }
-        else                                { $pending++ }
+
+    my $script = <<'LUA';
+        local ids = redis.call('SMEMBERS', ARGV[1])
+        local algo = ARGV[2]
+        local hashed = 0
+        local errored = 0
+        local pending = 0
+        for i = 1, #ids do
+            local values = redis.call('HMGET', ids[i], 'coverhash_v', 'coverhash_err', 'coverhash')
+            local v = values[1] or ''
+            local err = values[2] or ''
+            local hash = values[3] or ''
+            if v == algo and #hash == 16 and not string.find(hash, '[^%x]') then
+                hashed = hashed + 1
+            elseif string.sub(err, 1, string.len(algo) + 1) == algo .. ':' then
+                errored = errored + 1
+            else
+                pending = pending + 1
+            end
+        end
+        return cjson.encode({ total = #ids, hashed = hashed, errored = errored, pending = pending })
+LUA
+
+    my $stats = eval {
+        my $result = decode_json( evalsha_cached( $redis, "cover_stats", $script, "LRR_ALL_ARCHIVES", $algo ) );
+        die "Invalid cover stats Lua result\n"
+            unless ref $result eq 'HASH'
+                && defined $result->{total}
+                && defined $result->{hashed}
+                && defined $result->{errored}
+                && defined $result->{pending};
+        $result;
+    };
+
+    my ( $total, $hashed, $errored, $pending ) = ( 0, 0, 0, 0 );
+    if ($@) {
+        # Retain the previous pipelined implementation for Redis deployments
+        # where Lua is unavailable or a script invocation otherwise fails.
+        my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
+        $total = scalar @ids;
+
+        my @results;
+        for my $id (@ids) {
+            $redis->hmget($id, "coverhash_v", "coverhash_err", "coverhash",
+                sub { push @results, $_[0] });
+        }
+        $redis->wait_all_responses;
+        for my $reply (@results) {
+            my ($v, $err, $hash) = @{ $reply // [] };
+            $v   //= ''; $err //= '';
+            if    ($v eq $algo && LANraragi::Model::Dedup::_valid_hash($hash)) { $hashed++ }
+            elsif ($err =~ /^\Q$algo\E:/)       { $errored++ }
+            else                                { $pending++ }
+        }
+    } else {
+        $total   = $stats->{total} + 0;
+        $hashed  = $stats->{hashed} + 0;
+        $errored = $stats->{errored} + 0;
+        $pending = $stats->{pending} + 0;
     }
 
     my $cursor_i = ($config->{cover_cursor_i} // 0) + 0;
     my $cursor_j = ($config->{cover_cursor_j} // 0) + 0;
     my $cursor_threshold = $config->{cover_cursor_threshold};
-    my $sweep_done = ($cursor_i == 0 && $cursor_j == 0) ? 1 : 0;
+    my $sweep_done = defined($last_scan) && ($cursor_i == 0 && $cursor_j == 0) ? 1 : 0;
+    $sweep_done = $config->{cover_sweep_complete} ? 1 : 0 if defined $config->{cover_sweep_complete};
 
     return {
         deck_size                => $deck_size,
         deck_target              => DECK_TARGET,
         deck_full                => ($deck_size >= DECK_TARGET ? 1 : 0),
-        archives_total           => scalar @ids,
+        archives_total           => $total,
         archives_with_coverhashes => $hashed,
         archives_cover_pending    => $pending,
         archives_cover_errored    => $errored,
@@ -259,10 +435,19 @@ sub cover_stats {
 
 # --- Delete / Dismiss ---------------------------------------------------
 sub delete_cover_pair {
-    my ($redis_cfg, $pair) = @_;
-    $redis_cfg->sadd(DISMISSED_KEY, $pair);
-    $redis_cfg->zrem(PAIR_KEY,      $pair);
-    $redis_cfg->hdel(PAIR_META_KEY, $pair);
+    my ($redis_cfg, $pair, $generation) = @_;
+    return 0 unless length($generation // '');
+    my $script = <<'LUA';
+if not redis.call('ZSCORE', ARGV[1], ARGV[4]) then return 0 end
+local ok, meta = pcall(cjson.decode, redis.call('HGET', ARGV[2], ARGV[4]) or '{}')
+if not ok or type(meta) ~= 'table' or meta.generation ~= ARGV[5] then return 0 end
+redis.call('SADD', ARGV[3], ARGV[4])
+redis.call('ZREM', ARGV[1], ARGV[4])
+redis.call('HDEL', ARGV[2], ARGV[4])
+return 1
+LUA
+    return evalsha_cached($redis_cfg, 'cover_delete_pair', $script,
+        PAIR_KEY, PAIR_META_KEY, DISMISSED_KEY, $pair, $generation);
 }
 
 # --- Refresh: remove orphaned and dismissed pairs -----------------------
@@ -334,11 +519,10 @@ sub remove_stale_cover_pairs {
     my ($redis_cfg, $algo) = @_;
     my @members = $redis_cfg->zrange(PAIR_KEY, 0, -1);
     my @to_remove;
-    for my $m (@members) {
-        my $meta_json = $redis_cfg->hget(PAIR_META_KEY, $m) // '{}';
-        my $meta = eval { decode_json($meta_json) } // {};
+    _visit_pair_meta($redis_cfg, \@members, sub {
+        my ($m, $meta) = @_;
         push @to_remove, $m if (($meta->{cover_algo_version} // 0) + 0) != $algo;
-    }
+    });
     if (@to_remove) {
         $redis_cfg->zrem(PAIR_KEY,      @to_remove);
         $redis_cfg->hdel(PAIR_META_KEY, @to_remove);
@@ -372,18 +556,13 @@ sub cleanup_legacy_cover_pairs {
 sub invalidate_cover_dedup_signals {
     my ($redis, $redis_cfg, $id) = @_;
 
-    # Delete current cover fields
-    $redis->hdel($id, "coverhash");
-    $redis->hdel($id, "coverhash_v");
-    $redis->hdel($id, "coverhash_err");
-
-    # Delete future cover fingerprint fields
-    $redis->hdel($id, "cover_fp");
-    $redis->hdel($id, "cover_fp_v");
-    $redis->hdel($id, "cover_fp_err");
+    LANraragi::Model::Dedup::_invalidate_dedup_source($redis, $id);
 
     # Remove affected pairs from cover-specific keys
     remove_pairs_for_archive($redis_cfg, $id);
+    my @dismissed = $redis_cfg->smembers(DISMISSED_KEY);
+    my @obsolete = grep { my ($a, $b) = split /\|/, $_, 2; $a eq $id || $b eq $id } @dismissed;
+    $redis_cfg->srem(DISMISSED_KEY, @obsolete) if @obsolete;
     mark_band_buckets_stale($redis_cfg);
 
     # Also remove from legacy keys during transition
@@ -433,7 +612,7 @@ sub build_band_buckets {
     for my $r (@results) {
         my ($id, $reply) = @$r;
         my ($ch, $cv) = @{ $reply // [] };
-        next unless defined $ch && length($ch) == 16;
+        next unless defined $ch && $ch =~ /\A[0-9a-f]{16}\z/i;
         # Accept only hashes written at the current algorithm version.
         next unless defined $cv && length($cv) && ($cv + 0) == $algo;
 
@@ -448,6 +627,7 @@ sub build_band_buckets {
     $redis_cfg->hset(CONFIG_KEY, "band_buckets_built", 1);
     $redis_cfg->hset(CONFIG_KEY, "band_buckets_count", $added);
     $redis_cfg->hset(CONFIG_KEY, "band_buckets_algo_version", $algo);
+    $redis_cfg->hset(CONFIG_KEY, 'band_cursor', 0);
 
     return { buckets_built => 1, archives_indexed => $added };
 }
@@ -468,19 +648,21 @@ sub generate_band_candidates {
     my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
     my @results;
     for my $id (@ids) {
-        $redis->hmget($id, "coverhash", "coverhash_v",
+        $redis->hmget($id, "coverhash", "coverhash_v", "dedup_generation",
             sub { push @results, [ $id, $_[0] ] });
     }
     $redis->wait_all_responses;
 
     my $algo = LANraragi::Model::Dedup::COVER_HASH_ALGO_VERSION();
     my %cover_data;
+    my %sources;
     for my $r (@results) {
         my ($id, $reply) = @$r;
-        my ($ch, $cv) = @{ $reply // [] };
-        next unless defined $ch && length($ch) == 16;
+        my ($ch, $cv, $generation) = @{ $reply // [] };
+        next unless defined $ch && $ch =~ /\A[0-9a-f]{16}\z/i;
         next unless defined $cv && length($cv) && ($cv + 0) == $algo;
         $cover_data{$id} = $ch;
+        $sources{$id} = [$ch, $cv, $generation // ""];
     }
 
     my @sorted_ids = sort keys %cover_data;
@@ -541,6 +723,7 @@ sub generate_band_candidates {
         dropped_buckets => $dropped_buckets,
         largest_bucket  => $largest_bucket,
         cover_data      => \%cover_data,
+        sources         => \%sources,
     };
 }
 
@@ -561,11 +744,7 @@ sub run_cover_candidate_sweep_banded {
     my $threshold_changed = ($prev_threshold != $threshold);
 
     if ($threshold_changed) {
-        my @candidates = $redis_cfg->zrangebyscore(PAIR_KEY, "($threshold", "+inf");
-        if (@candidates) {
-            $redis_cfg->zrem(PAIR_KEY,      @candidates);
-            $redis_cfg->hdel(PAIR_META_KEY, @candidates);
-        }
+        _trim_unreviewed_pairs($redis_cfg, $threshold);
         $redis_cfg->hset(CONFIG_KEY, "cover_cursor_threshold", $threshold);
         $redis_cfg->hset(CONFIG_KEY, "band_cursor", 0);
     }
@@ -574,7 +753,7 @@ sub run_cover_candidate_sweep_banded {
     $logger->info("cover sweep (banded): removed $stale_removed stale cover pair(s)")
         if $stale_removed;
 
-    my $deck_size = $redis_cfg->zcard(PAIR_KEY) + 0;
+    my $deck_size = active_deck_size($redis_cfg);
     my $room = DECK_TARGET - $deck_size;
     if ($room <= 0) {
         return {
@@ -611,6 +790,10 @@ sub run_cover_candidate_sweep_banded {
     # Phase 2: generate candidates from band buckets
     my $gen = generate_band_candidates($redis_cfg, $redis, $cfg);
 
+    # Skipping a large bucket trades away recall even at distance zero.
+    return run_cover_candidate_sweep_legacy($redis, $redis_cfg, $threshold, $logger)
+        if $gen->{dropped_buckets};
+
     $logger->info(sprintf(
         "cover sweep (banded): threshold=%g candidates=%d scanned=%d/%d dropped_buckets=%d largest_bucket=%d",
         $threshold,
@@ -641,15 +824,13 @@ sub run_cover_candidate_sweep_banded {
         my $d = LANraragi::Utils::PHash::hamming_hex($hash_a, $hash_b);
         next if $d > $threshold;
 
-        $redis_cfg->zadd(PAIR_KEY, $d, $member);
-        $redis_cfg->hset(PAIR_META_KEY, $member,
-            encode_json({
+        $stored += _publish_cover_pair($redis_cfg, $member, $d, {
                 pass               => 'cover',
                 cover_hamming      => $d,
                 cover_algo_version => $algo,
                 ts                 => time(),
-            }));
-        $stored++;
+                generation         => sha256_hex(join ':', time(), $$, rand(), $member),
+            }, $gen->{sources});
     }
 
     $redis_cfg->set(LAST_SCAN_KEY, time());
@@ -672,10 +853,10 @@ sub run_cover_candidate_sweep_banded {
         candidates  => scalar(@{$gen->{members}}),
         scanned     => $gen->{scanned},
         total       => $gen->{total},
-        truncated   => 0,
+        truncated   => (!$gen->{bands_done} && $stored < $room) ? 1 : 0,
         cur_i       => $gen->{band_cursor},
         cur_j       => 0,
-        sweep_done  => $gen->{bands_done},
+        sweep_done  => ($gen->{bands_done} && $scored >= @{$gen->{members}}) ? 1 : 0,
     };
 }
 # Public entry: default remains the reliable O(N²) legacy sweep.
@@ -684,7 +865,10 @@ sub run_cover_candidate_sweep_banded {
 sub run_cover_candidate_sweep {
     my ($redis, $redis_cfg, $threshold, $logger) = @_;
     my $cfg = cover_config_from_redis($redis_cfg);
-    if (($cfg->{cover_sweep_mode} // 'legacy') eq 'banded') {
+    # Four exact 16-bit bands guarantee a shared band only within distance 3.
+    # At the product threshold (22), even distance-4 pairs can be missed.
+    my $effective_threshold = $threshold // $cfg->{cover_max_hamming};
+    if (($cfg->{cover_sweep_mode} // 'legacy') eq 'banded' && $effective_threshold <= 3) {
         return run_cover_candidate_sweep_banded($redis, $redis_cfg, $threshold, $logger);
     }
     return run_cover_candidate_sweep_legacy($redis, $redis_cfg, $threshold, $logger);
@@ -705,11 +889,7 @@ sub run_cover_candidate_sweep_legacy {
     my $threshold_changed = ($prev_threshold != $threshold);
 
     if ($threshold_changed) {
-        my @candidates = $redis_cfg->zrangebyscore(PAIR_KEY, "($threshold", "+inf");
-        if (@candidates) {
-            $redis_cfg->zrem(PAIR_KEY,      @candidates);
-            $redis_cfg->hdel(PAIR_META_KEY, @candidates);
-        }
+        _trim_unreviewed_pairs($redis_cfg, $threshold);
         $redis_cfg->hset(CONFIG_KEY, "cover_cursor_i", 0);
         $redis_cfg->hset(CONFIG_KEY, "cover_cursor_j", 0);
         $redis_cfg->hset(CONFIG_KEY, "cover_cursor_threshold", $threshold);
@@ -719,7 +899,7 @@ sub run_cover_candidate_sweep_legacy {
     $logger->info("cover sweep: removed $stale_removed stale cover pair(s)")
         if $stale_removed;
 
-    my $deck_size = $redis_cfg->zcard(PAIR_KEY) + 0;
+    my $deck_size = active_deck_size($redis_cfg);
     my $room = DECK_TARGET - $deck_size;
     if ($room <= 0) {
         return {
@@ -739,18 +919,30 @@ sub run_cover_candidate_sweep_legacy {
     my @ids = LANraragi::Utils::Database::all_archive_ids($redis);
     my @results;
     for my $id (@ids) {
-        $redis->hmget($id, "coverhash", "coverhash_v",
+        $redis->hmget($id, "coverhash", "coverhash_v", "dedup_generation",
             sub { push @results, [ $id, $_[0] ] });
     }
     $redis->wait_all_responses;
 
     my %cover_data;
+    my %sources;
     for my $r (@results) {
         my ($id, $reply) = @$r;
-        my ($ch, $cv) = @{ $reply // [] };
-        next unless defined $ch && length($ch) == 16;
+        my ($ch, $cv, $generation) = @{ $reply // [] };
+        next unless defined $ch && $ch =~ /\A[0-9a-f]{16}\z/i;
         next unless defined $cv && $cv eq $cfg->{cover_algo_version};
         $cover_data{$id} = $ch;
+        $sources{$id} = [$ch, $cv, $generation // ""];
+    }
+
+    # Numeric cursors are valid only for the same sorted inventory. Additions,
+    # removals and same-ID hash replacements otherwise silently skip pairs.
+    my $inventory = sha256_hex(join '', map { $_ . $cover_data{$_} . $sources{$_}[2] } sort keys %cover_data);
+    my $previous_inventory = $redis_cfg->hget(CONFIG_KEY, 'cover_inventory') // '';
+    if ($inventory ne $previous_inventory) {
+        $cfg->{cur_i} = 0;
+        $cfg->{cur_j} = 0;
+        $redis_cfg->hset(CONFIG_KEY, 'cover_inventory', $inventory);
     }
 
     my $n_cover = scalar keys %cover_data;
@@ -763,6 +955,7 @@ sub run_cover_candidate_sweep_legacy {
     $cfg->{pair_meta_key} = PAIR_META_KEY;
     $cfg->{dismissed_key} = DISMISSED_KEY;
 
+    $cfg->{publish_pair} = sub { _publish_cover_pair($redis_cfg, @_, \%sources) };
     my $result = LANraragi::Model::Dedup::find_cover_duplicate_pairs_in_memory(\%cover_data, $redis_cfg, $cfg);
     $redis_cfg->set(LAST_SCAN_KEY, time());
 

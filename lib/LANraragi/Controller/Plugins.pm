@@ -7,7 +7,7 @@ use experimental 'try';
 use Redis;
 use Encode;
 use Mojo::JSON qw(encode_json);
-use Cwd;
+use LANraragi::Utils::PluginUpload qw(install_sideloaded_plugin);
 
 use LANraragi::Utils::Generic qw(generate_themes_header);
 use LANraragi::Utils::Plugins qw(get_plugins get_plugin_parameters is_plugin_enabled);
@@ -125,7 +125,7 @@ sub save_config {
                     my $value = $self->req->param($param);
 
                     # Check if the parameter exists in the request
-                    if ($value) {
+                    if (defined $value) {
                         push( @customargs, $value );
                     } else {
 
@@ -142,9 +142,10 @@ sub save_config {
 
             } elsif ( ref( $pluginfo->{parameters} ) eq 'HASH' ) {
 
-                # TODO: remove this line (and the ARRAY check above)
-                # after plugins with array parameters are deprecated
-                $redis->del($namerds);
+                # TODO: del nukes plugin on config save, hence commented out
+                # # TODO: remove this line (and the ARRAY check above)
+                # # after plugins with array parameters are deprecated
+                # $redis->del($namerds);
 
                 #Loop through the namespaced request parameters
                 foreach my $key ( keys %{ $pluginfo->{parameters} } ) {
@@ -152,7 +153,7 @@ sub save_config {
                     my $value = $self->req->param("${namespace}_CFG_${key}");
 
                     # Checkboxes don't exist in the parameter list if they're not checked.
-                    $redis->hset( $namerds, $key, ( ($value) ? $value : "" ) );
+                    $redis->hset( $namerds, $key, $value // "" );
                 }
 
                 $redis->hset( $namerds, "enabled", $enabled );
@@ -171,111 +172,15 @@ sub save_config {
 
 sub process_upload {
     my $self = shift;
-
-    #Receive uploaded file.
-    my $file     = $self->req->upload('file');
-    my $filename = $file->filename;
-
-    my $logger = get_logger( "Plugin Upload", "lanraragi" );
-
-    #Check if this is a Perl package ("xx.pm")
-    if ( $filename =~ /^.+\.(?:pm)$/ ) {
-
-        #Check plugin type
-        my $filetext   = $file->slurp;
-        my $plugintype = "";
-
-        if ( $filetext =~ /package LANraragi::Plugin::(Login|Metadata|Scripts|Download)::/ ) {
-            $plugintype = $1;
-        } else {
-            my $errormess = "Could not find a valid plugin package type in the plugin \"$filename\"!";
-            $logger->error($errormess);
-
-            $self->render(
-                json => {
-                    operation => "upload_plugin",
-                    name      => $file->filename,
-                    success   => 0,
-                    error     => $errormess
-                }
-            );
-
-            return;
-        }
-
-        my $dir = getcwd() . ("/lib/LANraragi/Plugin/Sideloaded/");
-        unless ( -e $dir ) {
-            mkdir $dir;
-        }
-
-        my $output_file = $dir . $filename;
-
-        $logger->info("Uploading new plugin $filename to $output_file ...");
-
-        #Delete module if it already exists
-        if ( -e $output_file ) {
-            unlink($output_file);
-
-            # Remove the existing file from @INC to avoid the require call below croaking
-            delete( $INC{$output_file} );
-        }
-
-        $file->move_to($output_file);
-
-        #Load the plugin dynamically.
-        my $pluginclass = "LANraragi::Plugin::${plugintype}::" . substr( $filename, 0, -3 );
-
-        #Per Module::Pluggable rules, the plugin class matches the filename
-        eval {
-            #@INC is not refreshed mid-execution, so we use the full filepath
-            require $output_file;
-            $pluginclass->plugin_info();
-        };
-
-        if ($@) {
-            $logger->error("Could not instantiate plugin at namespace $pluginclass!");
-            $logger->error($@);
-
-            # Cleanup this shameful attempt
-            unlink($output_file);
-            delete( $INC{$output_file} );
-
-            $self->render(
-                json => {
-                    operation => "upload_plugin",
-                    name      => $file->filename,
-                    success   => 0,
-                    error     => "Could not load namespace $pluginclass! "
-                      . "Your Plugin might not be compiling properly. <br/>"
-                      . "Here's an error log: <pre>$@</pre>"
-                }
-            );
-
-            return;
-        }
-
-        #We can now try to query it for metadata.
-        my %pluginfo = $pluginclass->plugin_info();
-
-        $self->render(
-            json => {
-                operation => "upload_plugin",
-                name      => $pluginfo{name},
-                success   => 1
-            }
-        );
-
-    } else {
-
-        $self->render(
-            json => {
-                operation => "upload_plugin",
-                name      => $file->filename,
-                success   => 0,
-                error     => "This file isn't a plugin - " . "Please upload a Perl Module (.pm) file."
-            }
-        );
+    my $redis = $self->LRR_CONF->get_redis_config;
+    my $result = eval { install_sideloaded_plugin( $self->req->upload('file'), $redis ) };
+    unless ($result) {
+        get_logger( "Plugin Upload", "lanraragi" )->error('Plugin upload failed during staging or commit.');
+        $result = { success => 0, error => 'Plugin upload failed during staging or commit. Check storage and database availability.' };
     }
+    $redis->quit();
+    $result->{operation} = 'upload_plugin';
+    $self->render( json => $result );
 }
 
 1;

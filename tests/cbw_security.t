@@ -73,6 +73,22 @@ subtest "URL validation rejects SSRF targets and preserves public HTTPS" => sub 
     is( $ip, '93.184.216.34', "validated public peer is pinned" );
 };
 
+subtest "archive download validation reuses the SSRF boundary" => sub {
+    no warnings 'redefine';
+    local *LANraragi::Utils::Archive::_resolve_cbw_host_addresses = sub { return ('127.0.0.1') };
+    dies_like { LANraragi::Utils::Archive::validate_public_http_url('https://example.com/archive.zip') }
+      qr/unsafe address/i, "private archive download targets are rejected";
+
+    local *LANraragi::Utils::Archive::_resolve_cbw_host_addresses = sub { return ('93.184.216.34') };
+    my ( $url, $ip ) = LANraragi::Utils::Archive::validate_public_http_url('https://example.com/archive.zip');
+    is( $url->host, 'example.com', "archive download preserves the validated hostname" );
+    is( $ip, '93.184.216.34', "archive download pins the validated public peer" );
+
+    dies_like { LANraragi::Utils::Archive::verify_public_http_peer( '93.184.216.35', $ip ) }
+      qr/did not match/i, "archive download rejects a rebound peer";
+    ok( LANraragi::Utils::Archive::verify_public_http_peer( $ip, $ip ), "archive download accepts the pinned peer" );
+};
+
 subtest "raster validation uses bytes, MIME and decoded dimensions" => sub {
     my $png = png_blob( 640, 480 );
     my $info = LANraragi::Utils::Archive::validate_cbw_image( $png, 'image/png' );

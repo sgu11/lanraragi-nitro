@@ -6,6 +6,7 @@ use Redis;
 
 use LANraragi::Model::Stats;
 use LANraragi::Utils::Generic    qw(render_api_response);
+use LANraragi::Utils::Login      qw(is_logged_in_api);
 use LANraragi::Utils::Plugins    qw(get_plugin get_plugins use_plugin);
 
 # Returns basic info for the given Minion job id.
@@ -18,6 +19,7 @@ sub minion_job_status {
 
         my %info = %{ $job->info };
         my $err = defined $info{error} ? $info{error} : "";
+        $err = "Job failed." if length($err) && !is_logged_in_api($self);
 
         # Render a basic json containing the minion job info
         $self->render(
@@ -67,4 +69,3 @@ sub queue_minion_job {
 }
 
 1;
-

@@ -68,91 +68,74 @@ sub build_stat_hashes {
     # Iterate on hashes to get their tags
     $logger->info("Building stat indexes... ($archive_count archives, $total tankoubons)");
 
-    # Go through tanks first
+    # Read each archive once, including those shared by several tankoubons.
+    # Bound queued callbacks while keeping the metadata available for tank tags.
+    my %prefetch;
+    my @pending = @keys;
+    while (@pending) {
+        my @batch = splice @pending, 0, 256;
+        my $error;
+        for my $id (@batch) {
+            $redis->hmget( $id, 'tags', 'title', 'isnew', sub {
+                my ( $reply, $err ) = @_;
+                $error //= $err;
+                $prefetch{$id} = $reply;
+            } );
+        }
+        $redis->wait_all_responses;
+        if (defined $error) {
+            $redistx->discard;
+            die $error;
+        }
+    }
+
+    my %grouped;
     foreach my $tank (@tanks) {
+        my $tank_id = $tank->{id};
+        my @members = @{ $tank->{archives} };
+        $grouped{$_} = 1 for @members;
+        $redistx->sadd( "LRR_TANKGROUPED", $tank_id ) if @members;
 
-        my $tank_id       = %$tank{id};
-        my $tank_title    = lc( %$tank{name} );
-        my @tank_archives = @{ %$tank{archives} };
-
-        # Encode the title for storage in LRR_TITLES (lowercase so it matches search queries)
-        my $encoded_title = redis_encode( trim( trim_CRLF($tank_title) ) );
+        my $encoded_title = redis_encode( trim( trim_CRLF( lc($tank->{name}) ) ) );
         $redistx->zadd( "LRR_TITLES", 0, "$encoded_title\0$tank_id" );
 
-        if ( scalar @tank_archives == 0 ) {
-            $logger->warn("Tank $tank_id has no archives in it. Skipping.");
-            next;
+        my @member_tags = map { redis_decode( $prefetch{$_}[0] // "" ) } @members;
+        my $unified = LANraragi::Model::Tankoubon::get_tank_unified_tags( $tank_id, \@member_tags );
+
+        # Own tags contribute once to statistics. Imputed tags only contribute
+        # membership; the source archives are counted separately below.
+        foreach my $tag ( @{ $unified->{own_tags} } ) {
+            next unless length $tag;
+            $redistx->zincrby( "LRR_STATS", 1, redis_encode(lc($tag)) );
         }
-
-        $redistx->sadd( "LRR_TANKGROUPED", $tank_id );
-
-        # Remove IDs contained in the tank from @keys
-        @keys = intersect_arrays( \@tank_archives, \@keys, 1 );
-
-        # Index the tank's own tags (stored at ZSET score -2)
-        my @raw_tank_tags = $redis->zrangebyscore( $tank_id, -2, -2 );
-        if ( @raw_tank_tags && $raw_tank_tags[0] =~ /^tags_(.*)/ ) {
-            my $tank_tags_str = redis_decode($1) // "";
-            foreach my $tag ( split( /,\s?/, $tank_tags_str ) ) {
-                $tag = trim($tag);
-                next unless length $tag;
-                my $encoded_tag = redis_encode( lc($tag) );
-                $redistx->sadd( "INDEX_" . $encoded_tag, $tank_id );
-                $redistx->zincrby( "LRR_STATS", 1, $encoded_tag );
-            }
-        }
-
-        # Index imputed tags from member archives, and check if any archive is new
-        foreach my $arcid (@tank_archives) {
-            index_tags_for_id( $redis, $redistx, $tank_id, $arcid );
-
-            my $isnew = $redis->hget( $arcid, "isnew" );
-            if ( $isnew && $isnew eq "true" ) {
-                $redistx->sadd( "LRR_NEW", $arcid );
-            }
+        foreach my $tag ( @{ $unified->{own_tags} }, @{ $unified->{imputed_tags} } ) {
+            next unless length $tag;
+            my $index = "INDEX_" . redis_encode(lc($tag));
+            $redistx->sadd( $index, $tank_id );
+            $redistx->zadd( "LRR_TAG_INDEX_NAMES", 0, $index );
         }
     }
-
-    # Pipeline one HMGET per archive for the three fields we need — tags, title,
-    # isnew. One round-trip total instead of ~4×N sequential HGETs (B.5).
-    # Pipelined callback is (reply, error) — $_[0] is the arrayref of values.
-    my %prefetch;
-    for my $id (@keys) {
-        $redis->hmget( $id, 'tags', 'title', 'isnew', sub { $prefetch{$id} = $_[0] } );
-    }
-    $redis->wait_all_responses;
 
     foreach my $id (@keys) {
-
-        $redistx->sadd( "LRR_TANKGROUPED", $id );
+        $redistx->sadd( "LRR_TANKGROUPED", $id ) unless $grouped{$id};
         my ( $rawtags, $title, $isnew ) = @{ $prefetch{$id} // [] };
         my $has_tags = _index_prefetched_tags( $redistx, $id, $id, $rawtags, $title );
-
-        # Flag the ID as untagged if it had no tags
-        unless ($has_tags) {
-            $logger->trace("Adding $id to LRR_UNTAGGED");
-            $redistx->sadd( "LRR_UNTAGGED", $id );
-        }
-
-        if ( defined $isnew && $isnew eq "true" ) {
-            $logger->trace("Adding $id to LRR_ISNEW");
-            $redistx->sadd( "LRR_NEW", $id );
-        }
+        $redistx->sadd( "LRR_UNTAGGED", $id ) unless $has_tags;
+        $redistx->sadd( "LRR_NEW", $id ) if defined $isnew && $isnew eq "true";
     }
 
     # Add a stamp to the stats hash to indicate when it was last updated
     $redistx->set( "LAST_JOB_TIME", time() );
 
     $redistx->exec;
-    my $total_visible_archives = scalar @keys;
+    my $total_visible_archives = scalar grep { !$grouped{$_} } @keys;
     $logger->info("Stat indexes built! ($total_visible_archives archives, $total tankoubons)");
     $redis->quit;
     $redistx->quit;
 }
 
-# Same as index_tags_for_id but takes the (tags, title) strings prefetched in
-# bulk so the per-archive loop doesn't make two HGET round-trips each. Used by
-# build_stat_hashes on the non-tank path.
+# Index an archive using its prefetched metadata. Tank membership is maintained
+# separately so an archive contributes to statistics exactly once.
 sub _index_prefetched_tags ( $redistx, $index_id, $archive_id, $rawtags, $title ) {
     my $logger   = get_logger( "Tag Stats", "lanraragi" );
     my $has_tags = 0;
@@ -163,6 +146,7 @@ sub _index_prefetched_tags ( $redistx, $index_id, $archive_id, $rawtags, $title 
         foreach my $t (@tags) {
             $t = trim($t);
             $t = trim_CRLF($t);
+            next unless length $t;
 
             $has_tags = 1 unless $t =~ /(artist|parody|series|language|event|group|date_added|timestamp|source):.*/;
 
@@ -195,66 +179,11 @@ sub _index_prefetched_tags ( $redistx, $index_id, $archive_id, $rawtags, $title 
 # Parse the tags of the given archive_id,
 # and add the given index_id to all the search indexes that contain said tags.
 sub index_tags_for_id ( $redis, $redistx, $index_id, $archive_id ) {
-    my $logger   = get_logger( "Tag Stats", "lanraragi" );
-    my $has_tags = 0;
-
-    unless ( $redis->hexists( $archive_id, "tags" ) ) {
-        return 0;
-    }
-
-    # Split tags by comma and index them
-    my $rawtags = $redis->hget( $archive_id, "tags" );
-    my @tags    = split( /,\s?/, redis_decode($rawtags) );
-
-    foreach my $t (@tags) {
-        $t = trim($t);
-        $t = trim_CRLF($t);
-
-        # The following are basic and therefore don't count as "tagged"
-        $has_tags = 1 unless $t =~ /(artist|parody|series|language|event|group|date_added|timestamp|source):.*/;
-
-        # If the tag is a source: tag, add it to the URL index. This always uses the original archive ID.
-        if ( $t =~ /source:(.*)/i ) {
-            my $url = trim_url($1);
-            $logger->trace("Adding $url as an URL for $archive_id");
-            $redistx->hset( "LRR_URLMAP", $url, $archive_id );  # No need to encode the value, as URLs are already encoded by design
-        }
-
-        # Tag is lowercased here to avoid redundancy/dupes
-        my $redis_tag = redis_encode( lc($t) );
-
-        # Increment tag in stats
-        $redistx->zincrby( "LRR_STATS", 1, $redis_tag );
-
-        # Add the archive ID and index ID to the set for this tag
-        $logger->trace("Adding $index_id to the index for tag $redis_tag");
-        $redistx->sadd( "INDEX_" . $redis_tag, $index_id );
-
-        if ( $index_id ne $archive_id ) {
-            $logger->trace("Adding $archive_id to the index for tag $redis_tag");
-            $redistx->sadd( "INDEX_" . $redis_tag, $archive_id );
-        }
-
-        # Track the index name in LRR_TAG_INDEX_NAMES (B.4) — a lex-sorted set so
-        # Search.pm can ZRANGEBYLEX instead of KEYS 'INDEX_*'. Score 0 for all
-        # members; the set acts as an index of index names.
-        $redistx->zadd( "LRR_TAG_INDEX_NAMES", 0, "INDEX_" . $redis_tag );
-    }
-
-    if ( $redis->hexists( $archive_id, "title" ) ) {
-        my $title = $redis->hget( $archive_id, "title" );
-
-        # Decode and lowercase the title
-        $title = lc( redis_decode($title) );
-        $title = trim($title);
-        $title = trim_CRLF($title);
-        $title = redis_encode($title);
-
-        # The LRR_TITLES lexicographically sorted set contains both the title and the id under the form $title\x00$id.
-        $redistx->zadd( "LRR_TITLES", 0, "$title\0$archive_id" );
-    }
-
-    return $has_tags;
+    return 0 unless $redis->hexists( $archive_id, "tags" );
+    return _index_prefetched_tags(
+        $redistx, $index_id, $archive_id,
+        $redis->hget( $archive_id, "tags" ), $redis->hget( $archive_id, "title" )
+    );
 }
 
 sub is_url_recorded ($url) {

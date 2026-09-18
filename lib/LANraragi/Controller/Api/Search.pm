@@ -94,7 +94,9 @@ sub handle_api {
     $sortorder = ( $sortorder && $sortorder eq 'desc' ) ? 1 : 0;
 
     my $cachekey;
-    if ( $tachiyomi && ( $sortkey // "" ) ne "lastread" ) {
+    if ( $tachiyomi && !LANraragi::Model::Search::search_depends_on_progress(
+        $filter, $category, $sortkey, $hidecompleted eq "true"
+    ) ) {
         $cachekey = tachiyomi_cache_key(
             $self, "search", $filter, $category, $start, $sortkey, $sortorder, $newfilter,
             $untaggedf, $grouptanks, $hidecompleted
